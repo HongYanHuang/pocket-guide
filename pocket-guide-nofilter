@@ -1,0 +1,8 @@
+#!/bin/bash
+# Pocket Guide CLI - No filtering (shows all output including warnings)
+# Use this if the main wrapper has issues
+
+cd "$(dirname "$0")"
+source venv/bin/activate 2>/dev/null
+
+python src/cli.py "$@"

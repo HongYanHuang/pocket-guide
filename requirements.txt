@@ -1,0 +1,24 @@
+# Core dependencies
+python-dotenv>=1.0.0,<2.0.0
+pyyaml>=6.0,<7.0
+
+# CLI interface
+click>=8.1.0,<9.0.0
+rich>=13.0.0,<14.0.0
+
+# AI providers
+openai>=1.12.0,<2.0.0
+anthropic>=0.18.0,<1.0.0
+google-generativeai>=0.3.0,<0.8.0
+
+# TTS providers
+edge-tts>=6.1.0,<7.0.0
+google-cloud-texttospeech>=2.14.0,<3.0.0
+pydub>=0.25.0,<1.0.0
+
+# Utilities
+requests>=2.31.0,<3.0.0
+
+# Compatibility fixes for Python 3.9
+importlib-metadata>=4.0.0,<7.0.0; python_version < "3.10"
+urllib3>=1.26.0,<2.0.0

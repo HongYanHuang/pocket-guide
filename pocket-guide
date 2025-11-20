@@ -1,0 +1,9 @@
+#!/bin/bash
+# Pocket Guide CLI - Clean wrapper
+# Suppresses known harmless warnings while preserving interactivity
+
+cd "$(dirname "$0")"
+source venv/bin/activate 2>/dev/null
+
+# Filter stderr only, keep stdout interactive
+python src/cli.py "$@" 2> >(grep -v "importlib.metadata\|FutureWarning\|NotOpenSSLWarning\|urllib3" >&2)

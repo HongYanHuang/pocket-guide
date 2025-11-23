@@ -98,6 +98,100 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Recursive Research Architecture
+
+**Key Innovation**: Research happens in **multiple layers** to capture complete knowledge with context.
+
+#### Why Recursive Research?
+
+**Problem with Single-Layer**:
+```
+Research "Arch of Galerius"
+  ↓
+Extract: Galerius (person)
+Done. ❌ Missing: Who is Diocletian? What's the Rule of Four?
+```
+
+**Solution with 2-Layer Recursive**:
+```
+Layer 0: Research "Arch of Galerius"
+  ↓ Identifies: Galerius [native], Via Egnatia [native]
+
+Layer 1: Research each [native] entity
+  Research "Galerius"
+    ↓ Identifies: Diocletian [secondary], Persian War [event]
+  Research "Via Egnatia"
+    ↓ Identifies: Roman road system [concept]
+
+Layer 2: Research dramatic secondary entities
+  Research "Diocletian"
+    ↓ Extract: Why he humiliated Galerius (the drama!)
+  Research "Rule of Four"
+    ↓ Extract: Corporate management analogy
+```
+
+**Result**: Complete story with context, relationships, and drama!
+
+#### Depth Control Strategy
+
+| Layer | Research Target | Trigger Conditions | Max Entities |
+|-------|----------------|-------------------|--------------|
+| **Layer 0** | The POI itself | Always | 1 |
+| **Layer 1** | Entities with `[native]` label | Always | 3-5 |
+| **Layer 2** | Secondary entities with `[drama]`, `[irony]`, or critical relationships | Conditional | 2-3 |
+| **Layer 3+** | N/A | Never (stop at Layer 2) | 0 |
+
+#### Layer 2 Decision Criteria
+
+Research secondary entity if **any** of these are true:
+- ✅ Labeled `[drama]`, `[irony]`, or `[shocking]`
+- ✅ Person with relationship type: `conflict`, `rival`, `boss`, `enemy`
+- ✅ Labeled `[critical-context]`
+- ✅ Directly involved in core dramatic event
+
+#### Example: Arch of Galerius Research Flow
+
+```
+Layer 0: Arch of Galerius
+  ↓ Entities found:
+  - Galerius [native, person]
+  - Via Egnatia [native, location]
+  - Rotunda [native, connected POI]
+  - Persian War [event]
+
+Layer 1: Research native entities
+  ├─ Galerius
+  │   ↓ Secondary entities found:
+  │   - Diocletian [person, boss, conflict] ← Research in Layer 2!
+  │   - Chariot Humiliation [event, drama] ← Keep as event
+  │   - Rule of Four [concept, critical-context] ← Research in Layer 2!
+  │
+  └─ Via Egnatia
+      ↓ Secondary entities found:
+      - Roman road system [concept] ← Skip (not dramatic)
+      - Times Square analogy [modern] ← Keep as analogy
+
+Layer 2: Research critical secondaries
+  ├─ Diocletian
+  │   ↓ Extract: Created Rule of Four, tough manager, etc.
+  │
+  └─ Rule of Four
+      ↓ Extract: 2 senior + 2 junior emperors, like corporate structure
+
+Total API Calls: 6 (1 POI + 2 Layer 1 + 2 Layer 2 + 1 storytelling)
+Result: Complete dramatic narrative with full context!
+```
+
+#### API Cost Analysis
+
+| Approach | Calls | Tokens | Cost (GPT-4) | Quality | Time |
+|----------|-------|--------|--------------|---------|------|
+| No Research | 1 | 4K | $0.04 | 6/10 | 15s |
+| Single Layer | 2 | 8K | $0.08 | 7/10 | 30s |
+| **2-Layer Recursive** | **4-6** | **16K-24K** | **$0.16-$0.24** | **9-10/10** | **60-90s** |
+
+**ROI**: Extra $0.16 for 3-4x quality improvement ✅ **Worth it!**
+
 ### Directory Structure
 
 ```
@@ -242,11 +336,13 @@ IMPORTANT:
 """
 ```
 
-#### 1.2 Research Agent Implementation
+#### 1.2 Research Agent Implementation (Recursive)
 
 **File**: `src/research_agent.py`
 
 **Class**: `ResearchAgent`
+
+**Key Feature**: Implements 2-layer recursive research to capture complete knowledge with context.
 
 **Methods**:
 
@@ -255,8 +351,18 @@ class ResearchAgent:
     def __init__(self, config):
         self.config = config
         self.ai_config = config.get('ai_providers', {})
+        self.research_config = config.get('research', {})
 
-    def research_poi(
+        # Depth control
+        self.max_depth = self.research_config.get('max_depth', 2)
+        self.max_entities_per_layer = self.research_config.get('max_entities_per_layer', 5)
+        self.max_api_calls = self.research_config.get('max_api_calls', 10)
+
+        # Tracking
+        self.researched_entities = set()  # Avoid duplicates
+        self.api_calls_made = 0
+
+    def research_poi_recursive(
         self,
         poi_name: str,
         city: str,
@@ -264,7 +370,7 @@ class ResearchAgent:
         provider: str = None
     ) -> Dict:
         """
-        Research POI and return structured data
+        Recursively research POI with multi-layer depth
 
         Args:
             poi_name: Name of point of interest
@@ -273,21 +379,246 @@ class ResearchAgent:
             provider: AI provider (openai, anthropic, google)
 
         Returns:
-            Dictionary with structured research data
+            Complete knowledge graph with all layers
         """
-        # Build research prompt
-        prompt = self._build_research_prompt(poi_name, city, user_description)
+
+        print(f"\n  [RESEARCH] Starting recursive research for {poi_name}")
+        print(f"  [CONFIG] Max depth: {self.max_depth}, Max entities/layer: {self.max_entities_per_layer}")
+
+        # Layer 0: Research the POI itself
+        print(f"\n  [LAYER 0] Researching POI: {poi_name}")
+        poi_data = self._research_entity(
+            entity_type="POI",
+            entity_name=poi_name,
+            context={"city": city, "description": user_description},
+            provider=provider
+        )
+
+        # Initialize knowledge graph
+        knowledge_graph = {
+            "poi": poi_data,
+            "entities": {},
+            "research_depth": 0,
+            "api_calls": self.api_calls_made
+        }
+
+        # Extract entities for Layer 1
+        to_research_layer1 = []
+        for entity in self._extract_entities(poi_data):
+            if self._should_research_layer1(entity):
+                to_research_layer1.append(entity)
+
+        print(f"\n  [LAYER 1] Found {len(to_research_layer1)} entities to research")
+
+        # Layer 1: Research native entities
+        to_research_layer2 = []
+        for entity in to_research_layer1[:self.max_entities_per_layer]:
+            if self.api_calls_made >= self.max_api_calls:
+                print(f"    ⚠️  API call limit reached ({self.max_api_calls}), stopping")
+                break
+
+            entity_id = f"{entity['type']}:{entity['name']}"
+
+            if entity_id in self.researched_entities:
+                print(f"    ↳ Skipping {entity['name']} (already researched)")
+                continue
+
+            print(f"    ↳ Researching {entity['type']}: {entity['name']}")
+
+            entity_data = self._research_entity(
+                entity_type=entity['type'],
+                entity_name=entity['name'],
+                context={"poi": poi_name, "city": city},
+                provider=provider
+            )
+
+            knowledge_graph["entities"][entity_id] = entity_data
+            self.researched_entities.add(entity_id)
+
+            # Extract entities for Layer 2
+            for secondary in self._extract_entities(entity_data):
+                if self._should_research_layer2(secondary, entity_data):
+                    secondary['related_to'] = entity['name']
+                    to_research_layer2.append(secondary)
+
+        print(f"\n  [LAYER 2] Found {len(to_research_layer2)} secondary entities")
+
+        # Layer 2: Research critical secondary entities
+        for entity in to_research_layer2[:self.max_entities_per_layer]:
+            if self.api_calls_made >= self.max_api_calls:
+                print(f"    ⚠️  API call limit reached ({self.max_api_calls}), stopping")
+                break
+
+            entity_id = f"{entity['type']}:{entity['name']}"
+
+            if entity_id in self.researched_entities:
+                print(f"    ↳ Skipping {entity['name']} (already researched)")
+                continue
+
+            print(f"    ↳ Researching secondary {entity['type']}: {entity['name']}")
+
+            entity_data = self._research_entity(
+                entity_type=entity['type'],
+                entity_name=entity['name'],
+                context={
+                    "poi": poi_name,
+                    "related_to": entity.get('related_to'),
+                    "relationship": entity.get('relationship_type')
+                },
+                provider=provider
+            )
+
+            knowledge_graph["entities"][entity_id] = entity_data
+            self.researched_entities.add(entity_id)
+
+        knowledge_graph["research_depth"] = 2
+        knowledge_graph["total_entities"] = len(self.researched_entities)
+        knowledge_graph["api_calls"] = self.api_calls_made
+
+        print(f"\n  [COMPLETE] Research finished:")
+        print(f"    - Depth: {knowledge_graph['research_depth']} layers")
+        print(f"    - Entities: {knowledge_graph['total_entities']}")
+        print(f"    - API calls: {knowledge_graph['api_calls']}")
+
+        return knowledge_graph
+
+    def _should_research_layer1(self, entity: Dict) -> bool:
+        """Decide if entity should be researched in Layer 1"""
+        labels = entity.get('labels', [])
+
+        # Always research [native] entities
+        if 'native' in labels:
+            return True
+
+        # Research if it's a person central to story
+        if entity['type'] == 'Person' and 'drama' in labels:
+            return True
+
+        return False
+
+    def _should_research_layer2(self, entity: Dict, parent_data: Dict) -> bool:
+        """Decide if entity should be researched in Layer 2"""
+        labels = entity.get('labels', [])
+
+        # Research if it has high narrative value
+        if any(label in labels for label in ['drama', 'irony', 'shocking', 'critical-context']):
+            return True
+
+        # Research if it's a person in conflict/relationship
+        if entity['type'] == 'Person':
+            relationships = entity.get('relationship_type', '')
+            if any(rel in relationships for rel in ['conflict', 'rival', 'boss', 'enemy', 'ally']):
+                return True
+
+        return False
+
+    def _research_entity(
+        self,
+        entity_type: str,
+        entity_name: str,
+        context: Dict,
+        provider: str
+    ) -> Dict:
+        """Research a single entity with specialized prompt"""
+
+        # Build specialized prompt based on entity type
+        if entity_type == "POI":
+            prompt = self._build_poi_research_prompt(entity_name, context)
+        elif entity_type == "Person":
+            prompt = self._build_person_research_prompt(entity_name, context)
+        elif entity_type == "Event":
+            prompt = self._build_event_research_prompt(entity_name, context)
+        elif entity_type == "Concept":
+            prompt = self._build_concept_research_prompt(entity_name, context)
+        else:
+            prompt = self._build_generic_research_prompt(entity_name, context)
 
         # Call AI
         raw_response = self._call_ai(prompt, provider)
+        self.api_calls_made += 1
 
-        # Parse into structured format
-        research_data = self._parse_research_response(raw_response)
+        # Parse response
+        parsed_data = self._parse_research_response(raw_response, entity_type)
 
-        # Validate and enhance
-        research_data = self._validate_and_enhance(research_data)
+        return parsed_data
 
-        return research_data
+    def _extract_entities(self, data: Dict) -> List[Dict]:
+        """Extract entities mentioned in research data"""
+        entities = []
+
+        # Extract people
+        for person in data.get('people', []):
+            entities.append({
+                'type': 'Person',
+                'name': person['name'],
+                'labels': person.get('labels', []),
+                'relationship_type': person.get('relationship_type', '')
+            })
+
+        # Extract events
+        for event in data.get('events', []):
+            entities.append({
+                'type': 'Event',
+                'name': event['name'],
+                'labels': event.get('labels', [])
+            })
+
+        # Extract concepts
+        for concept in data.get('concepts', []):
+            entities.append({
+                'type': 'Concept',
+                'name': concept['name'],
+                'labels': concept.get('labels', [])
+            })
+
+        return entities
+
+    def _build_person_research_prompt(self, person_name: str, context: Dict) -> str:
+        """Build specialized prompt for researching a person"""
+        return f"""
+Research historical figure: {person_name}
+
+Context: Related to {context.get('poi')} in {context.get('city')}
+{f"Relationship: {context.get('relationship')}" if context.get('relationship') else ""}
+
+Extract:
+1. BIOGRAPHY
+   - Full name and titles
+   - Birth/death dates (absolute + relative like "1,700 years ago")
+   - Origin story (where from, social class, background)
+   - Personality traits (3-5 descriptive adjectives/phrases)
+   Label: [native] if central to POI story
+
+2. DRAMATIC LIFE EVENTS
+   For each major event:
+   - Name of event
+   - Date (absolute + relative)
+   - Specific details (exact actions, numbers, distances)
+   - Emotional tone (humiliation, triumph, tragedy, etc.)
+   - What led to it
+   - What resulted from it
+   Labels: [drama], [shocking], [irony]
+
+3. KEY RELATIONSHIPS
+   For each important person they interacted with:
+   - Name
+   - Relationship type (boss, rival, ally, enemy, mentor, etc.)
+   - Nature of interaction (conflict, cooperation, betrayal)
+   - Dramatic incidents between them
+   Labels: [secondary, drama] if important to main story
+
+4. IRONIC ENDING
+   - How did they die or what was their fate?
+   - What unexpected outcome?
+   - Contrast between their intention and reality
+   Labels: [irony], [shocking]
+
+5. MODERN PARALLELS
+   - What modern figure, situation, or story is similar?
+   - Relatable comparisons for audience
+
+Output structured YAML format.
+"""
 
     def save_research(self, research_data: Dict, output_path: Path):
         """Save research data to YAML file"""
@@ -729,21 +1060,48 @@ research:
   # Research data storage
   storage_dir: "poi_research"
 
-  # Tokens allocated to research phase
-  max_tokens: 4096
+  # Recursive research depth control
+  max_depth: 2                     # Layer 0 → Layer 1 → Layer 2
+  max_entities_per_layer: 5        # Don't research more than 5 per layer
+  max_api_calls: 10                # Stop if exceeding budget
+
+  # Layer 1: Always research entities with these labels
+  layer1_triggers:
+    - native
+    - drama
+
+  # Layer 2: Research if entity has these labels
+  layer2_triggers:
+    - drama
+    - irony
+    - shocking
+    - critical-context
+
+  # Layer 2: Research if relationship type matches
+  layer2_relationships:
+    - conflict
+    - rival
+    - boss
+    - enemy
+    - key-ally
+
+  # Tokens allocated to each research call
+  max_tokens_per_call: 4096
 
   # Cache research results
   cache_enabled: true
-  cache_ttl_days: 30  # Re-research after 30 days
+  cache_ttl_days: 30               # Re-research POIs after 30 days
+  cache_entities: true             # Cache entities globally (reuse across POIs)
+  entity_cache_ttl_days: 90        # Entities don't change often
 
   # Quality thresholds
-  min_people: 1        # Require at least 1 person
-  min_events: 2        # Require at least 2 events
-  min_analogies: 1     # Require at least 1 modern analogy
+  min_people: 1                    # Require at least 1 person
+  min_events: 2                    # Require at least 2 events
+  min_analogies: 1                 # Require at least 1 modern analogy
 
-  # Label weights (for filtering)
+  # Label weights (for filtering during generation)
   label_weights:
-    native: 10         # Always include
+    native: 10                     # Always include
     drama: 5
     history: 4
     irony: 4

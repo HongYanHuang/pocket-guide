@@ -92,6 +92,44 @@ content_generation:
     - "DO NOT be academic or formal - Be conversational and personal"
     - "DO NOT include stage directions, sound effects, or meta-commentary"
 
+# Research Settings (Phase 1 MVP Feature)
+research:
+  # Enable recursive research phase before content generation
+  enabled: true
+
+  # Maximum depth of recursive research (0 = POI only, 1 = + native entities, 2 = + dramatic secondaries)
+  max_depth: 2
+
+  # Maximum entities to research per layer (controls API costs)
+  max_entities_per_layer: 5
+
+  # Maximum total API calls for a single POI research (budget control)
+  max_api_calls: 10
+
+  # Labels that trigger Layer 1 research (native entities)
+  layer1_triggers:
+    - native
+    - drama
+
+  # Labels that trigger Layer 2 research (dramatic secondaries)
+  layer2_triggers:
+    - drama
+    - irony
+    - shocking
+    - critical-context
+
+  # Relationship types that trigger Layer 2 research
+  layer2_relationships:
+    - conflict
+    - rival
+    - boss
+    - enemy
+    - key-ally
+
+  # Entity caching settings
+  cache_entities: true
+  entity_cache_ttl_days: 90
+
 # Default settings
 defaults:
   ai_provider: "openai"      # openai, anthropic, or google

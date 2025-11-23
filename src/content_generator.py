@@ -8,12 +8,28 @@ import anthropic
 import google.generativeai as genai
 import re
 import time
+import os
+import yaml
+from pathlib import Path
+
+# Import research agent
+try:
+    from .research_agent import ResearchAgent
+except ImportError:
+    from research_agent import ResearchAgent
 
 
 class ContentGenerator:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.ai_config = config.get('ai_providers', {})
+
+        # Initialize research agent if research is enabled
+        self.research_enabled = config.get('research', {}).get('enabled', True)
+        if self.research_enabled:
+            self.research_agent = ResearchAgent(config)
+        else:
+            self.research_agent = None
 
     def generate(
         self,
@@ -23,7 +39,9 @@ class ContentGenerator:
         description: str = None,
         interests: list = None,
         custom_prompt: str = None,
-        language: str = "English"
+        language: str = "English",
+        skip_research: bool = False,
+        force_research: bool = False
     ) -> Tuple[str, List[str]]:
         """
         Generate tour guide content for a POI
@@ -36,6 +54,8 @@ class ContentGenerator:
             interests: List of interests/aspects to focus on
             custom_prompt: Custom prompt to use instead of default
             language: Target language for content
+            skip_research: Skip research phase even if enabled in config
+            force_research: Force research even if cached data exists
 
         Returns:
             Tuple of (transcript, summary_points)
@@ -47,13 +67,50 @@ class ContentGenerator:
 
         print(f"  [DEBUG] Using provider: {provider}")
 
+        # Research Phase (if enabled and not skipped)
+        research_data = None
+        use_research = self.research_enabled and not skip_research and self.research_agent
+
+        if use_research:
+            print(f"  [STEP 1/2] Research Phase")
+            research_path = self._get_research_path(city, poi_name)
+
+            # Check if research already exists
+            if research_path.exists() and not force_research:
+                print(f"  [DEBUG] Loading existing research from {research_path}")
+                research_data = self._load_research(research_path)
+            else:
+                if force_research:
+                    print(f"  [DEBUG] Force research enabled, researching...")
+                else:
+                    print(f"  [DEBUG] No existing research found, researching...")
+
+                # Perform recursive research
+                research_data = self.research_agent.research_poi_recursive(
+                    poi_name=poi_name,
+                    city=city or "Unknown",
+                    user_description=description or "",
+                    provider=provider
+                )
+
+                # Save research for future use
+                self._save_research(research_path, research_data)
+                print(f"  [DEBUG] Research saved to {research_path}")
+
         # Build the prompt
         if custom_prompt:
             prompt = custom_prompt
             print(f"  [DEBUG] Using custom prompt ({len(prompt)} chars)")
         else:
-            print(f"  [DEBUG] Building prompt for {poi_name}...")
-            prompt = self._build_prompt(poi_name, city, description, interests, language)
+            if use_research:
+                print(f"  [STEP 2/2] Storytelling Phase")
+                print(f"  [DEBUG] Building prompt with research data...")
+                prompt = self._build_prompt_with_research(
+                    poi_name, city, research_data, interests, language
+                )
+            else:
+                print(f"  [DEBUG] Building prompt for {poi_name}...")
+                prompt = self._build_prompt(poi_name, city, description, interests, language)
             print(f"  [DEBUG] Prompt built ({len(prompt)} chars)")
 
         # Generate content based on provider
@@ -127,6 +184,213 @@ class ContentGenerator:
             f"- Point 1",
             f"- Point 2",
             f"- Point 3"
+        ])
+
+        return "\n".join(prompt_parts)
+
+    def _get_research_path(self, city: str, poi_name: str) -> Path:
+        """Get path to research YAML file"""
+        # Create poi_research directory if it doesn't exist
+        research_dir = Path("poi_research")
+        if city:
+            research_dir = research_dir / city
+        research_dir.mkdir(parents=True, exist_ok=True)
+
+        # Sanitize POI name for filename
+        safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in poi_name)
+        safe_name = safe_name.replace(' ', '_').lower()
+
+        return research_dir / f"{safe_name}.yaml"
+
+    def _load_research(self, research_path: Path) -> Dict:
+        """Load research from YAML file"""
+        with open(research_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+
+    def _save_research(self, research_path: Path, research_data: Dict):
+        """Save research to YAML file"""
+        research_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(research_path, 'w', encoding='utf-8') as f:
+            yaml.safe_dump(research_data, f, allow_unicode=True, sort_keys=False)
+
+    def _filter_research(self, research_data: Dict, interests: List[str] = None) -> Dict:
+        """
+        Filter research data by user interests
+
+        Args:
+            research_data: Full research data from research agent
+            interests: List of interest labels (e.g., ['drama', 'history'])
+
+        Returns:
+            Filtered research data containing only relevant nodes
+        """
+        if not interests:
+            return research_data
+
+        # Convert interests to lowercase for comparison
+        interests_set = set(i.lower() for i in interests)
+
+        # Always include nodes with 'native' label
+        interests_set.add('native')
+
+        filtered = {
+            'poi': research_data.get('poi', {}),
+            'entities': []
+        }
+
+        # Filter entities by label
+        for entity in research_data.get('entities', []):
+            entity_labels = set(l.lower() for l in entity.get('labels', []))
+
+            # Include if any label matches user interests or has 'native'
+            if entity_labels & interests_set:
+                filtered['entities'].append(entity)
+
+        return filtered
+
+    def _serialize_research(self, research_data: Dict) -> str:
+        """
+        Convert research data to readable text for AI prompt
+
+        Args:
+            research_data: Research data dictionary
+
+        Returns:
+            Human-readable text summary of research
+        """
+        lines = []
+
+        # POI section
+        poi = research_data.get('poi', {})
+        if poi:
+            lines.append("=== POI INFORMATION ===")
+            lines.append(f"Name: {poi.get('name', 'Unknown')}")
+            lines.append(f"Type: {poi.get('type', 'Unknown')}")
+            if poi.get('summary'):
+                lines.append(f"\n{poi['summary']}")
+            lines.append("")
+
+        # Entities section
+        entities = research_data.get('entities', [])
+        if entities:
+            lines.append("=== KNOWLEDGE NODES ===")
+            lines.append("(Use these facts to craft your narrative)\n")
+
+            # Group entities by type
+            by_type = {}
+            for entity in entities:
+                entity_type = entity.get('type', 'Other')
+                if entity_type not in by_type:
+                    by_type[entity_type] = []
+                by_type[entity_type].append(entity)
+
+            # Output each type group
+            for entity_type, entity_list in by_type.items():
+                lines.append(f"--- {entity_type.upper()}S ---")
+
+                for entity in entity_list:
+                    name = entity.get('name', 'Unknown')
+                    labels = entity.get('labels', [])
+                    content = entity.get('content', '')
+
+                    labels_str = ', '.join(f"[{l}]" for l in labels)
+                    lines.append(f"\n{name} {labels_str}")
+                    if content:
+                        lines.append(content)
+
+                lines.append("")
+
+        return "\n".join(lines)
+
+    def _build_prompt_with_research(
+        self,
+        poi_name: str,
+        city: str = None,
+        research_data: Dict = None,
+        interests: list = None,
+        language: str = "English"
+    ) -> str:
+        """
+        Build storytelling prompt using research data
+
+        Args:
+            poi_name: Name of POI
+            city: City name
+            research_data: Research data from research agent
+            interests: User interests for filtering
+            language: Target language
+
+        Returns:
+            Complete prompt for storytelling phase
+        """
+        # Get style guidelines and system prompt from config
+        content_config = self.config.get('content_generation', {})
+        system_prompt = content_config.get('system_prompt',
+            "You are a master storyteller tour guide who makes history come alive.")
+        style_guidelines = content_config.get('style_guidelines', [])
+
+        # Filter research by interests
+        filtered_research = self._filter_research(research_data, interests)
+
+        # Serialize research into readable text
+        research_context = self._serialize_research(filtered_research)
+
+        # Build prompt
+        prompt_parts = [
+            system_prompt.strip(),
+            "",
+            "=" * 60,
+            "TASK: Create Engaging Tour Guide Script",
+            "=" * 60,
+            "",
+            f"POI: {poi_name}",
+        ]
+
+        if city:
+            prompt_parts.append(f"City: {city}")
+
+        if interests:
+            interests_str = ", ".join(interests)
+            prompt_parts.append(f"Focus Areas: {interests_str}")
+
+        prompt_parts.extend([
+            f"Language: {language}",
+            "",
+            "=" * 60,
+            "RESEARCH FINDINGS",
+            "=" * 60,
+            "",
+            research_context,
+            "",
+            "=" * 60,
+            "REQUIREMENTS",
+            "=" * 60,
+            ""
+        ])
+
+        # Add style guidelines
+        if style_guidelines:
+            for guideline in style_guidelines:
+                prompt_parts.append(f"- {guideline}")
+            prompt_parts.append("")
+
+        # Request both transcript and summary points
+        prompt_parts.extend([
+            "=" * 60,
+            "OUTPUT FORMAT",
+            "=" * 60,
+            "",
+            "Your response MUST include TWO sections:",
+            "",
+            "TRANSCRIPT:",
+            "[Your engaging narration here - use the research findings above]",
+            "",
+            "SUMMARY POINTS:",
+            "- Key learning point 1",
+            "- Key learning point 2",
+            "- Key learning point 3",
+            "",
+            "Now create the tour guide script using the research findings above."
         ])
 
         return "\n".join(prompt_parts)

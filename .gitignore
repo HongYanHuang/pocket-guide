@@ -44,6 +44,9 @@ config.storyteller.yaml
 # Content directory (user-generated tour content)
 content/
 
+# Research data (generated POI research)
+poi_research/
+
 # Test outputs
 test-output/
 *.log

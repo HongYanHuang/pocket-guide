@@ -90,8 +90,10 @@ def pois(ctx, city):
 @click.option('--interests', help='Comma-separated interests (e.g., history,architecture)')
 @click.option('--custom-prompt', help='Custom prompt for content generation')
 @click.option('--language', default='English', help='Content language')
+@click.option('--skip-research', is_flag=True, help='Skip research phase (use description only)')
+@click.option('--force-research', is_flag=True, help='Force new research even if cached')
 @click.pass_context
-def generate(ctx, city, poi, provider, description, interests, custom_prompt, language):
+def generate(ctx, city, poi, provider, description, interests, custom_prompt, language, skip_research, force_research):
     """Generate content for a POI"""
     config = ctx.obj['config']
     content_dir = ctx.obj['content_dir']
@@ -144,7 +146,9 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
             description=description or None,
             interests=[i.strip() for i in interests_list] if interests_list else None,
             custom_prompt=custom_prompt,
-            language=language
+            language=language,
+            skip_research=skip_research,
+            force_research=force_research
         )
 
         console.print(f"[dim]✓ Content received from API[/dim]")

@@ -333,7 +333,10 @@ class ResearchAgent:
             Raw AI response text
         """
         # Import providers dynamically to avoid circular imports
-        from src.content_generator import ContentGenerator
+        try:
+            from .content_generator import ContentGenerator
+        except ImportError:
+            from content_generator import ContentGenerator
 
         # Create temporary generator to use existing AI calling logic
         generator = ContentGenerator(self.config)

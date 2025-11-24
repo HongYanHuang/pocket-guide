@@ -430,6 +430,13 @@ basic_info:
   description: # 1-2 sentence overview
   labels: [native, poi]
 
+core_features:  # 2-5 essential physical facts visitors need (ALWAYS included, never filtered)
+  - # What visitor can SEE/TOUCH/HEAR/SMELL/EXPERIENCE right now at this POI
+  - # How to identify key visual elements (e.g., "Roman figures are larger, wear armor")
+  - # Scale, size, materials, current condition (e.g., "10 meters tall, brick exposed")
+  - # Spatial orientation (e.g., "Two pillars, north faces Rotunda")
+  - # Current state details (e.g., "2 of 8 original pillars remain, marble lost")
+
 people:
   - name: # Person's name
     role: # Their role (e.g., "Roman Emperor")
@@ -464,6 +471,16 @@ modern_analogies:
 ```
 
 IMPORTANT:
+
+For core_features (CRITICAL - these ground visitors in physical reality):
+- List 2-5 essential physical facts about what visitors experience at the POI RIGHT NOW
+- Include: What they see/hear/touch, how to identify key elements, scale/size, current condition
+- Example: "Two massive brick pillars, 10m tall; relief carvings show Galerius on horseback;
+  Roman figures larger with armor, Persian figures smaller with pointed hats"
+- These are grounding facts, NOT historical stories
+- Keep each feature concise (1-2 sentences max)
+
+For people/events/locations/concepts (historical context):
 - Mark core elements with [native] label
 - Find DRAMATIC elements (failures, humiliations, conflicts) → [drama]
 - Find IRONIES and twists → [irony]

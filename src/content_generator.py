@@ -235,6 +235,7 @@ class ContentGenerator:
 
         filtered = {
             'poi': research_data.get('poi', {}),
+            'core_features': research_data.get('core_features', []),  # Always included, never filtered
             'entities': {}
         }
 
@@ -278,9 +279,22 @@ class ContentGenerator:
         if poi:
             lines.append("=== POI INFORMATION ===")
             lines.append(f"Name: {poi.get('name', 'Unknown')}")
-            lines.append(f"Type: {poi.get('type', 'Unknown')}")
-            if poi.get('summary'):
-                lines.append(f"\n{poi['summary']}")
+            if poi.get('basic_info'):
+                basic_info = poi['basic_info']
+                if basic_info.get('period'):
+                    lines.append(f"Period: {basic_info['period']}")
+                if basic_info.get('date_built'):
+                    lines.append(f"Built: {basic_info['date_built']}")
+            lines.append("")
+
+        # Core Features section (ALWAYS included - grounds visitor in physical reality)
+        core_features = research_data.get('core_features', [])
+        if core_features:
+            lines.append("=== CORE FEATURES (What visitor experiences) ===")
+            lines.append("These are essential physical facts that ground your story in reality.")
+            lines.append("Weave them naturally into your narrative:\n")
+            for i, feature in enumerate(core_features, 1):
+                lines.append(f"{i}. {feature}")
             lines.append("")
 
         # Entities section
@@ -355,6 +369,11 @@ class ContentGenerator:
         # Build prompt
         prompt_parts = [
             system_prompt.strip(),
+            "",
+            "NOTE: You will receive CORE FEATURES - essential physical facts about what visitors",
+            "can experience at this POI right now. Weave these naturally into your narrative to",
+            "keep listeners grounded in reality. Don't list them mechanically - integrate them",
+            "when they enhance the story.",
             "",
             "=" * 60,
             "TASK: Create Engaging Tour Guide Script",

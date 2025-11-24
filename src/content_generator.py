@@ -62,18 +62,21 @@ class ContentGenerator:
             - transcript: The narration text
             - summary_points: List of key learning points
         """
+        print("  [DEBUG] Entering generate() method...", flush=True)
+
         if provider is None:
             provider = self.config.get('defaults', {}).get('ai_provider', 'openai')
 
-        print(f"  [DEBUG] Using provider: {provider}")
+        print(f"  [DEBUG] Using provider: {provider}", flush=True)
 
         # Research Phase (if enabled and not skipped)
         research_data = None
         use_research = self.research_enabled and not skip_research and self.research_agent
 
         if use_research:
-            print(f"  [STEP 1/2] Research Phase")
+            print(f"  [STEP 1/2] Research Phase", flush=True)
             research_path = self._get_research_path(city, poi_name)
+            print(f"  [DEBUG] Research path: {research_path}", flush=True)
 
             # Check if research already exists
             if research_path.exists() and not force_research:

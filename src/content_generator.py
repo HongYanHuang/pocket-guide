@@ -235,16 +235,29 @@ class ContentGenerator:
 
         filtered = {
             'poi': research_data.get('poi', {}),
-            'entities': []
+            'entities': {}
         }
 
         # Filter entities by label
-        for entity in research_data.get('entities', []):
-            entity_labels = set(l.lower() for l in entity.get('labels', []))
+        # entities is a dict with keys like "Person:Name" and values as entity data
+        for entity_id, entity_data in research_data.get('entities', {}).items():
+            # Get labels from entity data (may be nested in different structures)
+            entity_labels = set()
+
+            # Try to find labels in the entity data
+            if isinstance(entity_data, dict):
+                # Check top-level labels
+                if 'labels' in entity_data:
+                    entity_labels.update(l.lower() for l in entity_data.get('labels', []))
+
+                # Check nested structures (biography, events, etc.)
+                for key, value in entity_data.items():
+                    if isinstance(value, dict) and 'labels' in value:
+                        entity_labels.update(l.lower() for l in value.get('labels', []))
 
             # Include if any label matches user interests or has 'native'
             if entity_labels & interests_set:
-                filtered['entities'].append(entity)
+                filtered['entities'][entity_id] = entity_data
 
         return filtered
 
@@ -271,32 +284,36 @@ class ContentGenerator:
             lines.append("")
 
         # Entities section
-        entities = research_data.get('entities', [])
+        entities = research_data.get('entities', {})
         if entities:
             lines.append("=== KNOWLEDGE NODES ===")
             lines.append("(Use these facts to craft your narrative)\n")
 
             # Group entities by type
             by_type = {}
-            for entity in entities:
-                entity_type = entity.get('type', 'Other')
+            for entity_id, entity_data in entities.items():
+                # Extract type from entity_id (format: "Type:Name")
+                if ':' in entity_id:
+                    entity_type = entity_id.split(':', 1)[0]
+                else:
+                    entity_type = entity_data.get('type', 'Other')
+
                 if entity_type not in by_type:
                     by_type[entity_type] = []
-                by_type[entity_type].append(entity)
+                by_type[entity_type].append((entity_id, entity_data))
 
             # Output each type group
             for entity_type, entity_list in by_type.items():
                 lines.append(f"--- {entity_type.upper()}S ---")
 
-                for entity in entity_list:
-                    name = entity.get('name', 'Unknown')
-                    labels = entity.get('labels', [])
-                    content = entity.get('content', '')
+                for entity_id, entity_data in entity_list:
+                    name = entity_data.get('name', entity_id)
 
-                    labels_str = ', '.join(f"[{l}]" for l in labels)
-                    lines.append(f"\n{name} {labels_str}")
-                    if content:
-                        lines.append(content)
+                    # Serialize the full entity data as YAML for the AI
+                    import yaml
+                    entity_yaml = yaml.safe_dump(entity_data, default_flow_style=False, allow_unicode=True)
+                    lines.append(f"\n{name}:")
+                    lines.append(entity_yaml)
 
                 lines.append("")
 

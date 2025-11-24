@@ -366,16 +366,33 @@ class ResearchAgent:
         Returns:
             Structured dictionary
         """
-        # For MVP, we'll do basic parsing
-        # In production, this should use more robust YAML/JSON parsing
+        # Strip markdown code fences if present
+        content = raw_response.strip()
 
-        # Try to parse as YAML first
+        # Remove ```yaml ... ``` or ```yml ... ``` fences
+        if content.startswith('```'):
+            lines = content.split('\n')
+            # Remove first line (```yaml or ```yml)
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            # Remove last line (```)
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            content = '\n'.join(lines)
+
+        # Try to parse as YAML
         try:
-            data = yaml.safe_load(raw_response)
+            data = yaml.safe_load(content)
             if isinstance(data, dict):
+                # Add metadata
+                data['_parsed'] = True
+                data['_entity_type'] = entity_type
                 return data
-        except:
-            pass
+        except yaml.YAMLError as e:
+            print(f"    [WARNING] YAML parse error: {e}")
+            print(f"    [DEBUG] First 200 chars: {content[:200]}")
+        except Exception as e:
+            print(f"    [WARNING] Unexpected parse error: {e}")
 
         # Fallback: Return raw response wrapped in dict
         return {

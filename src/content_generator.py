@@ -62,12 +62,8 @@ class ContentGenerator:
             - transcript: The narration text
             - summary_points: List of key learning points
         """
-        print("  [DEBUG] Entering generate() method...", flush=True)
-
         if provider is None:
             provider = self.config.get('defaults', {}).get('ai_provider', 'openai')
-
-        print(f"  [DEBUG] Using provider: {provider}", flush=True)
 
         # Research Phase (if enabled and not skipped)
         research_data = None
@@ -76,18 +72,11 @@ class ContentGenerator:
         if use_research:
             print(f"  [STEP 1/2] Research Phase", flush=True)
             research_path = self._get_research_path(city, poi_name)
-            print(f"  [DEBUG] Research path: {research_path}", flush=True)
 
             # Check if research already exists
             if research_path.exists() and not force_research:
-                print(f"  [DEBUG] Loading existing research from {research_path}")
                 research_data = self._load_research(research_path)
             else:
-                if force_research:
-                    print(f"  [DEBUG] Force research enabled, researching...")
-                else:
-                    print(f"  [DEBUG] No existing research found, researching...")
-
                 # Perform recursive research
                 research_data = self.research_agent.research_poi_recursive(
                     poi_name=poi_name,
@@ -98,26 +87,20 @@ class ContentGenerator:
 
                 # Save research for future use
                 self._save_research(research_path, research_data)
-                print(f"  [DEBUG] Research saved to {research_path}")
 
         # Build the prompt
         if custom_prompt:
             prompt = custom_prompt
-            print(f"  [DEBUG] Using custom prompt ({len(prompt)} chars)")
         else:
             if use_research:
-                print(f"  [STEP 2/2] Storytelling Phase")
-                print(f"  [DEBUG] Building prompt with research data...")
+                print(f"  [STEP 2/2] Storytelling Phase", flush=True)
                 prompt = self._build_prompt_with_research(
                     poi_name, city, research_data, interests, language
                 )
             else:
-                print(f"  [DEBUG] Building prompt for {poi_name}...")
                 prompt = self._build_prompt(poi_name, city, description, interests, language)
-            print(f"  [DEBUG] Prompt built ({len(prompt)} chars)")
 
         # Generate content based on provider
-        print(f"  [DEBUG] Calling {provider} API...")
         if provider == 'openai':
             raw_content = self._generate_openai(prompt)
         elif provider == 'anthropic':
@@ -127,10 +110,8 @@ class ContentGenerator:
         else:
             raise ValueError(f"Unsupported AI provider: {provider}")
 
-        print(f"  [DEBUG] Parsing response...")
         # Parse the response to extract transcript and summary points
         result = self._parse_response(raw_content)
-        print(f"  [DEBUG] Parsing complete")
         return result
 
     def _build_prompt(
@@ -529,13 +510,9 @@ class ContentGenerator:
 
     def _generate_anthropic(self, prompt: str) -> str:
         """Generate content using Anthropic Claude with retry on overload"""
-        print(f"  [DEBUG] Configuring Anthropic...")
         config = self.ai_config.get('anthropic', {})
         api_key = config.get('api_key')
         model = config.get('model', 'claude-3-5-sonnet-20241022')
-
-        print(f"  [DEBUG] Model: {model}")
-        print(f"  [DEBUG] API key present: {bool(api_key)}")
 
         if not api_key:
             raise ValueError("Anthropic API key not configured")

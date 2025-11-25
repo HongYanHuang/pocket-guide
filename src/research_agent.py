@@ -75,16 +75,16 @@ class ResearchAgent:
         Returns:
             Complete knowledge graph with all layers
         """
-
-        print(f"\n  [RESEARCH] Starting recursive research for {poi_name}")
-        print(f"  [CONFIG] Max depth: {self.max_depth}, Max entities/layer: {self.max_entities_per_layer}")
+        print(f"\n  [RESEARCH] Starting recursive research for {poi_name}", flush=True)
+        print(f"  [CONFIG] Max depth: {self.max_depth}, Max entities/layer: {self.max_entities_per_layer}", flush=True)
 
         # Reset tracking for this research session
         self.researched_entities = set()
         self.api_calls_made = 0
 
         # Layer 0: Research the POI itself
-        print(f"\n  [LAYER 0] Researching POI: {poi_name}")
+        print(f"\n  [LAYER 0] Researching POI: {poi_name}", flush=True)
+
         poi_data = self._research_entity(
             entity_type="POI",
             entity_name=poi_name,
@@ -250,7 +250,6 @@ class ResearchAgent:
         Returns:
             Parsed research data dictionary
         """
-
         # Build specialized prompt based on entity type
         if entity_type == "POI":
             prompt = self._build_poi_research_prompt(entity_name, context)
@@ -408,7 +407,7 @@ class ResearchAgent:
         city = context.get('city', '')
         user_desc = context.get('description', '')
 
-        return f"""
+        prompt = f"""
 You are a historical researcher extracting information for dramatic tour guide narratives.
 
 POI: {poi_name}
@@ -490,6 +489,7 @@ For people/events/locations/concepts (historical context):
 
 Output ONLY valid YAML, no markdown fences or extra text.
 """
+        return prompt
 
     def _build_person_research_prompt(self, person_name: str, context: Dict) -> str:
         """Build research prompt for Person entity"""

@@ -82,6 +82,53 @@ The CLI will prompt you for:
 
 **Pro tip:** More detailed descriptions and interests result in richer, longer transcripts (up to 5 minutes).
 
+### Research Mode (New!)
+
+The system now includes recursive research that automatically discovers dramatic stories and physical details:
+
+```bash
+# First generation - performs research (takes ~2 minutes)
+./pocket-guide generate \
+  --city "Thessaloniki" \
+  --poi "Arch of Galerius" \
+  --provider anthropic \
+  --interests "drama"
+
+# Second generation - uses cached research (fast)
+./pocket-guide generate \
+  --city "Thessaloniki" \
+  --poi "Arch of Galerius" \
+  --provider anthropic \
+  --interests "architecture"
+
+# Force new research even if cached
+./pocket-guide generate \
+  --city "Thessaloniki" \
+  --poi "Arch of Galerius" \
+  --provider anthropic \
+  --interests "drama" \
+  --force-research
+
+# Skip research entirely (fastest, uses description only)
+./pocket-guide generate \
+  --city "Paris" \
+  --poi "Eiffel Tower" \
+  --provider google \
+  --description "Iron tower built in 1889" \
+  --skip-research
+```
+
+**How Research Works:**
+- **First run**: Performs 3-layer recursive research (~10 API calls, ~2 minutes)
+- **Cached**: Research saved to `poi_research/{city}/{poi}.yaml`
+- **Subsequent runs**: Reuses cached research (instant)
+- **Core Features**: Always extracts 2-5 physical facts about what visitors see/experience
+- **Filtering**: Historical details filtered by `--interests`, but core features always included
+
+**Research Flags:**
+- `--force-research` - Force new research even if cached
+- `--skip-research` - Skip research entirely, use description only (fastest)
+
 ## Step 4: Generate Audio (TTS)
 
 Convert your transcript to MP3:
@@ -317,6 +364,21 @@ Use the no-filter wrapper to see debug output:
 9. **Content length** - Now supports 2-5 minute transcripts (300-750 words)
 
 10. **Batch operations** - Script multiple POIs to save time (see Batch Processing section)
+
+11. **Use research mode for richer content** - First run takes ~2 minutes but discovers dramatic stories automatically:
+   ```bash
+   ./pocket-guide generate --city "Rome" --poi "Colosseum" --provider anthropic --interests "drama"
+   ```
+
+12. **Skip research for speed** - If you just need quick content generation without research:
+   ```bash
+   ./pocket-guide generate --city "Paris" --poi "Louvre" --provider google --description "Famous museum" --skip-research
+   ```
+
+13. **Force fresh research** - When you want updated research data:
+   ```bash
+   ./pocket-guide generate --city "Rome" --poi "Colosseum" --provider anthropic --force-research
+   ```
 
 ## Current Provider Status
 

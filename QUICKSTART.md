@@ -129,6 +129,53 @@ The system now includes recursive research that automatically discovers dramatic
 - `--force-research` - Force new research even if cached
 - `--skip-research` - Skip research entirely, use description only (fastest)
 
+### Version Tracking (New!)
+
+Every transcript generation is now automatically versioned with a complete audit trail:
+
+```bash
+# First generation - creates v1
+./pocket-guide generate \
+  --city "Rome" \
+  --poi "Colosseum" \
+  --provider anthropic \
+  --interests "drama"
+# Output: "Content generated successfully! (Version v1_2025-11-25)"
+
+# Regenerate - creates v2, preserves v1
+./pocket-guide generate \
+  --city "Rome" \
+  --poi "Colosseum" \
+  --provider anthropic \
+  --interests "architecture"
+# Output: "Content generated successfully! (Version v2_2025-11-25)"
+```
+
+**Version Format:** `v{N}_{YYYY-MM-DD}` (e.g., `v1_2025-11-25`)
+
+**What's Tracked:**
+- All version files preserved (v1, v2, v3, etc.)
+- Generation parameters (provider, interests, description)
+- Research source (path, depth, entity counts)
+- Nodes used (which entities appeared in transcript)
+- Filtering applied (interests, entity counts before/after)
+- Output stats (length, word count)
+
+**Files Created Per Version:**
+- `transcript_v1_2025-11-25.txt` - Versioned transcript
+- `transcript_v1_2025-11-25.ssml` - Versioned SSML
+- `generation_record_v1_2025-11-25.json` - Complete audit trail
+- `transcript.txt` - Always points to latest version (backward compatible)
+
+**Check Version History:**
+```bash
+# View metadata with version history
+./pocket-guide info --city "rome" --poi "colosseum"
+
+# Or directly inspect
+cat content/rome/colosseum/metadata.json
+```
+
 ## Step 4: Generate Audio (TTS)
 
 Convert your transcript to MP3:
@@ -164,10 +211,15 @@ ls -la content/paris/eiffel-tower/
 ```
 
 You should see:
-- `metadata.json` - Summary points and metadata
-- `transcript.txt` - Plain text narration
-- `transcript.ssml` - SSML formatted version (for TTS)
+- `metadata.json` - Summary points, version history, and metadata
+- `transcript.txt` - Latest transcript (backward compatible)
+- `transcript.ssml` - Latest SSML (backward compatible)
+- `transcript_v1_2025-11-25.txt` - Version 1 transcript
+- `transcript_v1_2025-11-25.ssml` - Version 1 SSML
+- `generation_record_v1_2025-11-25.json` - Version 1 audit trail
 - `audio.mp3` - Generated audio file (after running `tts` command)
+
+**Note:** Each regeneration creates new versioned files (v2, v3, etc.) while preserving all previous versions.
 
 ## Common Workflows
 
@@ -378,6 +430,15 @@ Use the no-filter wrapper to see debug output:
 13. **Force fresh research** - When you want updated research data:
    ```bash
    ./pocket-guide generate --city "Rome" --poi "Colosseum" --provider anthropic --force-research
+   ```
+
+14. **Version tracking is automatic** - Every generation is versioned with complete audit trail:
+   ```bash
+   # Check version history
+   ./pocket-guide info --city "rome" --poi "colosseum"
+
+   # View generation record for specific version
+   cat content/rome/colosseum/generation_record_v1_2025-11-25.json
    ```
 
 ## Current Provider Status

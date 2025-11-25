@@ -10,6 +10,8 @@ AI-powered walking tour content generator. Create customized tour guide transcri
 - 🌍 **Multilingual Support**: Generate content and audio in multiple languages
 - 💾 **Multiple Formats**: Saves plain text, SSML, and MP3 audio files
 - 🎨 **Beautiful CLI**: Rich terminal interface with colors and interactive prompts
+- 🔖 **Version Tracking**: Automatic versioning with complete audit trail for all transcripts
+- 🔍 **Research Mode**: Recursive research agent that discovers dramatic stories and physical details
 
 ## Installation
 
@@ -131,19 +133,28 @@ After generating content, your files will be organized like this:
 content/
 ├── paris/
 │   ├── eiffel-tower/
-│   │   ├── metadata.json      # POI metadata and generation settings
-│   │   ├── transcript.txt     # Plain text transcript
-│   │   ├── transcript.ssml    # SSML formatted for TTS
-│   │   └── audio.mp3          # Generated audio
+│   │   ├── metadata.json                      # POI metadata, version history
+│   │   ├── transcript.txt                     # Latest transcript (backward compatible)
+│   │   ├── transcript.ssml                    # Latest SSML (backward compatible)
+│   │   ├── transcript_v1_2025-11-25.txt       # Version 1 transcript
+│   │   ├── transcript_v1_2025-11-25.ssml      # Version 1 SSML
+│   │   ├── transcript_v2_2025-11-26.txt       # Version 2 transcript
+│   │   ├── transcript_v2_2025-11-26.ssml      # Version 2 SSML
+│   │   ├── generation_record_v1_2025-11-25.json  # Version 1 audit trail
+│   │   ├── generation_record_v2_2025-11-26.json  # Version 2 audit trail
+│   │   └── audio.mp3                          # Generated audio
 │   └── louvre/
-│       ├── metadata.json
-│       ├── transcript.txt
-│       ├── transcript.ssml
-│       └── audio.mp3
+│       └── ...
 └── tokyo/
     └── senso-ji/
         └── ...
 ```
+
+**Version Tracking:**
+- Each generation creates a new version with format `v{N}_{YYYY-MM-DD}`
+- All version files are preserved
+- `transcript.txt` always points to the latest version for backward compatibility
+- Generation records track all parameters, research sources, and node usage
 
 ## Examples
 

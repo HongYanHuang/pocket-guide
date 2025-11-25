@@ -42,7 +42,7 @@ class ContentGenerator:
         language: str = "English",
         skip_research: bool = False,
         force_research: bool = False
-    ) -> Tuple[str, List[str]]:
+    ) -> Tuple[str, List[str], Dict[str, Any]]:
         """
         Generate tour guide content for a POI
 
@@ -58,15 +58,18 @@ class ContentGenerator:
             force_research: Force research even if cached data exists
 
         Returns:
-            Tuple of (transcript, summary_points)
+            Tuple of (transcript, summary_points, generation_metadata)
             - transcript: The narration text
             - summary_points: List of key learning points
+            - generation_metadata: Dict with research_data, filtering info, etc.
         """
         if provider is None:
             provider = self.config.get('defaults', {}).get('ai_provider', 'openai')
 
         # Research Phase (if enabled and not skipped)
         research_data = None
+        filtered_research = None
+        research_path = None
         use_research = self.research_enabled and not skip_research and self.research_agent
 
         if use_research:
@@ -94,6 +97,8 @@ class ContentGenerator:
         else:
             if use_research:
                 print(f"  [STEP 2/2] Storytelling Phase", flush=True)
+                # Filter research before building prompt
+                filtered_research = self._filter_research(research_data, interests)
                 prompt = self._build_prompt_with_research(
                     poi_name, city, research_data, interests, language
                 )
@@ -112,7 +117,17 @@ class ContentGenerator:
 
         # Parse the response to extract transcript and summary points
         result = self._parse_response(raw_content)
-        return result
+
+        # Build generation metadata for audit trail
+        generation_metadata = {
+            'research_data': research_data if use_research else None,
+            'research_path': str(research_path) if research_path else None,
+            'filtered_research': filtered_research if use_research else None,
+            'entities_before_filter': len(research_data.get('entities', {})) if research_data else 0,
+            'entities_after_filter': len(filtered_research.get('entities', {})) if filtered_research else 0
+        }
+
+        return (result[0], result[1], generation_metadata)
 
     def _build_prompt(
         self,

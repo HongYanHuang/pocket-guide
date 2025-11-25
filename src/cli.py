@@ -10,10 +10,13 @@ from rich.panel import Panel
 from rich import print as rprint
 from pathlib import Path
 import sys
+from datetime import datetime
 
 from utils import (
     load_config, ensure_poi_directory, save_metadata, save_transcript,
-    list_cities, list_pois, text_to_ssml, load_transcript, get_poi_path
+    list_cities, list_pois, text_to_ssml, load_transcript, get_poi_path,
+    load_metadata, get_next_version, save_versioned_transcript,
+    save_generation_record, extract_used_nodes
 )
 from content_generator import ContentGenerator
 from tts_generator import TTSGenerator
@@ -104,6 +107,9 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
         poi_path = ensure_poi_directory(content_dir, city, poi)
         console.print(f"[dim]✓ Directory created: {poi_path}[/dim]")
 
+        # Load existing metadata for version tracking
+        existing_metadata = load_metadata(poi_path)
+
         # Parse interests
         interests_list = interests.split(',') if interests else None
 
@@ -139,7 +145,7 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
         console.print(f"[dim]Step 3: Calling {provider} API to generate content...[/dim]")
         console.print(f"[dim]   (This usually takes 10-30 seconds)[/dim]")
 
-        transcript, summary_points = generator.generate(
+        transcript, summary_points, generation_metadata = generator.generate(
             poi_name=poi,
             provider=provider,
             city=city,
@@ -153,8 +159,80 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
 
         console.print(f"[dim]✓ Content received from API[/dim]")
 
-        console.print(f"[dim]Step 4: Saving content to files...[/dim]")
-        # Save metadata with summary points
+        console.print(f"[dim]Step 4: Calculating version and saving files...[/dim]")
+
+        # Calculate version number
+        version_num, version_string = get_next_version(existing_metadata)
+
+        # Extract used nodes from transcript
+        used_nodes = {'poi': [], 'core_features': [], 'entities': []}
+        if generation_metadata['research_data']:
+            used_nodes = extract_used_nodes(
+                transcript,
+                generation_metadata['research_data']
+            )
+
+        # Build complete generation record
+        generation_record = {
+            'version': version_num,
+            'version_string': version_string,
+            'generated_at': datetime.utcnow().isoformat() + 'Z',
+            'generation_params': {
+                'poi_name': poi,
+                'city': city,
+                'provider': provider,
+                'language': language,
+                'description': description,
+                'interests': interests_list,
+                'custom_prompt': custom_prompt,
+                'skip_research': skip_research,
+                'force_research': force_research
+            },
+            'research_source': {
+                'path': generation_metadata.get('research_path'),
+                'research_depth': generation_metadata['research_data'].get('research_depth', 0) if generation_metadata['research_data'] else 0,
+                'total_entities': len(generation_metadata['research_data'].get('entities', {})) if generation_metadata['research_data'] else 0,
+                'api_calls_used': generation_metadata['research_data'].get('api_calls', 0) if generation_metadata['research_data'] else 0
+            } if generation_metadata['research_data'] else None,
+            'nodes_used': used_nodes,
+            'filtering_applied': {
+                'interests': interests_list,
+                'entities_before_filter': generation_metadata.get('entities_before_filter', 0),
+                'entities_after_filter': generation_metadata.get('entities_after_filter', 0)
+            },
+            'output': {
+                'transcript_length': len(transcript),
+                'word_count': len(transcript.split()),
+                'summary_points_count': len(summary_points)
+            },
+            'system_info': {
+                'config_version': '1.0',
+                'content_generator_version': '1.0',
+                'research_agent_version': '1.0'
+            }
+        }
+
+        # Save generation record
+        save_generation_record(poi_path, version_string, generation_record)
+
+        # Save versioned transcripts
+        save_versioned_transcript(poi_path, transcript, version_string, format='txt')
+
+        # Convert to SSML and save
+        ssml_content = text_to_ssml(transcript)
+        save_versioned_transcript(poi_path, ssml_content, version_string, format='ssml')
+
+        # Build version history entry
+        version_entry = {
+            'version': version_num,
+            'version_string': version_string,
+            'generated_at': generation_record['generated_at'],
+            'provider': provider,
+            'language': language,
+            'generation_record': f"generation_record_{version_string}.json"
+        }
+
+        # Save metadata with version history
         metadata = {
             'city': city,
             'poi': poi,
@@ -163,20 +241,15 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
             'description': description,
             'interests': interests_list,
             'summary_points': summary_points,
+            'current_version': version_num,
+            'version_history': existing_metadata.get('version_history', []) + [version_entry]
         }
         save_metadata(poi_path, metadata)
-
-        # Save plain text transcript
-        save_transcript(poi_path, transcript, format='txt')
-
-        # Convert to SSML and save
-        ssml_content = text_to_ssml(transcript)
-        save_transcript(poi_path, ssml_content, format='ssml')
 
         console.print(f"[dim]✓ Files saved[/dim]")
 
         # Display result
-        console.print("\n[green]✓ Content generated successfully![/green]")
+        console.print(f"\n[green]✓ Content generated successfully! (Version {version_string})[/green]")
 
         # Display summary points
         console.print("\n[cyan]Summary - What visitors will learn:[/cyan]")

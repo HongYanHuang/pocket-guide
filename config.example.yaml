@@ -130,6 +130,30 @@ research:
   cache_entities: true
   entity_cache_ttl_days: 90
 
+# POI Metadata Collection Configuration
+poi_metadata:
+  # Google Maps API settings
+  google_maps:
+    api_key: "your-google-maps-api-key-here"  # Get from console.cloud.google.com - Enable Places API, Geocoding API, and Distance Matrix API
+    enabled_apis:
+      - places        # POI details, hours, coordinates
+      - geocoding     # Coordinates fallback
+      - distance_matrix  # Inter-POI travel times (CRITICAL for trip planning)
+
+  # Geocoding fallback (no API key needed)
+  nominatim:
+    enabled: true
+    user_agent: "pocket-guide"
+
+  # Distance matrix settings
+  distance_matrix:
+    cache_duration_days: 30
+    transportation_modes:
+      - walking
+      - transit
+      - driving
+    batch_size: 25  # Max origins/destinations per API call
+
 # Default settings
 defaults:
   ai_provider: "openai"      # openai, anthropic, or google

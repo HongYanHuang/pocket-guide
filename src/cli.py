@@ -20,6 +20,7 @@ from utils import (
 )
 from content_generator import ContentGenerator
 from tts_generator import TTSGenerator
+from poi_metadata_agent import POIMetadataAgent
 
 console = Console()
 
@@ -398,6 +399,245 @@ def info(ctx, city, poi):
         console.print("\n[cyan]Summary - What visitors will learn:[/cyan]")
         for i, point in enumerate(summary_points, 1):
             console.print(f"  {i}. {point}")
+
+
+# ==== POI Metadata Commands ====
+
+@cli.group()
+def poi_metadata():
+    """POI metadata collection and management commands"""
+    pass
+
+
+@poi_metadata.command('collect')
+@click.option('--city', required=True, help='City name')
+@click.pass_context
+def metadata_collect(ctx, city):
+    """Collect metadata for all POIs in a city (coordinates, hours, distances)"""
+    config = ctx.obj['config']
+
+    # Check if Google Maps API key is configured
+    api_key = config.get('poi_metadata', {}).get('google_maps', {}).get('api_key', '')
+    if not api_key:
+        console.print("[red]Error: Google Maps API key not configured[/red]")
+        console.print("[yellow]Please add your Google Maps API key to config.yaml[/yellow]")
+        console.print("[dim]Get your key from: https://console.cloud.google.com[/dim]")
+        console.print("[dim]Enable: Places API, Geocoding API, and Distance Matrix API[/dim]")
+        sys.exit(1)
+
+    try:
+        agent = POIMetadataAgent(config)
+
+        console.print(f"\n[cyan]Collecting metadata for {city}...[/cyan]")
+        console.print("[dim]This will collect coordinates, hours, and calculate travel distances[/dim]\n")
+
+        with console.status("[bold green]Collecting POI metadata..."):
+            result = agent.collect_all_metadata(city)
+
+        # Display results
+        console.print(f"\n[green]✓ Metadata collection complete![/green]")
+        console.print(f"  • POIs processed: {result.get('pois_total', 0)}")
+        console.print(f"  • POIs updated: {result.get('pois_updated', 0)}")
+
+        # Distance matrix results
+        dm_result = result.get('distance_matrix', {})
+        if dm_result.get('success'):
+            console.print(f"  • Distance pairs calculated: {dm_result.get('poi_pairs', 0)}")
+        else:
+            console.print(f"  [yellow]⚠ Distance matrix: {dm_result.get('error', 'unknown error')}[/yellow]")
+
+        # Show errors if any
+        if result.get('errors'):
+            console.print(f"\n[yellow]Warnings/Errors:[/yellow]")
+            for error in result['errors']:
+                console.print(f"  • {error}")
+
+    except Exception as e:
+        console.print(f"[red]Error collecting metadata: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@poi_metadata.command('verify')
+@click.option('--city', required=True, help='City name')
+@click.pass_context
+def metadata_verify(ctx, city):
+    """Verify metadata completeness for all POIs in a city"""
+    config = ctx.obj['config']
+
+    try:
+        agent = POIMetadataAgent(config)
+
+        console.print(f"\n[cyan]Verifying metadata for {city}...[/cyan]\n")
+
+        report = agent.verify_metadata(city)
+
+        # Create summary table
+        table = Table(title=f"Metadata Status - {city}")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="white")
+
+        table.add_row("Total POIs", str(report['total_pois']))
+        table.add_row("Complete", f"[green]{report['complete']}[/green]")
+        table.add_row("Incomplete", f"[yellow]{report['incomplete']}[/yellow]")
+
+        console.print(table)
+
+        # Show missing fields summary
+        if report['missing_fields']:
+            console.print("\n[yellow]Missing fields:[/yellow]")
+            for field, count in report['missing_fields'].items():
+                console.print(f"  • {field}: {count} POIs")
+
+        # Show POI details
+        console.print("\n[cyan]POI Details:[/cyan]")
+        for poi_info in report['pois']:
+            status = "[green]✓[/green]" if not poi_info['missing_fields'] else "[yellow]⚠[/yellow]"
+            console.print(f"{status} {poi_info['poi_name']}")
+            if poi_info['missing_fields']:
+                console.print(f"   Missing: {', '.join(poi_info['missing_fields'])}")
+
+    except Exception as e:
+        console.print(f"[red]Error verifying metadata: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@poi_metadata.command('show')
+@click.option('--city', required=True, help='City name')
+@click.option('--poi-id', help='POI ID to show (optional, shows all if not specified)')
+@click.pass_context
+def metadata_show(ctx, city, poi_id):
+    """Show metadata for POI(s) in a city"""
+    config = ctx.obj['config']
+
+    try:
+        agent = POIMetadataAgent(config)
+
+        result = agent.show_metadata(city, poi_id)
+
+        if 'error' in result:
+            console.print(f"[red]Error: {result['error']}[/red]")
+            sys.exit(1)
+
+        if poi_id:
+            # Show single POI details
+            console.print(f"\n[cyan]{result['poi_name']}[/cyan]")
+            console.print(f"[dim]ID: {result['poi_id']}[/dim]\n")
+
+            metadata = result.get('metadata', {})
+
+            if not metadata:
+                console.print("[yellow]No metadata available[/yellow]")
+                return
+
+            # Coordinates
+            coords = metadata.get('coordinates', {})
+            if coords:
+                console.print(f"[green]Coordinates:[/green]")
+                console.print(f"  Lat: {coords.get('latitude')}")
+                console.print(f"  Lng: {coords.get('longitude')}")
+                console.print(f"  Source: {coords.get('source')}")
+
+            # Hours
+            hours = metadata.get('operation_hours', {})
+            if hours:
+                console.print(f"\n[green]Hours:[/green]")
+                if 'weekday_text' in hours:
+                    for day in hours['weekday_text']:
+                        console.print(f"  {day}")
+                elif 'open_now' in hours:
+                    status = "Open now" if hours['open_now'] else "Closed now"
+                    console.print(f"  {status}")
+
+            # Visit info
+            visit_info = metadata.get('visit_info', {})
+            if visit_info:
+                console.print(f"\n[green]Visit Info:[/green]")
+                console.print(f"  Indoor/Outdoor: {visit_info.get('indoor_outdoor', 'unknown')}")
+                console.print(f"  Typical duration: {visit_info.get('typical_duration_minutes', 'unknown')} min")
+
+        else:
+            # Show all POIs summary
+            table = Table(title=f"POIs in {city}")
+            table.add_column("POI ID", style="cyan")
+            table.add_column("POI Name", style="white")
+            table.add_column("Has Metadata", style="green")
+            table.add_column("Has Coords", style="yellow")
+
+            for poi in result['pois']:
+                has_meta = "✓" if poi['has_metadata'] else "✗"
+                has_coords = "✓" if poi['has_coordinates'] else "✗"
+                table.add_row(
+                    poi['poi_id'],
+                    poi['poi_name'],
+                    has_meta,
+                    has_coords
+                )
+
+            console.print(table)
+
+    except Exception as e:
+        console.print(f"[red]Error showing metadata: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@poi_metadata.command('distances')
+@click.option('--city', required=True, help='City name')
+@click.option('--mode', type=click.Choice(['walking', 'transit', 'driving']), default='walking', help='Transportation mode')
+@click.pass_context
+def metadata_distances(ctx, city, mode):
+    """Show distance matrix for a city"""
+    config = ctx.obj['config']
+
+    try:
+        agent = POIMetadataAgent(config)
+
+        distance_matrix = agent.load_distance_matrix(city)
+
+        if not distance_matrix:
+            console.print(f"[yellow]No distance matrix found for {city}[/yellow]")
+            console.print("[dim]Run 'poi-metadata collect --city {city}' first[/dim]")
+            sys.exit(1)
+
+        console.print(f"\n[cyan]Distance Matrix - {city} ({mode})[/cyan]")
+        console.print(f"[dim]Generated: {distance_matrix.get('generated_at')}[/dim]\n")
+
+        # Create table
+        table = Table(title=f"{mode.capitalize()} Distances")
+        table.add_column("From", style="cyan")
+        table.add_column("To", style="cyan")
+        table.add_column("Duration", style="yellow")
+        table.add_column("Distance", style="white")
+
+        for pair_key, pair_data in distance_matrix.get('poi_pairs', {}).items():
+            if mode not in pair_data:
+                continue
+
+            mode_data = pair_data[mode]
+
+            table.add_row(
+                pair_data['origin_poi_name'][:30],
+                pair_data['destination_poi_name'][:30],
+                mode_data.get('duration_text', 'N/A'),
+                mode_data.get('distance_text', 'N/A')
+            )
+
+        console.print(table)
+
+        # Summary
+        total_pairs = len(distance_matrix.get('poi_pairs', {}))
+        console.print(f"\n[dim]Total POI pairs: {total_pairs}[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error showing distances: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

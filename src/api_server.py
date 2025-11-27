@@ -67,7 +67,9 @@ def get_agent() -> POIMetadataAgent:
 
 def load_poi_yaml(city: str, poi_id: str) -> dict:
     """Load POI YAML file"""
-    yaml_path = Path(f"poi_research/{city}/{poi_id}.yaml")
+    # Convert hyphens to underscores for filename
+    filename = poi_id.replace('-', '_')
+    yaml_path = Path(f"poi_research/{city}/{filename}.yaml")
 
     if not yaml_path.exists():
         raise HTTPException(
@@ -89,7 +91,9 @@ def load_poi_yaml(city: str, poi_id: str) -> dict:
 
 def save_poi_yaml(city: str, poi_id: str, data: dict) -> None:
     """Save POI YAML file"""
-    yaml_path = Path(f"poi_research/{city}/{poi_id}.yaml")
+    # Convert hyphens to underscores for filename
+    filename = poi_id.replace('-', '_')
+    yaml_path = Path(f"poi_research/{city}/{filename}.yaml")
 
     try:
         with open(yaml_path, 'w', encoding='utf-8') as f:

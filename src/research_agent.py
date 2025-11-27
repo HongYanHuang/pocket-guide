@@ -461,12 +461,6 @@ concepts:
   - name: # Concept name (e.g., "Rule of Four")
     explanation: # Brief explanation
     labels: [history, politics]
-
-modern_analogies:
-  - ancient_concept: # What ancient thing
-    modern_equivalent: # Modern parallel (be specific!)
-    explanation: # Why similar
-    labels: [modern, analogy]
 ```
 
 IMPORTANT:
@@ -484,7 +478,6 @@ For people/events/locations/concepts (historical context):
 - Find DRAMATIC elements (failures, humiliations, conflicts) → [drama]
 - Find IRONIES and twists → [irony]
 - Include SPECIFIC DETAILS (exact numbers, distances, actions) → [specific-detail]
-- Create MODERN ANALOGIES (Times Square, Instagram, Amazon, etc.) → [modern, analogy]
 - Focus on EMOTIONAL STORY, not just facts
 
 Output ONLY valid YAML, no markdown fences or extra text.
@@ -539,9 +532,6 @@ ironic_ending:
   unexpected_outcome: # The twist
   contrast: # Intention vs reality
   labels: [irony, shocking]
-
-modern_parallels:
-  - comparison: # Modern equivalent
 ```
 
 Focus on:
@@ -586,10 +576,6 @@ context:
   larger_conflict: # What story is this part of
   aftermath: # Long-term effects
   labels: [critical-context]
-
-modern_parallel:
-  similar_event: # Modern equivalent
-  comparison: # Why similar
 ```
 
 Focus on SPECIFIC DETAILS and EMOTIONAL ELEMENTS.
@@ -618,14 +604,7 @@ explanation:
   how_it_worked: # Structure or mechanism
   relevance_to_poi: # How it relates to {poi}
   labels: [history, politics]
-
-modern_parallel:
-  modern_equivalent: # Be specific! (e.g., "Corporate management structure")
-  explanation: # Why similar
-  labels: [modern, analogy, relatable]
 ```
-
-Find MODERN PARALLELS that make it relatable!
 
 Output ONLY valid YAML.
 """
@@ -651,11 +630,6 @@ geography:
   significance: # Why important historically
   what_happened_there: # Events at this location
   labels: [native, geography]
-
-modern_parallel:
-  modern_equivalent: # e.g., "Times Square", "Highway 101"
-  explanation: # Why similar (busy, central, strategic, etc.)
-  labels: [modern, analogy]
 ```
 
 Find what makes this location STRATEGICALLY important!
@@ -674,7 +648,6 @@ Provide structured information about this entity including:
 - Basic facts
 - Historical significance
 - Dramatic or interesting details
-- Modern parallels if applicable
 
 Output in YAML format.
 """

@@ -66,9 +66,14 @@ content_generation:
     - The PROPAGANDA ELEMENTS (what were they hiding or exaggerating?)
     - The MODERN PARALLELS (ancient equivalents of today's social media, advertising, politics)
 
-    EXAMPLE OF GOLD STANDARD:
-    See examples/arch-of-galerius-gold-standard.txt for a perfect example of this style.
-    Your transcript should have similar energy, drama, and engagement.
+    TRANSCRIPT CHARACTERISTICS - Your transcripts should demonstrate:
+    - High energy and dramatic storytelling that grabs attention immediately
+    - Emotional engagement that makes listeners feel invested in the story
+    - Specific historical details woven into compelling narratives
+    - Modern analogies that make ancient events relatable (Instagram, Amazon, Times Square, etc.)
+    - Clear narrative arcs with setup, conflict, climax, resolution, and twist endings
+    - Conversational tone like a passionate friend sharing a fascinating story
+    - Avoid generic academic language - write with personality and flair
 
   # Style guidelines that are added to every generation
   style_guidelines:

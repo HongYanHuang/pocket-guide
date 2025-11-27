@@ -1,0 +1,72 @@
+import axios from 'axios'
+
+// Create axios instance with base configuration
+const apiClient = axios.create({
+  baseURL: '/api',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+
+// Request interceptor
+apiClient.interceptors.request.use(
+  config => {
+    return config
+  },
+  error => {
+    return Promise.reject(error)
+  }
+)
+
+// Response interceptor
+apiClient.interceptors.response.use(
+  response => response.data,
+  error => {
+    const message = error.response?.data?.detail || error.message || 'An error occurred'
+    console.error('API Error:', message)
+    return Promise.reject(new Error(message))
+  }
+)
+
+// API methods
+export default {
+  // Cities
+  getCities() {
+    return apiClient.get('/cities')
+  },
+
+  getCityPOIs(city) {
+    return apiClient.get(`/cities/${city}/pois`)
+  },
+
+  verifyCity(city) {
+    return apiClient.get(`/cities/${city}/verify`)
+  },
+
+  collectCityMetadata(city) {
+    return apiClient.post(`/cities/${city}/collect`)
+  },
+
+  // POIs
+  getPOI(city, poiId) {
+    return apiClient.get(`/pois/${city}/${poiId}`)
+  },
+
+  updatePOI(city, poiId, metadata) {
+    return apiClient.put(`/pois/${city}/${poiId}/metadata`, metadata)
+  },
+
+  recollectPOI(city, poiId) {
+    return apiClient.post(`/pois/${city}/${poiId}/recollect`)
+  },
+
+  // Distance Matrix
+  getDistanceMatrix(city) {
+    return apiClient.get(`/distances/${city}`)
+  },
+
+  recalculateDistances(city) {
+    return apiClient.post(`/distances/${city}/recalculate`)
+  }
+}

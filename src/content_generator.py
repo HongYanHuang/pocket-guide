@@ -31,6 +31,76 @@ class ContentGenerator:
         else:
             self.research_agent = None
 
+    def _detect_active_modules(self, research_data: Dict, interests: List[str] = None) -> List[str]:
+        """
+        Detect which prompt modules should be activated based on research content and user interests.
+
+        Args:
+            research_data: Research data dictionary
+            interests: User-specified interests
+
+        Returns:
+            List of module names to activate (e.g., ['architecture', 'biography'])
+        """
+        active_modules = []
+        interests = interests or []
+
+        # Get module configurations
+        content_config = self.config.get('content_generation', {})
+        modules_config = content_config.get('prompt_modules', {})
+
+        for module_name, module_cfg in modules_config.items():
+            activated = False
+
+            # Check if user explicitly requested this module via interests
+            trigger_interests = module_cfg.get('trigger_interests', [])
+            if any(interest.lower() in [t.lower() for t in trigger_interests] for interest in interests):
+                activated = True
+
+            # Check if research content triggers this module
+            if not activated:
+                trigger_keywords = module_cfg.get('trigger_keywords', [])
+                research_str = str(research_data).lower()
+
+                # Count keyword matches
+                keyword_matches = sum(1 for keyword in trigger_keywords if keyword.lower() in research_str)
+
+                # Activate if we have enough keyword matches (threshold: 2+ matches)
+                if keyword_matches >= 2:
+                    activated = True
+
+            if activated:
+                active_modules.append(module_name)
+
+        return active_modules
+
+    def _assemble_dynamic_prompt_modules(self, active_modules: List[str]) -> str:
+        """
+        Assemble the content from activated prompt modules.
+
+        Args:
+            active_modules: List of module names to include
+
+        Returns:
+            Concatenated module content
+        """
+        if not active_modules:
+            return ""
+
+        content_config = self.config.get('content_generation', {})
+        modules_config = content_config.get('prompt_modules', {})
+
+        module_contents = []
+        for module_name in active_modules:
+            if module_name in modules_config:
+                module_content = modules_config[module_name].get('content', '')
+                if module_content:
+                    module_contents.append(module_content.strip())
+
+        if module_contents:
+            return "\n\n" + "\n\n".join(module_contents) + "\n"
+        return ""
+
     def generate(
         self,
         poi_name: str,
@@ -365,6 +435,10 @@ class ContentGenerator:
         # Serialize research into readable text
         research_context = self._serialize_research(filtered_research)
 
+        # Detect and assemble dynamic prompt modules
+        active_modules = self._detect_active_modules(research_data, interests)
+        module_content = self._assemble_dynamic_prompt_modules(active_modules)
+
         # Build prompt
         prompt_parts = [
             system_prompt.strip(),
@@ -408,6 +482,10 @@ class ContentGenerator:
             for guideline in style_guidelines:
                 prompt_parts.append(f"- {guideline}")
             prompt_parts.append("")
+
+        # Add dynamic prompt modules if any were activated
+        if module_content:
+            prompt_parts.append(module_content)
 
         # Request both transcript and summary points
         prompt_parts.extend([

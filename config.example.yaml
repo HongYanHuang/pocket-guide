@@ -93,9 +93,114 @@ content_generation:
     - "Identify propaganda - What lies were they telling? (like Instagram filters today)"
     - "DO NOT use empty adjectives - Avoid 'magnificent', 'impressive', 'truly amazing', 'incredible'"
     - "DO NOT write like Wikipedia - Write like a passionate friend telling a juicy story"
-    - "DO NOT just describe what you see - Tell the STORY behind what you see"
+    - "DO NOT ONLY describe what you see - Connect physical details to dramatic stories"
     - "DO NOT be academic or formal - Be conversational and personal"
     - "DO NOT include stage directions, sound effects, or meta-commentary"
+
+  # Dynamic Prompt Modules (context-aware content generation)
+  # These modules are added to the base prompt based on POI type and user interests
+  prompt_modules:
+    architecture:
+      # Triggers: Activated if research contains architectural concepts OR user specifies architecture interest
+      trigger_keywords:
+        - optical
+        - column
+        - dome
+        - design
+        - construction
+        - building
+        - temple
+        - structure
+      trigger_interests:
+        - architecture
+        - building
+        - design
+
+      # Module content appended to base prompt
+      content: |
+
+        === ARCHITECTURAL APPRECIATION MODULE ===
+        This POI has significant architectural elements. Balance physical description with dramatic storytelling:
+
+        VISUAL ANCHORING (30-40% of transcript):
+        - Open sections by describing WHAT visitors see: "Look up at those 46 columns towering above you..."
+        - Use specific dimensions and materials: "70 meters long, white Pentelic marble..."
+        - Point out details visitors might miss: "Notice how each column bulges slightly in the middle..."
+        - Create visual landmarks: "See that porch with the six female statues holding up the roof?"
+
+        TECHNICAL APPRECIATION:
+        - Explain HOW it was built: construction techniques, engineering innovations, material choices
+        - Reveal hidden genius: optical illusions, mathematical precision, artistic decisions
+        - Connect technique to story: "Those removable gold plates? Designed so Phidias could prove he didn't steal..."
+
+        INTEGRATION STRATEGY:
+        - DON'T separate architecture from story - weave them together
+        - Pattern: Describe physical element → Explain why it's clever → Reveal dramatic story behind it
+        - Example: "Those columns aren't straight - they curve. Why? Ancient architects knew straight lines look wrong to human eyes. Who figured this out? A genius named Ictinus who worked for a thief named Pericles..."
+
+        BALANCE FORMULA:
+        - 35% physical description (what visitors see/experience)
+        - 25% technical appreciation (how it works, why it's clever)
+        - 40% dramatic narrative (human stories, conflicts, ironies)
+
+    biography:
+      # Triggers: Activated if research has 2+ people OR user specifies people interest
+      trigger_keywords:
+        - person
+        - biography
+        - born
+        - died
+      trigger_interests:
+        - people
+        - biography
+        - person
+
+      content: |
+
+        === BIOGRAPHICAL DEPTH MODULE ===
+        This POI centers on historical figures. Emphasize human drama and personal journeys:
+
+        PERSONALITY FOCUS (60% of transcript):
+        - Give each person a vivid nickname: "The Show-Off", "The Untouchable", "The Destroyer"
+        - Describe their dramatic arc: humble origins → rise to power → downfall/triumph
+        - Focus on relationships: conflicts with rivals, betrayals by friends, scandalous romances
+        - Find the embarrassing moments: public humiliations, failures, ironic endings
+
+        MONUMENT CONNECTION (40% of transcript):
+        - Link physical monument to their personality: "He built it 40 feet tall because he had a massive ego..."
+        - Explain why they built it: vanity, fear, love, propaganda
+        - Reveal ironic fate: monument survives but person's legacy failed, or vice versa
+
+    events:
+      # Triggers: Activated if research has 3+ events OR user specifies events/history interest
+      trigger_keywords:
+        - battle
+        - war
+        - siege
+        - invasion
+        - conflict
+      trigger_interests:
+        - events
+        - history
+        - battles
+
+      content: |
+
+        === EVENT NARRATIVE MODULE ===
+        This POI is tied to major historical events. Build cinematic tension:
+
+        SCENE SETTING (20%):
+        - Describe physical terrain, weather, atmospheric conditions
+        - Set the stakes: what could be won or lost
+
+        ACTION SEQUENCE (60%):
+        - Build tension step-by-step: preparations → first contact → escalation → climax → aftermath
+        - Use exact numbers: troop counts, casualties, distances, durations
+        - Show decisions and their consequences: "He chose to attack. Big mistake."
+
+        LOCATION TIE-IN (20%):
+        - Connect event to current POI: "You're standing where 300 men made their last stand..."
+        - Explain why this location mattered: strategic value, symbolic importance
 
 # Research Settings (Phase 1 MVP Feature)
 research:
@@ -109,7 +214,7 @@ research:
   max_entities_per_layer: 5
 
   # Maximum total API calls for a single POI research (budget control)
-  max_api_calls: 10
+  max_api_calls: 40
 
   # Labels that trigger Layer 1 research (native entities)
   layer1_triggers:

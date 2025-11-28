@@ -1,0 +1,372 @@
+"""
+Insertion Agent - Generates and splices missing feature text into transcripts.
+
+This agent takes verification results and creates targeted insertions to fill gaps
+in feature coverage. Uses AI to generate contextually appropriate paragraphs.
+"""
+
+import re
+from typing import List, Dict, Tuple
+import anthropic
+import openai
+from google import generativeai as genai
+
+
+class InsertionAgent:
+    """
+    Agent responsible for generating and inserting missing features into transcripts.
+    """
+
+    def __init__(self, config: Dict, provider: str = 'anthropic'):
+        """
+        Initialize insertion agent.
+
+        Args:
+            config: Full application config dictionary
+            provider: AI provider to use ('anthropic', 'openai', 'google')
+        """
+        self.config = config
+        self.provider = provider
+        self.ai_config = config.get('ai_providers', {})
+
+    def plan_insertions(self, transcript: str, missing_features: List[str]) -> List[Dict]:
+        """
+        Analyze transcript structure and plan where to insert each missing feature.
+
+        Args:
+            transcript: The original transcript text
+            missing_features: List of feature strings that are missing
+
+        Returns:
+            List of insertion plans with context for each feature:
+            [
+                {
+                    'feature': 'Limestone plateau rises 150 meters...',
+                    'insert_location': 'after_line',
+                    'line_number': 5,
+                    'context_before': '...Close your eyes and imagine...',
+                    'context_after': 'Then one day, this guy Pericles...',
+                    'section': 'Part 1: The Heist',
+                    'suggested_tone': 'dramatic scene-setting'
+                },
+                ...
+            ]
+        """
+        lines = transcript.split('\n')
+
+        # Identify transcript structure (Parts, sections)
+        structure = self._analyze_structure(lines)
+
+        insertion_plans = []
+
+        for feature in missing_features:
+            # Determine best insertion point based on feature content
+            plan = self._find_best_insertion_point(feature, lines, structure)
+            insertion_plans.append(plan)
+
+        return insertion_plans
+
+    def _analyze_structure(self, lines: List[str]) -> Dict:
+        """
+        Analyze transcript structure to identify parts, sections, themes.
+
+        Returns:
+            {
+                'parts': [
+                    {'title': 'Part 1: The Heist', 'start_line': 5, 'end_line': 15},
+                    ...
+                ],
+                'intro_end': 4,
+                'conclusion_start': 29
+            }
+        """
+        structure = {
+            'parts': [],
+            'intro_end': 0,
+            'conclusion_start': len(lines)
+        }
+
+        # Find Part markers
+        for i, line in enumerate(lines):
+            if re.match(r'\*\*Part \d+:', line):
+                # Find end of this part (next Part or end of transcript)
+                end_line = len(lines)
+                for j in range(i + 1, len(lines)):
+                    if re.match(r'\*\*Part \d+:', lines[j]):
+                        end_line = j
+                        break
+
+                structure['parts'].append({
+                    'title': line.strip(),
+                    'start_line': i,
+                    'end_line': end_line
+                })
+
+        # Find intro end (usually first Part or question mark)
+        for i, line in enumerate(lines):
+            if '**Part ' in line or 'Here\'s our big question:' in line:
+                structure['intro_end'] = i
+                break
+
+        # Find conclusion (usually mentioned "Remember our opening question" or final twist)
+        for i in range(len(lines) - 1, -1, -1):
+            if 'Remember our' in lines[i] or 'back to our question' in lines[i] or '**Part 3' in lines[i]:
+                structure['conclusion_start'] = i
+                break
+
+        return structure
+
+    def _find_best_insertion_point(self, feature: str, lines: List[str], structure: Dict) -> Dict:
+        """
+        Determine best place to insert a feature based on its content and narrative flow.
+
+        Strategy:
+        - Plateau/location features → intro or Part 1 (scene-setting)
+        - Architecture details → Part 1 or 2 (description)
+        - People/statues → Part 2 (human stories)
+        - War damage/history → Part 3 (irony/conclusion)
+        """
+        feature_lower = feature.lower()
+
+        # Default insertion point (after intro, before Part 1)
+        default_insert = structure.get('intro_end', 5)
+
+        # Categorize feature
+        if any(term in feature_lower for term in ['plateau', 'meters above', 'accessible', 'rises', 'flat top']):
+            # Location/geography → intro or early Part 1
+            suggested_tone = 'dramatic scene-setting, help visitor visualize the location'
+            insert_line = default_insert
+            section = 'Introduction'
+
+        elif any(term in feature_lower for term in ['columns', 'marble', 'diameter', 'tall', 'clamps', 'mortar']):
+            # Architecture details → Part 1 or early Part 2
+            if structure['parts']:
+                part1 = structure['parts'][0] if len(structure['parts']) > 0 else {'start_line': default_insert}
+                insert_line = part1['start_line'] + 3  # A few lines into Part 1
+            else:
+                insert_line = default_insert + 5
+            suggested_tone = 'technical appreciation mixed with awe, explain why it\'s impressive'
+            section = 'Part 1 (Architecture)'
+
+        elif any(term in feature_lower for term in ['caryatids', 'statues', 'erechtheion', 'temple', 'female', 'stolen']):
+            # Sculptures/art → Part 2 (human drama)
+            if len(structure['parts']) > 1:
+                part2 = structure['parts'][1]
+                insert_line = part2['end_line'] - 2  # Near end of Part 2
+            else:
+                insert_line = (default_insert + structure['conclusion_start']) // 2
+            suggested_tone = 'tragic loss, cultural theft, connect to human stories'
+            section = 'Part 2 (Art & Tragedy)'
+
+        elif any(term in feature_lower for term in ['propylaea', 'gateway', 'bullet', 'war', 'damage', 'explosion']):
+            # War/damage → Part 3 (irony/survival)
+            insert_line = structure['conclusion_start'] + 2
+            suggested_tone = 'ironic survival, layers of history, visible scars'
+            section = 'Part 3 (Conclusion)'
+
+        else:
+            # Unknown feature type → safe default
+            insert_line = default_insert
+            suggested_tone = 'match the conversational storytelling tone'
+            section = 'General'
+
+        # Get EXPANDED context around insertion point (Option D improvement)
+        # Give AI 10 lines before/after instead of 2 for better integration
+        context_before = ""
+        context_after = ""
+        surrounding_context = ""
+
+        if insert_line > 0:
+            # Get 10 lines before for context
+            start = max(0, insert_line - 10)
+            context_before = "\n".join(lines[start:insert_line]).strip()
+
+        if insert_line < len(lines):
+            # Get 10 lines after for context
+            end = min(len(lines), insert_line + 10)
+            context_after = "\n".join(lines[insert_line:end]).strip()
+
+        # Also get surrounding 20-line window for rewriting
+        surround_start = max(0, insert_line - 10)
+        surround_end = min(len(lines), insert_line + 10)
+        surrounding_context = "\n".join(lines[surround_start:surround_end]).strip()
+
+        return {
+            'feature': feature,
+            'insert_location': 'after_line',
+            'line_number': insert_line,
+            'context_before': context_before,
+            'context_after': context_after,
+            'surrounding_context': surrounding_context,  # Full 20-line window
+            'section': section,
+            'suggested_tone': suggested_tone
+        }
+
+    def generate_insertion(self, plan: Dict, poi_name: str = "", city: str = "") -> str:
+        """
+        Generate insertion text for a missing feature using AI.
+
+        Option D Enhancement: Uses full context and asks AI to rewrite
+        surrounding text for seamless integration.
+
+        Args:
+            plan: Insertion plan from plan_insertions()
+            poi_name: Name of POI for context
+            city: City name for context
+
+        Returns:
+            Generated insertion text that rewrites/enhances surrounding content
+        """
+        feature = plan['feature']
+        surrounding_context = plan.get('surrounding_context', plan['context_before'])
+        section = plan['section']
+        suggested_tone = plan['suggested_tone']
+
+        prompt = f"""You are refining a tour guide transcript for {poi_name} in {city}.
+
+A core feature is missing from {section} and needs to be woven in naturally.
+
+MISSING FEATURE (must include ALL these details exactly):
+\"\"\"{feature}\"\"\"
+
+SURROUNDING TEXT (20-line context window):
+\"\"\"
+{surrounding_context}
+\"\"\"
+
+TASK: Generate a 100-150 word paragraph that:
+1. Naturally integrates the missing feature into this section
+2. Uses EXACT measurements and details (do NOT approximate or change numbers)
+3. Connects to the surrounding narrative - reference what comes before/after
+4. Matches the dramatic storytelling tone ({suggested_tone})
+5. Makes the feature feel like it was always part of the story
+
+INTEGRATION STRATEGIES:
+- If surrounding text mentions a person, connect the feature to their story
+- If surrounding text builds tension, use the feature to heighten it
+- If surrounding text reveals irony, show how the feature adds to that irony
+- Use transitions like "But here's the thing...", "Now look closer...", "Here's what they don't tell you..."
+
+CRITICAL REQUIREMENTS:
+- Use EXACT measurements from feature (e.g., "10.4 meters" not "about 10 meters")
+- Match conversational tone with modern analogies
+- 100-150 words (one substantial paragraph)
+- NO stage directions, NO meta-commentary
+- Make it sound like the original narrator wrote it
+
+Generate the paragraph:"""
+
+        # Call AI based on provider
+        if self.provider == 'anthropic':
+            insertion_text = self._generate_anthropic(prompt)
+        elif self.provider == 'openai':
+            insertion_text = self._generate_openai(prompt)
+        elif self.provider == 'google':
+            insertion_text = self._generate_google(prompt)
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
+
+        return insertion_text.strip()
+
+    def splice_transcript(self, original: str, insertions: List[Dict]) -> str:
+        """
+        Splice generated insertions into original transcript.
+
+        Args:
+            original: Original transcript text
+            insertions: List of insertion dicts with 'line_number' and 'text' keys
+
+        Returns:
+            Modified transcript with insertions
+        """
+        lines = original.split('\n')
+
+        # Sort insertions by line number (descending) to avoid index shifting
+        sorted_insertions = sorted(insertions, key=lambda x: x['line_number'], reverse=True)
+
+        for insertion in sorted_insertions:
+            line_num = insertion['line_number']
+            text = insertion['text']
+
+            # Insert after specified line
+            if 0 <= line_num <= len(lines):
+                # Add blank line, insertion, blank line for spacing
+                lines.insert(line_num, "")
+                lines.insert(line_num + 1, text)
+                lines.insert(line_num + 2, "")
+
+        return '\n'.join(lines)
+
+    # AI Provider Methods
+
+    def _generate_anthropic(self, prompt: str) -> str:
+        """Generate insertion using Anthropic Claude"""
+        config = self.ai_config.get('anthropic', {})
+        api_key = config.get('api_key')
+        model = config.get('model', 'claude-3-5-sonnet-20241022')
+
+        if not api_key:
+            raise ValueError("Anthropic API key not configured")
+
+        client = anthropic.Anthropic(api_key=api_key)
+
+        system_prompt = "You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details."
+
+        response = client.messages.create(
+            model=model,
+            max_tokens=800,  # Longer insertions for Option D (100-150 words)
+            system=system_prompt,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.content[0].text
+
+    def _generate_openai(self, prompt: str) -> str:
+        """Generate insertion using OpenAI"""
+        config = self.ai_config.get('openai', {})
+        api_key = config.get('api_key')
+        model = config.get('model', 'gpt-4-turbo-preview')
+
+        if not api_key:
+            raise ValueError("OpenAI API key not configured")
+
+        client = openai.OpenAI(api_key=api_key)
+
+        system_prompt = "You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details."
+
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=800,  # Longer for Option D
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        return response.choices[0].message.content
+
+    def _generate_google(self, prompt: str) -> str:
+        """Generate insertion using Google Gemini"""
+        config = self.ai_config.get('google', {})
+        api_key = config.get('api_key')
+        model_name = config.get('model', 'gemini-pro')
+
+        if not api_key:
+            raise ValueError("Google API key not configured")
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+
+        full_prompt = f"""You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details.
+
+{prompt}"""
+
+        response = model.generate_content(
+            full_prompt,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=800,  # Longer for Option D
+                temperature=0.7
+            )
+        )
+
+        return response.text

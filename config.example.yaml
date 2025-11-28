@@ -122,6 +122,12 @@ content_generation:
         === ARCHITECTURAL APPRECIATION MODULE ===
         This POI has significant architectural elements. Balance physical description with dramatic storytelling:
 
+        MANDATORY CORE FEATURES:
+        - ALL core features listed in research MUST appear in your transcript
+        - Use exact measurements and details from core features (do NOT invent or approximate)
+        - Every building element mentioned in core features must be described
+        - Integrate them smoothly but comprehensively into your narrative
+
         VISUAL ANCHORING (30-40% of transcript):
         - Open sections by describing WHAT visitors see: "Look up at those 46 columns towering above you..."
         - Use specific dimensions and materials: "70 meters long, white Pentelic marble..."
@@ -263,6 +269,21 @@ poi_metadata:
       - transit
       - driving
     batch_size: 25  # Max origins/destinations per API call
+
+# Verification Settings (Strategy C: Iterative Insertion)
+verification:
+  # Enable verification and iterative refinement
+  enabled: true
+
+  # Coverage threshold: minimum % of core features that must be present (0.0-1.0)
+  coverage_threshold: 0.90  # 90% coverage required
+
+  # Similarity threshold: how similar text must be to consider feature "found" (0.0-1.0)
+  # Lower values are more lenient (e.g., 0.3 = 30% similar)
+  similarity_threshold: 0.35
+
+  # Maximum refinement iterations (each iteration generates insertions for missing features)
+  max_iterations: 2
 
 # Default settings
 defaults:

@@ -18,6 +18,14 @@ try:
 except ImportError:
     from research_agent import ResearchAgent
 
+# Import verification and insertion agents
+try:
+    from .verification_agent import VerificationAgent
+    from .insertion_agent import InsertionAgent
+except ImportError:
+    from verification_agent import VerificationAgent
+    from insertion_agent import InsertionAgent
+
 
 class ContentGenerator:
     def __init__(self, config: Dict[str, Any]):
@@ -30,6 +38,19 @@ class ContentGenerator:
             self.research_agent = ResearchAgent(config)
         else:
             self.research_agent = None
+
+        # Initialize verification agent
+        verification_config = config.get('verification', {})
+        self.verification_enabled = verification_config.get('enabled', True)
+        if self.verification_enabled:
+            self.verification_agent = VerificationAgent(
+                coverage_threshold=verification_config.get('coverage_threshold', 0.90),
+                similarity_threshold=verification_config.get('similarity_threshold', 0.35)
+            )
+            self.insertion_agent = None  # Initialized lazily when needed
+        else:
+            self.verification_agent = None
+            self.insertion_agent = None
 
     def _detect_active_modules(self, research_data: Dict, interests: List[str] = None) -> List[str]:
         """
@@ -100,6 +121,85 @@ class ContentGenerator:
         if module_contents:
             return "\n\n" + "\n\n".join(module_contents) + "\n"
         return ""
+
+    def _extract_learning_objectives(self, core_features: List[str]) -> List[str]:
+        """
+        Extract 2-3 key learning objectives from core features.
+
+        These become the educational goals that the transcript must achieve.
+        Instead of treating core features as checkboxes, we frame them as
+        learning outcomes that should naturally emerge from the narrative.
+
+        Args:
+            core_features: List of core feature strings from research
+
+        Returns:
+            List of 2-3 learning objective strings
+        """
+        if not core_features or len(core_features) == 0:
+            return []
+
+        # Group features by theme
+        architectural = []
+        historical = []
+        cultural = []
+
+        for feature in core_features:
+            feature_lower = feature.lower()
+
+            # Categorize
+            if any(term in feature_lower for term in ['column', 'marble', 'diameter', 'tall', 'optical', 'curve', 'entasis', 'floor', 'clamp']):
+                architectural.append(feature)
+            elif any(term in feature_lower for term in ['war', 'bullet', 'damage', 'explosion', 'feet', 'worn']):
+                historical.append(feature)
+            else:
+                cultural.append(feature)
+
+        # Create learning objectives
+        objectives = []
+
+        # Architecture objective (if we have architectural features)
+        if architectural:
+            arch_details = []
+            for feat in architectural:
+                # Extract key details
+                if 'column' in feat.lower() and 'meter' in feat.lower():
+                    arch_details.append("precise column measurements")
+                if 'optical' in feat.lower() or 'curve' in feat.lower():
+                    arch_details.append("optical illusion techniques")
+                if 'clamp' in feat.lower() or 'mortar' in feat.lower():
+                    arch_details.append("ancient construction methods")
+
+            if arch_details:
+                details_str = ", ".join(arch_details[:2])  # Max 2 details
+                objectives.append(f"The architectural genius behind the structure ({details_str})")
+
+        # Historical/cultural objective
+        if historical or cultural:
+            combined = historical + cultural
+            # Pick the most dramatic feature
+            for feat in combined:
+                if 'stolen' in feat.lower() or 'british' in feat.lower():
+                    objectives.append("The cultural theft and survival across 2,500 years of conflict")
+                    break
+                elif 'war' in feat.lower() or 'damage' in feat.lower():
+                    objectives.append("The visible scars of wars and occupations throughout history")
+                    break
+                elif 'female statue' in feat.lower() or 'caryatid' in feat.lower():
+                    objectives.append("The famous sculptures and their dramatic fates")
+                    break
+            else:
+                # Fallback if no dramatic element found
+                if combined:
+                    objectives.append("The historical layers and transformations of the site")
+
+        # Ensure we have at least 1 objective
+        if not objectives and core_features:
+            # Fallback: create generic objective from first feature
+            objectives.append(f"The essential physical features that define this place")
+
+        # Limit to 2-3 objectives
+        return objectives[:3]
 
     def generate(
         self,
@@ -187,6 +287,23 @@ class ContentGenerator:
 
         # Parse the response to extract transcript and summary points
         result = self._parse_response(raw_content)
+        transcript = result[0]
+        summary_points = result[1]
+
+        # Verification and refinement loop (if enabled and we have research data)
+        verification_metadata = {}
+        if self.verification_enabled and use_research and research_data:
+            # Core features are nested under 'poi'
+            core_features = research_data.get('poi', {}).get('core_features', [])
+            if core_features:
+                print(f"  [VERIFICATION] Checking core features coverage...", flush=True)
+                transcript, verification_metadata = self._verify_and_refine(
+                    transcript=transcript,
+                    core_features=core_features,
+                    poi_name=poi_name,
+                    city=city,
+                    provider=provider
+                )
 
         # Build generation metadata for audit trail
         generation_metadata = {
@@ -194,10 +311,145 @@ class ContentGenerator:
             'research_path': str(research_path) if research_path else None,
             'filtered_research': filtered_research if use_research else None,
             'entities_before_filter': len(research_data.get('entities', {})) if research_data else 0,
-            'entities_after_filter': len(filtered_research.get('entities', {})) if filtered_research else 0
+            'entities_after_filter': len(filtered_research.get('entities', {})) if filtered_research else 0,
+            'verification': verification_metadata
         }
 
-        return (result[0], result[1], generation_metadata)
+        return (transcript, summary_points, generation_metadata)
+
+    def _verify_and_refine(
+        self,
+        transcript: str,
+        core_features: List[str],
+        poi_name: str,
+        city: str,
+        provider: str,
+        max_iterations: int = 2
+    ) -> Tuple[str, Dict]:
+        """
+        Verify transcript coverage and refine with insertions if needed.
+
+        Args:
+            transcript: Initial transcript text
+            core_features: List of core feature strings from research
+            poi_name: POI name for context
+            city: City name for context
+            provider: AI provider to use for insertions
+            max_iterations: Maximum refinement iterations (default: 2)
+
+        Returns:
+            Tuple of (refined_transcript, verification_metadata)
+        """
+        verification_config = self.config.get('verification', {})
+        max_iterations = verification_config.get('max_iterations', max_iterations)
+
+        current_transcript = transcript
+        iteration = 0
+        refinement_history = []
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            # Verify coverage
+            verification_result = self.verification_agent.verify_coverage(
+                current_transcript,
+                core_features
+            )
+
+            # Print report
+            report = self.verification_agent.format_report(verification_result)
+            print(f"\n{report}\n", flush=True)
+
+            # Store iteration results
+            refinement_history.append({
+                'iteration': iteration,
+                'coverage': verification_result['coverage'],
+                'found_features': verification_result['found_features'],
+                'total_features': verification_result['total_features'],
+                'passes_threshold': verification_result['passes_threshold']
+            })
+
+            # Check if we pass threshold
+            if verification_result['passes_threshold']:
+                print(f"  ✅ Coverage threshold met: {verification_result['coverage']*100:.1f}%", flush=True)
+                break
+
+            # If we don't pass and haven't exceeded max iterations, refine with insertions
+            if iteration < max_iterations:
+                print(f"  ⚠️  Coverage below threshold. Generating insertions (iteration {iteration}/{max_iterations})...", flush=True)
+
+                # Initialize insertion agent if needed
+                if self.insertion_agent is None:
+                    self.insertion_agent = InsertionAgent(self.config, provider)
+
+                # Plan insertions for missing features
+                missing_features = verification_result['missing_features']
+
+                # Also include partial features if they have low confidence
+                for feature_status in verification_result['feature_status']:
+                    if feature_status['found'] and feature_status['confidence'] < 0.5:
+                        if feature_status['feature'] not in missing_features:
+                            missing_features.append(feature_status['feature'])
+
+                if not missing_features:
+                    print(f"  ℹ️  No missing features identified, but coverage still low. Stopping.", flush=True)
+                    break
+
+                print(f"  📝 Planning insertions for {len(missing_features)} missing features...", flush=True)
+                insertion_plans = self.insertion_agent.plan_insertions(
+                    current_transcript,
+                    missing_features
+                )
+
+                # Generate insertion text for each plan
+                insertions = []
+                for i, plan in enumerate(insertion_plans, 1):
+                    print(f"     [{i}/{len(insertion_plans)}] Generating insertion for: {plan['feature'][:60]}...", flush=True)
+
+                    try:
+                        insertion_text = self.insertion_agent.generate_insertion(
+                            plan,
+                            poi_name=poi_name,
+                            city=city or ""
+                        )
+
+                        insertions.append({
+                            'line_number': plan['line_number'],
+                            'text': insertion_text,
+                            'feature': plan['feature']
+                        })
+
+                        print(f"     ✓ Generated: \"{insertion_text[:80]}...\"", flush=True)
+
+                    except Exception as e:
+                        print(f"     ✗ Failed to generate insertion: {e}", flush=True)
+                        continue
+
+                # Splice insertions into transcript
+                if insertions:
+                    print(f"  🔧 Splicing {len(insertions)} insertions into transcript...", flush=True)
+                    current_transcript = self.insertion_agent.splice_transcript(
+                        current_transcript,
+                        insertions
+                    )
+                    print(f"  ✓ Transcript refined (iteration {iteration} complete)", flush=True)
+                else:
+                    print(f"  ✗ No insertions generated. Stopping refinement.", flush=True)
+                    break
+
+            else:
+                print(f"  ⚠️  Maximum iterations reached. Final coverage: {verification_result['coverage']*100:.1f}%", flush=True)
+
+        # Build verification metadata
+        verification_metadata = {
+            'enabled': True,
+            'iterations': iteration,
+            'final_coverage': verification_result['coverage'] if verification_result else 0,
+            'refinement_history': refinement_history,
+            'final_status': 'passed' if verification_result.get('passes_threshold', False) else 'failed'
+        }
+
+        return current_transcript, verification_metadata
 
     def _build_prompt(
         self,
@@ -302,9 +554,9 @@ class ContentGenerator:
         # Always include nodes with 'native' label
         interests_set.add('native')
 
+        # Note: core_features are kept inside 'poi' dict, not extracted to top level
         filtered = {
-            'poi': research_data.get('poi', {}),
-            'core_features': research_data.get('core_features', []),  # Always included, never filtered
+            'poi': research_data.get('poi', {}),  # This includes core_features
             'entities': {}
         }
 
@@ -357,7 +609,7 @@ class ContentGenerator:
             lines.append("")
 
         # Core Features section (ALWAYS included - grounds visitor in physical reality)
-        core_features = research_data.get('core_features', [])
+        core_features = research_data.get('poi', {}).get('core_features', [])
         if core_features:
             lines.append("=== CORE FEATURES (What visitor experiences) ===")
             lines.append("These are essential physical facts that ground your story in reality.")
@@ -439,21 +691,42 @@ class ContentGenerator:
         active_modules = self._detect_active_modules(research_data, interests)
         module_content = self._assemble_dynamic_prompt_modules(active_modules)
 
+        # Extract learning objectives from core features (Option C)
+        core_features = research_data.get('poi', {}).get('core_features', [])
+        learning_objectives = self._extract_learning_objectives(core_features)
+
         # Build prompt
         prompt_parts = [
             system_prompt.strip(),
             "",
+            "LEARNING OBJECTIVES: Your transcript must teach visitors these key things:",
+        ]
+
+        # Add learning objectives
+        if learning_objectives:
+            for i, objective in enumerate(learning_objectives, 1):
+                prompt_parts.append(f"  {i}. {objective}")
+        else:
+            prompt_parts.append("  (Build your narrative around the core features provided)")
+
+        prompt_parts.extend([
+            "",
+            "These objectives should emerge naturally from your dramatic storytelling.",
+            "Don't lecture - weave these insights into your narrative so visitors",
+            "learn through engaging stories, not academic explanations.",
+            "",
             "NOTE: You will receive CORE FEATURES - essential physical facts about what visitors",
-            "can experience at this POI right now. Weave these naturally into your narrative to",
-            "keep listeners grounded in reality. Don't list them mechanically - integrate them",
-            "when they enhance the story.",
+            "can experience at this POI right now. These features are the EVIDENCE that supports",
+            "your learning objectives. YOU MUST include ALL core features in your transcript.",
+            "Use exact measurements and details - do NOT invent or approximate.",
+            "Weave them naturally into your narrative to teach the learning objectives above.",
             "",
             "=" * 60,
             "TASK: Create Engaging Tour Guide Script",
             "=" * 60,
             "",
             f"POI: {poi_name}",
-        ]
+        ])
 
         if city:
             prompt_parts.append(f"City: {city}")

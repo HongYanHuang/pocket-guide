@@ -240,3 +240,161 @@ def extract_used_nodes(
             used_nodes['entities'].append(entity_id)
 
     return used_nodes
+
+
+# ==== Tour Storage and Versioning Functions ====
+
+def get_tour_directory(tours_dir: str, city: str, tour_id: str) -> Path:
+    """
+    Get the directory path for a specific tour
+
+    Args:
+        tours_dir: Base tours directory
+        city: City name
+        tour_id: Unique tour identifier
+
+    Returns:
+        Path to tour directory
+    """
+    city_slug = city.lower().replace(' ', '-')
+    return Path(tours_dir) / city_slug / tour_id
+
+
+def ensure_tour_directory(tours_dir: str, city: str, tour_id: str) -> Path:
+    """
+    Create tour directory if it doesn't exist
+
+    Args:
+        tours_dir: Base tours directory
+        city: City name
+        tour_id: Unique tour identifier
+
+    Returns:
+        Path to tour directory
+    """
+    tour_path = get_tour_directory(tours_dir, city, tour_id)
+    tour_path.mkdir(parents=True, exist_ok=True)
+    return tour_path
+
+
+def load_tour_metadata(tour_path: Path) -> Dict[str, Any]:
+    """
+    Load tour metadata from JSON file
+
+    Args:
+        tour_path: Path to tour directory
+
+    Returns:
+        Metadata dictionary
+    """
+    metadata_file = tour_path / "metadata.json"
+    if not metadata_file.exists():
+        return {}
+
+    with open(metadata_file, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def save_tour_metadata(tour_path: Path, metadata: Dict[str, Any]) -> None:
+    """
+    Save tour metadata to JSON file
+
+    Args:
+        tour_path: Path to tour directory
+        metadata: Metadata dictionary
+    """
+    metadata_file = tour_path / "metadata.json"
+    with open(metadata_file, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+
+def get_next_tour_version(metadata: Dict[str, Any]) -> Tuple[int, str]:
+    """
+    Calculate next tour version number and string
+
+    Args:
+        metadata: Current tour metadata dict
+
+    Returns:
+        (version_number, version_string) e.g. (2, "v2_2025-11-29")
+    """
+    from datetime import datetime
+
+    # If no version history, start at v1
+    if 'version_history' not in metadata or not metadata['version_history']:
+        version = 1
+    else:
+        version = metadata.get('current_version', 0) + 1
+
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    version_string = f"v{version}_{date_str}"
+
+    return version, version_string
+
+
+def save_versioned_tour(
+    tour_path: Path,
+    tour_data: Dict[str, Any],
+    version_string: str
+) -> None:
+    """
+    Save tour with version in filename
+    Also saves copy as current tour for easy access
+
+    Args:
+        tour_path: Tour directory path
+        tour_data: Complete tour itinerary data
+        version_string: e.g. "v1_2025-11-29"
+    """
+    # Save versioned file
+    versioned_path = tour_path / f"tour_{version_string}.json"
+    with open(versioned_path, 'w', encoding='utf-8') as f:
+        json.dump(tour_data, f, indent=2, ensure_ascii=False)
+
+    # Also save as current tour (for easy access)
+    current_path = tour_path / "tour.json"
+    with open(current_path, 'w', encoding='utf-8') as f:
+        json.dump(tour_data, f, indent=2, ensure_ascii=False)
+
+
+def save_tour_generation_record(
+    tour_path: Path,
+    version_string: str,
+    record_data: Dict[str, Any]
+) -> None:
+    """
+    Save tour generation record with input parameters and results
+
+    Args:
+        tour_path: Tour directory path
+        version_string: e.g. "v1_2025-11-29"
+        record_data: Complete generation record
+    """
+    record_path = tour_path / f"generation_record_{version_string}.json"
+    with open(record_path, 'w', encoding='utf-8') as f:
+        json.dump(record_data, f, indent=2, ensure_ascii=False)
+
+
+def create_tour_id(city: str, user_id: str = None) -> str:
+    """
+    Generate a unique tour ID
+
+    Args:
+        city: City name
+        user_id: Optional user identifier
+
+    Returns:
+        Unique tour ID (e.g., "athens-tour-20251129-143052-abc123")
+    """
+    from datetime import datetime
+    import hashlib
+
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    city_slug = city.lower().replace(' ', '-')
+
+    # Create hash from timestamp + city + user
+    hash_input = f"{timestamp}{city}{user_id or 'anonymous'}".encode()
+    hash_suffix = hashlib.md5(hash_input).hexdigest()[:6]
+
+    tour_id = f"{city_slug}-tour-{timestamp}-{hash_suffix}"
+    return tour_id

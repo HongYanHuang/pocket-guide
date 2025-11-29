@@ -50,6 +50,10 @@ poi_research/
 # Test outputs
 test-output/
 *.log
+test_*.json
+
+# Generated tours (user trip itineraries)
+tours/
 
 # Jupyter Notebook
 .ipynb_checkpoints

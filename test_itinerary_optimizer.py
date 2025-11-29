@@ -6,7 +6,7 @@ Tests Phase 2.2 implementation: End-to-end Selection → Optimization
 
 import yaml
 import json
-from src.trip_planner import POISelectorAgent, ItineraryOptimizerAgent
+from src.trip_planner import POISelectorAgent, ItineraryOptimizerAgent, TourManager
 
 
 def main():
@@ -110,7 +110,51 @@ def main():
     print(selection.get('reasoning_summary', 'No summary provided'))
     print()
 
-    # Save full results
+    # Save tour with versioning
+    print("=" * 60)
+    print("SAVING TOUR WITH VERSIONING")
+    print("=" * 60)
+
+    tour_manager = TourManager(config)
+
+    # Prepare input parameters for tracking
+    input_parameters = {
+        'city': 'Athens',
+        'duration_days': 3,
+        'interests': ['architecture', 'history'],
+        'preferences': {
+            'walking_tolerance': 'moderate',
+            'indoor_outdoor': 'balanced',
+            'pace': 'relaxed',
+            'distance_weight': 0.5,
+            'coherence_weight': 0.5
+        },
+        'must_see': ['Acropolis'],
+        'start_time': "09:00"
+    }
+
+    # User info (optional)
+    user_info = {
+        'user_id': 'test_user',
+        'username': 'Test User',
+        'email': 'test@example.com'
+    }
+
+    # Save tour with full metadata
+    save_result = tour_manager.save_tour(
+        tour_data=itinerary_result,
+        city='Athens',
+        input_parameters=input_parameters,
+        user_info=user_info
+    )
+
+    print(f"\n✓ Tour ID: {save_result['tour_id']}")
+    print(f"✓ Version: {save_result['version_string']}")
+    print(f"\nSaved files:")
+    for file_type, path in save_result['files'].items():
+        print(f"  • {file_type}: {path}")
+
+    # Also save legacy test output
     output_file = 'test_itinerary_result.json'
     combined_result = {
         'selection': selection,
@@ -120,7 +164,7 @@ def main():
     with open(output_file, 'w') as f:
         json.dump(combined_result, f, indent=2)
 
-    print(f"✓ Full results saved to: {output_file}")
+    print(f"\n✓ Legacy output saved to: {output_file}")
     print()
 
 

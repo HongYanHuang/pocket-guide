@@ -135,7 +135,10 @@ class POISelectorAgent:
         Returns:
             List of POI dictionaries with metadata
         """
-        poi_research_dir = Path("poi_research") / city
+        # Get absolute path to poi_research directory (relative to project root)
+        # This file is in src/trip_planner/, so go up 2 levels to reach project root
+        project_root = Path(__file__).parent.parent.parent
+        poi_research_dir = project_root / "poi_research" / city
 
         if not poi_research_dir.exists():
             return []

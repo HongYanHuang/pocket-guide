@@ -885,7 +885,19 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
                 poi_path = ensure_poi_directory(content_dir, city, poi_name)
                 save_transcript(poi_path, transcript, format='txt')
                 save_metadata(poi_path, metadata)
-                save_generation_record(poi_path, metadata)
+
+                # Save generation record
+                version_string = get_next_version(poi_path)
+                generation_record = {
+                    'version': version_string,
+                    'generated_at': datetime.utcnow().isoformat() + 'Z',
+                    'poi_name': poi_name,
+                    'city': city,
+                    'provider': provider,
+                    'metadata': metadata,
+                    'summary_points_count': len(summary_points)
+                }
+                save_generation_record(poi_path, version_string, generation_record)
 
                 # Save summary
                 summary_path = poi_path / 'summary.txt'

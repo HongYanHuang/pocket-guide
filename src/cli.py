@@ -853,6 +853,16 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
         console.print("[yellow]No POIs to generate (all marked as duplicates)[/yellow]")
         sys.exit(0)
 
+    # Check if Google Maps API is configured for distance calculation
+    google_maps_configured = bool(config.get('poi_metadata', {}).get('google_maps', {}).get('api_key'))
+    if google_maps_configured:
+        console.print("[dim]Google Maps API configured - will calculate distances for new POIs[/dim]")
+        metadata_agent = POIMetadataAgent(config)
+    else:
+        console.print("[yellow]⚠ Google Maps API not configured - distances will not be calculated[/yellow]")
+        console.print("[dim]To enable: Add Google Maps API key to config.yaml[/dim]")
+        metadata_agent = None
+
     # Progress tracking
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
@@ -883,13 +893,27 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
 
                 # Save files
                 poi_path = ensure_poi_directory(content_dir, city, poi_name)
+
+                # Load existing metadata to calculate version
+                existing_metadata = load_metadata(poi_path)
+                version_num, version_string = get_next_version(existing_metadata)
+
+                # Update metadata with version info
+                if 'version_history' not in existing_metadata:
+                    existing_metadata['version_history'] = []
+                existing_metadata['current_version'] = version_num
+
+                # Merge with new metadata
+                existing_metadata.update(metadata)
+
+                # Save updated metadata
                 save_transcript(poi_path, transcript, format='txt')
-                save_metadata(poi_path, metadata)
+                save_metadata(poi_path, existing_metadata)
 
                 # Save generation record
-                version_string = get_next_version(poi_path)
                 generation_record = {
-                    'version': version_string,
+                    'version': version_num,
+                    'version_string': version_string,
                     'generated_at': datetime.utcnow().isoformat() + 'Z',
                     'poi_name': poi_name,
                     'city': city,
@@ -904,6 +928,43 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
                 with open(summary_path, 'w', encoding='utf-8') as f:
                     for i, point in enumerate(summary_points, 1):
                         f.write(f"{i}. {point}\n")
+
+                # Calculate distances for new POI if Google Maps configured
+                if metadata_agent:
+                    try:
+                        progress.update(task, description=f"[cyan]Collecting coordinates: {poi_name}")
+
+                        # First, collect coordinates for the new POI if not already present
+                        if 'coordinates' not in existing_metadata or not existing_metadata['coordinates']:
+                            # Collect coordinates using metadata agent
+                            coords = metadata_agent.google_maps.get_place_details(poi_name, city)
+                            if coords and coords.get('coordinates'):
+                                existing_metadata['coordinates'] = coords['coordinates']
+                                # Save updated metadata with coordinates
+                                save_metadata(poi_path, existing_metadata)
+                                progress.console.print(f"[dim]  → Coordinates collected[/dim]")
+
+                        # Now calculate distances if we have coordinates
+                        if existing_metadata.get('coordinates'):
+                            progress.update(task, description=f"[cyan]Calculating distances: {poi_name}")
+
+                            # Prepare POI dict with metadata including coordinates
+                            poi_id = poi_name.lower().replace(' ', '-').replace('(', '').replace(')', '')
+                            new_poi = {
+                                'poi_id': poi_id,
+                                'poi_name': poi_name,
+                                'metadata': existing_metadata
+                            }
+
+                            # Calculate incremental distances
+                            metadata_agent.calculate_incremental_distances(new_poi, city)
+                            progress.console.print(f"[dim]  → Distances calculated[/dim]")
+                        else:
+                            progress.console.print(f"[yellow]  ⚠ Could not get coordinates for {poi_name}[/yellow]")
+
+                    except Exception as e:
+                        # Don't fail the entire generation if distance calculation fails
+                        progress.console.print(f"[yellow]  ⚠ Distance calculation failed: {str(e)[:100]}[/yellow]")
 
                 progress.console.print(f"[green]✓ {poi_name}[/green]")
                 succeeded.append(poi_name)

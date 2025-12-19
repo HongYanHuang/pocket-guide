@@ -47,6 +47,9 @@ content/
 # Research data (generated POI research)
 poi_research/
 
+# Distance matrices (generated POI distances)
+poi_distances/
+
 # Test outputs
 test-output/
 *.log

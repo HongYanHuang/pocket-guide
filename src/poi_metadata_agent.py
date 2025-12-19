@@ -516,6 +516,221 @@ class POIMetadataAgent:
         with open(matrix_file, 'r', encoding='utf-8') as f:
             return json.load(f)
 
+    def _load_city_pois_from_content(self, city: str) -> List[Dict]:
+        """
+        Load all POI metadata from content directory.
+
+        Args:
+            city: City name
+
+        Returns:
+            List of POI dictionaries with metadata
+        """
+        content_dir = Path(self.content_dir) / city.lower().replace(' ', '-')
+
+        if not content_dir.exists():
+            logger.warning(f"Content directory not found: {content_dir}")
+            return []
+
+        pois = []
+
+        for poi_dir in content_dir.iterdir():
+            if not poi_dir.is_dir():
+                continue
+
+            metadata_file = poi_dir / 'metadata.json'
+            if not metadata_file.exists():
+                continue
+
+            try:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+
+                pois.append({
+                    'poi_id': poi_dir.name,
+                    'poi_name': metadata.get('poi', poi_dir.name),
+                    'metadata': metadata
+                })
+
+            except Exception as e:
+                logger.error(f"Error loading POI metadata from {metadata_file}: {e}")
+                continue
+
+        logger.info(f"Loaded {len(pois)} POIs from content directory for {city}")
+        return pois
+
+    def calculate_incremental_distances(
+        self,
+        new_poi: Dict,
+        city: str
+    ) -> Optional[Dict]:
+        """
+        Calculate distances incrementally for a new POI.
+
+        Only calculates: new_poi ↔ existing_pois (not recalculating existing pairs).
+
+        Args:
+            new_poi: New POI dictionary with metadata containing coordinates
+            city: City name
+
+        Returns:
+            Updated distance matrix or None if failed
+        """
+        if not self.google_maps:
+            logger.error("Google Maps service not available for distance calculation")
+            return None
+
+        # Check if new POI has coordinates
+        new_coords = new_poi.get('metadata', {}).get('coordinates', {})
+        if not new_coords.get('latitude') or not new_coords.get('longitude'):
+            logger.warning(f"New POI {new_poi.get('poi_id')} missing coordinates, skipping distance calculation")
+            return None
+
+        # Load existing POIs from content directory
+        existing_pois = self._load_city_pois_from_content(city)
+
+        # Filter existing POIs that have coordinates and are not the new POI
+        new_poi_id = new_poi.get('poi_id')
+        existing_with_coords = [
+            poi for poi in existing_pois
+            if poi.get('poi_id') != new_poi_id and
+               poi.get('metadata', {}).get('coordinates')
+        ]
+
+        if not existing_with_coords:
+            logger.info(f"No existing POIs with coordinates found for {city}, skipping distance calculation")
+            return None
+
+        logger.info(
+            f"Calculating incremental distances: {new_poi_id} ↔ "
+            f"{len(existing_with_coords)} existing POIs"
+        )
+
+        # Load or create distance matrix
+        distance_matrix = self.load_distance_matrix(city)
+        if not distance_matrix:
+            # Create new matrix
+            distance_matrix = {
+                'city': city,
+                'generated_at': datetime.now(timezone.utc).isoformat(),
+                'poi_count': len(existing_with_coords) + 1,
+                'poi_pairs': {}
+            }
+
+        # Prepare POI data for API call
+        new_poi_data = {
+            'poi_id': new_poi.get('poi_id'),
+            'poi_name': new_poi.get('poi_name'),
+            'coords': (new_coords['latitude'], new_coords['longitude'])
+        }
+
+        existing_poi_data = []
+        for poi in existing_with_coords:
+            coords = poi.get('metadata', {}).get('coordinates', {})
+            existing_poi_data.append({
+                'poi_id': poi.get('poi_id'),
+                'poi_name': poi.get('poi_name'),
+                'coords': (coords['latitude'], coords['longitude'])
+            })
+
+        # Calculate for each transportation mode
+        modes = ['walking', 'transit', 'driving']
+
+        for mode in modes:
+            logger.info(f"Calculating {mode} distances for new POI...")
+
+            try:
+                # Build coordinate lists
+                # Origins: [new_poi] + existing_pois
+                # Destinations: [new_poi] + existing_pois
+                all_poi_data = [new_poi_data] + existing_poi_data
+                origins = [p['coords'] for p in all_poi_data]
+                destinations = origins
+
+                # Call Distance Matrix API
+                result = self.google_maps.client.distance_matrix(
+                    origins=origins,
+                    destinations=destinations,
+                    mode=mode,
+                    units='metric',
+                    departure_time='now' if mode == 'transit' else None
+                )
+
+                if result.get('status') != 'OK':
+                    logger.warning(f"Distance Matrix API returned status: {result.get('status')} for {mode}")
+                    continue
+
+                # Parse results - only extract pairs involving the new POI
+                for i, origin in enumerate(all_poi_data):
+                    row = result.get('rows', [])[i]
+
+                    for j, dest in enumerate(all_poi_data):
+                        # Skip same POI
+                        if i == j:
+                            continue
+
+                        # Only process pairs where new_poi is either origin or destination
+                        if origin['poi_id'] != new_poi_id and dest['poi_id'] != new_poi_id:
+                            continue
+
+                        element = row.get('elements', [])[j]
+
+                        if element.get('status') != 'OK':
+                            logger.debug(
+                                f"No {mode} route from {origin['poi_id']} to {dest['poi_id']}: "
+                                f"{element.get('status')}"
+                            )
+                            continue
+
+                        # Create pair key
+                        pair_key = f"{origin['poi_id']}_to_{dest['poi_id']}"
+
+                        # Initialize pair dictionary if needed
+                        if pair_key not in distance_matrix['poi_pairs']:
+                            distance_matrix['poi_pairs'][pair_key] = {
+                                'origin_poi_id': origin['poi_id'],
+                                'origin_poi_name': origin['poi_name'],
+                                'destination_poi_id': dest['poi_id'],
+                                'destination_poi_name': dest['poi_name']
+                            }
+
+                        # Add mode-specific data
+                        duration_seconds = element.get('duration', {}).get('value', 0)
+                        distance_meters = element.get('distance', {}).get('value', 0)
+
+                        distance_matrix['poi_pairs'][pair_key][mode] = {
+                            'duration_minutes': round(duration_seconds / 60, 1),
+                            'distance_km': round(distance_meters / 1000, 2),
+                            'duration_text': element.get('duration', {}).get('text'),
+                            'distance_text': element.get('distance', {}).get('text')
+                        }
+
+                        # For transit, include additional info if available
+                        if mode == 'transit' and 'duration_in_traffic' in element:
+                            traffic_seconds = element['duration_in_traffic']['value']
+                            distance_matrix['poi_pairs'][pair_key][mode]['duration_in_traffic_minutes'] = \
+                                round(traffic_seconds / 60, 1)
+
+                logger.info(f"Successfully calculated {mode} distances for new POI")
+
+            except Exception as e:
+                logger.error(f"Error calculating {mode} distances: {e}")
+                continue
+
+        # Update metadata
+        distance_matrix['generated_at'] = datetime.now(timezone.utc).isoformat()
+        distance_matrix['poi_count'] = len(existing_with_coords) + 1
+
+        # Save updated matrix
+        self._save_distance_matrix(city, distance_matrix)
+
+        logger.info(
+            f"Incremental distance calculation complete: "
+            f"{len([k for k in distance_matrix['poi_pairs'].keys() if new_poi_id in k])} new pairs added"
+        )
+
+        return distance_matrix
+
     def show_metadata(self, city: str, poi_id: Optional[str] = None) -> Dict:
         """
         Show metadata for POI(s) in a city.

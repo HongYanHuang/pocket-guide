@@ -21,6 +21,7 @@ from utils import (
 from content_generator import ContentGenerator
 from tts_generator import TTSGenerator
 from poi_metadata_agent import POIMetadataAgent
+from poi_research_agent import POIResearchAgent
 
 console = Console()
 
@@ -638,6 +639,353 @@ def metadata_distances(ctx, city, mode):
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         sys.exit(1)
+
+
+# ==== POI Research and Batch Generation Commands ====
+
+@cli.group()
+def poi():
+    """POI research and batch generation commands"""
+    pass
+
+
+@poi.command('research')
+@click.argument('city')
+@click.option('--count', default=10, help='Number of POIs to research')
+@click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
+@click.pass_context
+def poi_research(ctx, city, count, provider):
+    """Research and suggest top N POIs for a city using AI"""
+    config = ctx.obj['config']
+
+    # Select provider
+    if not provider:
+        provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
+
+    console.print(f"\n[cyan]Researching top {count} POIs in {city}...[/cyan]")
+    console.print(f"[dim]Using {provider} for AI research[/dim]\n")
+
+    try:
+        # Initialize agent
+        agent = POIResearchAgent(config, provider=provider)
+
+        # Research POIs
+        with console.status(f"[bold green]Calling {provider} API..."):
+            candidates = agent.research_city_pois(city, count, provider)
+
+        # Save to JSON
+        output_path = agent._save_research_candidates(city, candidates)
+
+        # Display table
+        table = Table(title=f"POI Research Results - {city}")
+        table.add_column("POI ID", style="cyan", width=20)
+        table.add_column("Name", style="white", width=30)
+        table.add_column("Category", style="yellow", width=15)
+        table.add_column("Period", style="magenta", width=25)
+
+        for poi in candidates:
+            table.add_row(
+                poi['poi_id'][:20],
+                poi['name'][:30],
+                poi['category'],
+                poi.get('historical_period', 'N/A')[:25]
+            )
+
+        console.print(table)
+
+        # Summary
+        console.print(f"\n[green]✓ Research complete! Found {len(candidates)} POIs[/green]")
+        console.print(f"[dim]Saved to: {output_path}[/dim]")
+
+        # Next steps
+        console.print(f"\n[bold]Next steps:[/bold]")
+        console.print(f"[dim]1. Review and edit: {output_path}[/dim]")
+        console.print(f"[dim]2. Check for duplicates: pocket-guide poi check-redundancy {city}[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error researching POIs: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@poi.command('check-redundancy')
+@click.argument('city')
+@click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
+@click.pass_context
+def poi_check_redundancy(ctx, city, provider):
+    """Check research candidates for duplicates against existing POIs"""
+    config = ctx.obj['config']
+
+    if not provider:
+        provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
+
+    # Check if research_candidates.json exists
+    project_root = Path(__file__).parent.parent
+    candidates_path = project_root / 'poi_research' / city / 'research_candidates.json'
+
+    if not candidates_path.exists():
+        console.print(f"[red]Error: No research_candidates.json found for {city}[/red]")
+        console.print(f"[yellow]Run 'pocket-guide poi research {city}' first[/yellow]")
+        sys.exit(1)
+
+    console.print(f"\n[cyan]Checking for duplicates in {city}...[/cyan]")
+    console.print(f"[dim]Using {provider} for semantic comparison[/dim]\n")
+
+    try:
+        agent = POIResearchAgent(config, provider=provider)
+
+        # Run redundancy check
+        with console.status(f"[bold green]Analyzing with {provider}..."):
+            result = agent.check_redundancy(city, provider)
+
+        # Display summary
+        console.print(f"\n[green]✓ Redundancy check complete![/green]")
+        console.print(f"  • Total candidates: {result['total_candidates']}")
+        console.print(f"  • Duplicates found: {result['duplicates_found']}")
+        console.print(f"  • Unique POIs: {result['unique_pois']}")
+
+        # Display duplicates table if any
+        if result['duplicates']:
+            console.print()
+            table = Table(title="Duplicates Found")
+            table.add_column("Candidate", style="yellow", width=30)
+            table.add_column("Duplicate Of", style="red", width=30)
+            table.add_column("Confidence", style="cyan", width=10)
+            table.add_column("Reason", style="dim", width=50)
+
+            for dup in result['duplicates']:
+                table.add_row(
+                    dup['candidate_name'][:30],
+                    dup['duplicate_of'][:30] if dup['duplicate_of'] else 'N/A',
+                    dup['confidence'],
+                    dup['reason'][:50]
+                )
+
+            console.print(table)
+
+        # Show update message
+        console.print(f"\n[dim]Updated: {candidates_path}[/dim]")
+
+        # Next steps
+        if result['unique_pois'] > 0:
+            console.print(f"\n[bold]Next steps:[/bold]")
+            console.print(f"[dim]1. Review updated candidates file[/dim]")
+            console.print(f"[dim]2. Create text file with POI names to generate[/dim]")
+            console.print(f"[dim]3. Run: pocket-guide poi batch-generate <file> --city {city}[/dim]")
+        else:
+            console.print(f"\n[yellow]All candidates are duplicates. No new POIs to generate.[/yellow]")
+
+    except Exception as e:
+        console.print(f"[red]Error checking redundancy: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@poi.command('batch-generate')
+@click.argument('input_file', type=click.Path(exists=True))
+@click.option('--city', help='City name (required if not in research_candidates.json)')
+@click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
+@click.option('--skip-research', is_flag=True, help='Skip research phase for faster generation')
+@click.pass_context
+def poi_batch_generate(ctx, input_file, city, provider, skip_research):
+    """Batch generate POI content from input file (one POI name per line)"""
+    config = ctx.obj['config']
+    content_dir = ctx.obj['content_dir']
+
+    if not provider:
+        provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
+
+    # Load POI names from file
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            poi_names = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        console.print(f"[red]Error reading input file: {e}[/red]")
+        sys.exit(1)
+
+    if not poi_names:
+        console.print(f"[yellow]No POI names found in {input_file}[/yellow]")
+        sys.exit(1)
+
+    # Try to extract city from research_candidates.json if not provided
+    if not city:
+        input_path = Path(input_file)
+        if input_path.parent.name and input_path.parent.parent.name == 'poi_research':
+            city = input_path.parent.name
+        else:
+            console.print("[red]Error: --city parameter required[/red]")
+            console.print("[dim]Usage: pocket-guide poi batch-generate <file> --city <city>[/dim]")
+            sys.exit(1)
+
+    # Load research_candidates.json to check skip flags
+    try:
+        agent = POIResearchAgent(config)
+        candidates = agent._load_research_candidates(city)
+        skip_map = {c['poi_id']: c.get('skip', False) for c in candidates}
+    except FileNotFoundError:
+        console.print(f"[yellow]Warning: No research_candidates.json found for {city}[/yellow]")
+        console.print(f"[dim]Proceeding without skip checking[/dim]")
+        skip_map = {}
+
+    # Filter out skipped POIs
+    to_generate = []
+    skipped = []
+
+    for name in poi_names:
+        poi_id = name.lower().replace(' ', '-').replace('_', '-')
+        if skip_map.get(poi_id, False):
+            skipped.append(name)
+        else:
+            to_generate.append(name)
+
+    console.print(f"\n[cyan]Batch generating POIs for {city}[/cyan]")
+    console.print(f"[dim]Provider: {provider} | Total: {len(poi_names)} | To generate: {len(to_generate)} | Skipped: {len(skipped)}[/dim]\n")
+
+    if skipped:
+        console.print(f"[yellow]Skipping {len(skipped)} POIs marked as duplicates:[/yellow]")
+        for s in skipped:
+            console.print(f"  • {s}")
+        console.print()
+
+    if not to_generate:
+        console.print("[yellow]No POIs to generate (all marked as duplicates)[/yellow]")
+        sys.exit(0)
+
+    # Check if Google Maps API is configured for distance calculation
+    google_maps_configured = bool(config.get('poi_metadata', {}).get('google_maps', {}).get('api_key'))
+    if google_maps_configured:
+        console.print("[dim]Google Maps API configured - will calculate distances for new POIs[/dim]")
+        metadata_agent = POIMetadataAgent(config)
+    else:
+        console.print("[yellow]⚠ Google Maps API not configured - distances will not be calculated[/yellow]")
+        console.print("[dim]To enable: Add Google Maps API key to config.yaml[/dim]")
+        metadata_agent = None
+
+    # Progress tracking
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+
+    succeeded = []
+    failed = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console
+    ) as progress:
+        task = progress.add_task("[cyan]Generating POIs...", total=len(to_generate))
+
+        for poi_name in to_generate:
+            progress.update(task, description=f"[cyan]Generating: {poi_name}")
+
+            try:
+                # Call existing generate logic
+                generator = ContentGenerator(config)
+                transcript, summary_points, metadata = generator.generate(
+                    poi_name=poi_name,
+                    city=city,
+                    provider=provider,
+                    skip_research=skip_research
+                )
+
+                # Save files
+                poi_path = ensure_poi_directory(content_dir, city, poi_name)
+
+                # Load existing metadata to calculate version
+                existing_metadata = load_metadata(poi_path)
+                version_num, version_string = get_next_version(existing_metadata)
+
+                # Update metadata with version info
+                if 'version_history' not in existing_metadata:
+                    existing_metadata['version_history'] = []
+                existing_metadata['current_version'] = version_num
+
+                # Merge with new metadata
+                existing_metadata.update(metadata)
+
+                # Save updated metadata
+                save_transcript(poi_path, transcript, format='txt')
+                save_metadata(poi_path, existing_metadata)
+
+                # Save generation record
+                generation_record = {
+                    'version': version_num,
+                    'version_string': version_string,
+                    'generated_at': datetime.utcnow().isoformat() + 'Z',
+                    'poi_name': poi_name,
+                    'city': city,
+                    'provider': provider,
+                    'metadata': metadata,
+                    'summary_points_count': len(summary_points)
+                }
+                save_generation_record(poi_path, version_string, generation_record)
+
+                # Save summary
+                summary_path = poi_path / 'summary.txt'
+                with open(summary_path, 'w', encoding='utf-8') as f:
+                    for i, point in enumerate(summary_points, 1):
+                        f.write(f"{i}. {point}\n")
+
+                # Calculate distances for new POI if Google Maps configured
+                if metadata_agent:
+                    try:
+                        progress.update(task, description=f"[cyan]Collecting coordinates: {poi_name}")
+
+                        # First, collect coordinates for the new POI if not already present
+                        if 'coordinates' not in existing_metadata or not existing_metadata['coordinates']:
+                            # Collect coordinates using metadata agent
+                            coords = metadata_agent.google_maps.get_place_details(poi_name, city)
+                            if coords and coords.get('coordinates'):
+                                existing_metadata['coordinates'] = coords['coordinates']
+                                # Save updated metadata with coordinates
+                                save_metadata(poi_path, existing_metadata)
+                                progress.console.print(f"[dim]  → Coordinates collected[/dim]")
+
+                        # Now calculate distances if we have coordinates
+                        if existing_metadata.get('coordinates'):
+                            progress.update(task, description=f"[cyan]Calculating distances: {poi_name}")
+
+                            # Prepare POI dict with metadata including coordinates
+                            poi_id = poi_name.lower().replace(' ', '-').replace('(', '').replace(')', '')
+                            new_poi = {
+                                'poi_id': poi_id,
+                                'poi_name': poi_name,
+                                'metadata': existing_metadata
+                            }
+
+                            # Calculate incremental distances
+                            metadata_agent.calculate_incremental_distances(new_poi, city)
+                            progress.console.print(f"[dim]  → Distances calculated[/dim]")
+                        else:
+                            progress.console.print(f"[yellow]  ⚠ Could not get coordinates for {poi_name}[/yellow]")
+
+                    except Exception as e:
+                        # Don't fail the entire generation if distance calculation fails
+                        progress.console.print(f"[yellow]  ⚠ Distance calculation failed: {str(e)[:100]}[/yellow]")
+
+                progress.console.print(f"[green]✓ {poi_name}[/green]")
+                succeeded.append(poi_name)
+
+            except Exception as e:
+                progress.console.print(f"[red]✗ {poi_name}: {str(e)[:100]}[/red]")
+                failed.append((poi_name, str(e)))
+
+            progress.advance(task)
+
+    # Summary
+    console.print(f"\n[bold]Batch Generation Summary:[/bold]")
+    console.print(f"[green]✓ Succeeded: {len(succeeded)}[/green]")
+    if failed:
+        console.print(f"[red]✗ Failed: {len(failed)}[/red]")
+        console.print(f"\n[yellow]Failed POIs:[/yellow]")
+        for poi_name, error in failed:
+            console.print(f"  • {poi_name}: {error[:100]}")
+
+    if succeeded:
+        console.print(f"\n[dim]Generated content saved to: {content_dir}/{city}/[/dim]")
 
 
 if __name__ == '__main__':

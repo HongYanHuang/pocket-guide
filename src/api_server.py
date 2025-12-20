@@ -65,8 +65,36 @@ def get_agent() -> POIMetadataAgent:
     return metadata_agent
 
 
+def load_poi_from_content(city: str, poi_id: str) -> dict:
+    """Load POI metadata from content directory"""
+    import json
+
+    # Try to load from content directory first (batch-generated POIs)
+    city_slug = city.lower().replace(' ', '-')
+    content_path = Path(f"content/{city_slug}/{poi_id}/metadata.json")
+
+    if content_path.exists():
+        try:
+            with open(content_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            # Return in expected format
+            return {
+                'poi': {
+                    'poi_id': poi_id,
+                    'poi_name': metadata.get('poi', poi_id),
+                    'metadata': metadata
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error loading POI from content: {e}")
+            pass
+
+    # Fallback to YAML in poi_research directory
+    return load_poi_yaml(city, poi_id)
+
+
 def load_poi_yaml(city: str, poi_id: str) -> dict:
-    """Load POI YAML file"""
+    """Load POI YAML file from poi_research directory"""
     # Convert hyphens to underscores for filename
     filename = poi_id.replace('-', '_')
     yaml_path = Path(f"poi_research/{city}/{filename}.yaml")
@@ -89,11 +117,38 @@ def load_poi_yaml(city: str, poi_id: str) -> dict:
         )
 
 
+def save_poi_to_content(city: str, poi_id: str, data: dict) -> None:
+    """Save POI metadata to content directory"""
+    import json
+
+    city_slug = city.lower().replace(' ', '-')
+    content_path = Path(f"content/{city_slug}/{poi_id}/metadata.json")
+
+    # Create directory if needed
+    content_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Extract metadata from data structure
+        metadata = data.get('poi', {}).get('metadata', {})
+
+        with open(content_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error saving POI to content: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving POI data: {str(e)}"
+        )
+
+
 def save_poi_yaml(city: str, poi_id: str, data: dict) -> None:
-    """Save POI YAML file"""
+    """Save POI YAML file to poi_research directory"""
     # Convert hyphens to underscores for filename
     filename = poi_id.replace('-', '_')
     yaml_path = Path(f"poi_research/{city}/{filename}.yaml")
+
+    # Create directory if needed
+    yaml_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         with open(yaml_path, 'w', encoding='utf-8') as f:
@@ -138,25 +193,31 @@ async def health_check():
 @app.get("/cities", response_model=List[City])
 async def list_cities():
     """
-    List all cities with POI research data.
+    List all cities with POI data.
 
-    Returns a list of cities with their POI counts.
+    Returns a list of cities with their POI counts from content directory.
     """
     try:
-        poi_research_dir = Path("poi_research")
+        content_dir = Path("content")
 
-        if not poi_research_dir.exists():
+        if not content_dir.exists():
             return []
 
         cities = []
-        for city_dir in poi_research_dir.iterdir():
+        for city_dir in content_dir.iterdir():
             if city_dir.is_dir() and not city_dir.name.startswith('.'):
-                # Count POI files
-                poi_count = len(list(city_dir.glob("*.yaml")))
+                # Count POI subdirectories (each POI has its own directory)
+                poi_count = len([
+                    d for d in city_dir.iterdir()
+                    if d.is_dir() and not d.name.startswith('.')
+                ])
+
+                # Convert slug back to proper city name (capitalize first letter)
+                city_name = city_dir.name.replace('-', ' ').title()
 
                 cities.append(City(
-                    name=city_dir.name,
-                    slug=city_dir.name.lower().replace(' ', '-'),
+                    name=city_name,
+                    slug=city_dir.name,
                     poi_count=poi_count
                 ))
 
@@ -176,10 +237,13 @@ async def list_city_pois(city: str):
     List all POIs for a specific city.
 
     Returns summary information for each POI including metadata status.
+    Loads from content directory (content/{city}/) instead of poi_research.
     """
     try:
         agent = get_agent()
-        pois = agent._load_city_pois(city)
+
+        # Load POIs from content directory (where batch-generated POIs are stored)
+        pois = agent._load_city_pois_from_content(city)
 
         if not pois:
             return []
@@ -215,9 +279,10 @@ async def get_poi_metadata(city: str, poi_id: str):
     Get detailed metadata for a specific POI.
 
     Returns all metadata including coordinates, hours, and visit information.
+    Tries to load from content directory first, then falls back to poi_research.
     """
     try:
-        data = load_poi_yaml(city, poi_id)
+        data = load_poi_from_content(city, poi_id)
         poi_data = data.get('poi', {})
 
         return POIDetail(
@@ -243,10 +308,11 @@ async def update_poi_metadata(city: str, poi_id: str, metadata_update: POIMetada
     Update metadata for a specific POI.
 
     Allows manual editing of coordinates, visit info, and other metadata fields.
+    Saves to content directory if POI exists there, otherwise to poi_research.
     """
     try:
-        # Load current data
-        data = load_poi_yaml(city, poi_id)
+        # Load current data (tries content first, then poi_research)
+        data = load_poi_from_content(city, poi_id)
         poi_data = data.get('poi', {})
 
         # Get or create metadata section
@@ -289,10 +355,21 @@ async def update_poi_metadata(city: str, poi_id: str, metadata_update: POIMetada
         from datetime import datetime, timezone
         current_metadata['last_metadata_update'] = datetime.now(timezone.utc).isoformat()
 
-        # Save back to YAML
+        # Save back to appropriate location
         poi_data['metadata'] = current_metadata
         data['poi'] = poi_data
-        save_poi_yaml(city, poi_id, data)
+
+        # Check if POI exists in content directory
+        import json
+        city_slug = city.lower().replace(' ', '-')
+        content_path = Path(f"content/{city_slug}/{poi_id}/metadata.json")
+
+        if content_path.exists():
+            # Save to content directory
+            save_poi_to_content(city, poi_id, data)
+        else:
+            # Save to poi_research directory
+            save_poi_yaml(city, poi_id, data)
 
         return SuccessResponse(
             message=f"Metadata updated successfully for {poi_id}",
@@ -319,8 +396,8 @@ async def recollect_poi_metadata(city: str, poi_id: str):
     try:
         agent = get_agent()
 
-        # Load POI
-        pois = agent._load_city_pois(city)
+        # Load POI from content directory
+        pois = agent._load_city_pois_from_content(city)
         poi = next((p for p in pois if p.get('poi_id') == poi_id), None)
 
         if not poi:

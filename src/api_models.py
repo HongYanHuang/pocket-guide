@@ -171,3 +171,76 @@ class SuccessResponse(BaseModel):
     """Generic success response"""
     message: str
     data: Optional[Dict[str, Any]] = None
+
+
+# ==== Transcript Models ====
+
+class TranscriptData(BaseModel):
+    """Transcript and summary data for a POI"""
+    transcript: Optional[str] = Field(None, description="Full transcript text")
+    summary: Optional[List[str]] = Field(None, description="List of summary points")
+    has_transcript: bool = Field(..., description="Whether transcript file exists")
+    has_summary: bool = Field(..., description="Whether summary file exists")
+
+
+class TranscriptUpdate(BaseModel):
+    """Model for updating transcript content"""
+    transcript: str = Field(..., min_length=1, description="Updated transcript text")
+
+
+# ==== Research Models ====
+
+class ResearchBasicInfo(BaseModel):
+    """Basic information about a POI from research"""
+    period: Optional[str] = Field(None, description="Historical period")
+    date_built: Optional[str] = Field(None, description="Construction date")
+    date_relative: Optional[str] = Field(None, description="Relative date (e.g., '447 BC')")
+    current_state: Optional[str] = Field(None, description="Current condition/state")
+    description: Optional[str] = Field(None, description="Brief description")
+    labels: Optional[List[str]] = Field(None, description="Classification labels")
+
+
+class ResearchPerson(BaseModel):
+    """Person associated with a POI"""
+    name: str = Field(..., description="Person's name")
+    role: Optional[str] = Field(None, description="Role or title")
+    personality: Optional[str] = Field(None, description="Personality description")
+    origin: Optional[str] = Field(None, description="Place of origin")
+    relationship_type: Optional[str] = Field(None, description="Type of relationship to POI")
+    labels: Optional[List[str]] = Field(None, description="Classification labels")
+
+
+class ResearchEvent(BaseModel):
+    """Historical event associated with a POI"""
+    name: str = Field(..., description="Event name")
+    date: Optional[str] = Field(None, description="Event date")
+    significance: Optional[str] = Field(None, description="Historical significance")
+    labels: Optional[List[str]] = Field(None, description="Classification labels")
+
+
+class ResearchLocation(BaseModel):
+    """Location or sub-location within a POI"""
+    name: str = Field(..., description="Location name")
+    description: Optional[str] = Field(None, description="Location description")
+    labels: Optional[List[str]] = Field(None, description="Classification labels")
+
+
+class ResearchConcept(BaseModel):
+    """Concept or theme associated with a POI"""
+    name: str = Field(..., description="Concept name")
+    explanation: Optional[str] = Field(None, description="Detailed explanation")
+    labels: Optional[List[str]] = Field(None, description="Classification labels")
+
+
+class ResearchData(BaseModel):
+    """Complete research data for a POI"""
+    poi_id: str = Field(..., description="POI identifier")
+    name: str = Field(..., description="POI name")
+    city: str = Field(..., description="City name")
+    basic_info: Optional[ResearchBasicInfo] = None
+    core_features: Optional[List[str]] = Field(None, description="List of core features")
+    people: Optional[List[ResearchPerson]] = Field(None, description="Associated people")
+    events: Optional[List[ResearchEvent]] = Field(None, description="Associated events")
+    locations: Optional[List[ResearchLocation]] = Field(None, description="Sub-locations")
+    concepts: Optional[List[ResearchConcept]] = Field(None, description="Associated concepts")
+    raw_yaml: str = Field(..., description="Raw YAML content")

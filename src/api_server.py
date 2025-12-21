@@ -11,11 +11,15 @@ from pathlib import Path
 from typing import List, Optional
 import logging
 import yaml
+from datetime import datetime
 
 from api_models import (
     City, POISummary, POIDetail, POIMetadata, POIMetadataUpdate,
     DistanceMatrix, CollectionResult, VerificationReport,
-    ErrorResponse, SuccessResponse
+    ErrorResponse, SuccessResponse,
+    TranscriptData, TranscriptUpdate, ResearchData,
+    ResearchBasicInfo, ResearchPerson, ResearchEvent,
+    ResearchLocation, ResearchConcept
 )
 from poi_metadata_agent import POIMetadataAgent
 from utils import load_config
@@ -158,6 +162,76 @@ def save_poi_yaml(city: str, poi_id: str, data: dict) -> None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error saving POI data: {str(e)}"
+        )
+
+
+# ==== Transcript and Research Helper Functions ====
+
+def kebab_to_snake(text: str) -> str:
+    """Convert kebab-case to snake_case"""
+    return text.replace('-', '_')
+
+
+def snake_to_kebab(text: str) -> str:
+    """Convert snake_case to kebab-case"""
+    return text.replace('_', '-')
+
+
+def get_transcript_path(city: str, poi_id: str) -> Path:
+    """Get path to transcript file"""
+    city_slug = city.lower().replace(' ', '-')
+    return Path("content") / city_slug / poi_id / "transcript.txt"
+
+
+def get_summary_path(city: str, poi_id: str) -> Path:
+    """Get path to summary file"""
+    city_slug = city.lower().replace(' ', '-')
+    return Path("content") / city_slug / poi_id / "summary.txt"
+
+
+def get_research_path(city: str, poi_id: str) -> Path:
+    """Get path to research YAML file"""
+    filename = kebab_to_snake(poi_id)
+    city_name = city.title().replace(' ', '')
+    return Path("poi_research") / city_name / f"{filename}.yaml"
+
+
+def parse_summary_points(summary_text: str) -> List[str]:
+    """Parse summary text into list of points"""
+    if not summary_text:
+        return []
+
+    lines = summary_text.strip().split('\n')
+    points = []
+    for line in lines:
+        line = line.strip()
+        if line and (line[0].isdigit() or line.startswith('-') or line.startswith('•')):
+            # Remove numbering and bullet points
+            clean_line = line.lstrip('0123456789.-•) ').strip()
+            if clean_line:
+                points.append(clean_line)
+    return points
+
+
+def create_transcript_backup(city: str, poi_id: str) -> str:
+    """Create backup of transcript file before editing"""
+    transcript_path = get_transcript_path(city, poi_id)
+
+    if not transcript_path.exists():
+        return ""
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = transcript_path.parent / f"transcript_backup_{timestamp}.txt"
+
+    try:
+        backup_path.write_text(transcript_path.read_text(encoding='utf-8'), encoding='utf-8')
+        logger.info(f"Created backup: {backup_path}")
+        return backup_path.name
+    except Exception as e:
+        logger.error(f"Error creating backup: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating backup: {str(e)}"
         )
 
 
@@ -563,6 +637,214 @@ async def verify_city_metadata(city: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error verifying metadata: {str(e)}"
+        )
+
+
+# ==== Transcript Endpoints ====
+
+@app.get("/pois/{city}/{poi_id}/transcript", response_model=TranscriptData)
+async def get_transcript(city: str, poi_id: str):
+    """
+    Get transcript and summary for a POI.
+
+    Args:
+        city: City name (e.g., "Athens")
+        poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
+
+    Returns:
+        TranscriptData with transcript text, summary points, and availability flags
+    """
+    transcript_path = get_transcript_path(city, poi_id)
+    summary_path = get_summary_path(city, poi_id)
+
+    transcript_text = None
+    summary_points = None
+    has_transcript = transcript_path.exists()
+    has_summary = summary_path.exists()
+
+    try:
+        if has_transcript:
+            transcript_text = transcript_path.read_text(encoding='utf-8')
+
+        if has_summary:
+            summary_text = summary_path.read_text(encoding='utf-8')
+            summary_points = parse_summary_points(summary_text)
+
+        return TranscriptData(
+            transcript=transcript_text,
+            summary=summary_points,
+            has_transcript=has_transcript,
+            has_summary=has_summary
+        )
+
+    except Exception as e:
+        logger.error(f"Error reading transcript/summary: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error reading transcript/summary: {str(e)}"
+        )
+
+
+@app.put("/pois/{city}/{poi_id}/transcript", response_model=SuccessResponse)
+async def update_transcript(city: str, poi_id: str, update: TranscriptUpdate):
+    """
+    Update transcript for a POI (creates backup before saving).
+
+    Args:
+        city: City name (e.g., "Athens")
+        poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
+        update: TranscriptUpdate with new transcript text
+
+    Returns:
+        SuccessResponse with backup filename
+    """
+    transcript_path = get_transcript_path(city, poi_id)
+
+    if not transcript_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript not found for {city}/{poi_id}"
+        )
+
+    try:
+        # Create backup before editing
+        backup_filename = create_transcript_backup(city, poi_id)
+
+        # Write new content
+        transcript_path.write_text(update.transcript, encoding='utf-8')
+
+        logger.info(f"Updated transcript for {city}/{poi_id}")
+
+        return SuccessResponse(
+            message="Transcript updated successfully",
+            data={"backup_file": backup_filename}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating transcript: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating transcript: {str(e)}"
+        )
+
+
+# ==== Research Endpoints ====
+
+@app.get("/pois/{city}/{poi_id}/research", response_model=ResearchData)
+async def get_research(city: str, poi_id: str):
+    """
+    Get research data for a POI (both structured and raw YAML).
+
+    Args:
+        city: City name (e.g., "Athens")
+        poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
+
+    Returns:
+        ResearchData with structured fields and raw YAML content
+    """
+    research_path = get_research_path(city, poi_id)
+
+    if not research_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Research data not found for {city}/{poi_id}"
+        )
+
+    try:
+        # Read raw YAML
+        raw_yaml = research_path.read_text(encoding='utf-8')
+
+        # Parse YAML
+        data = yaml.safe_load(raw_yaml)
+
+        # Extract POI section if it exists (some YAML files have 'poi' root, some don't)
+        if 'poi' in data:
+            data = data['poi']
+
+        # Extract basic info
+        basic_info_data = data.get('basic_info', {})
+        basic_info = ResearchBasicInfo(
+            period=basic_info_data.get('period'),
+            date_built=basic_info_data.get('date_built'),
+            date_relative=basic_info_data.get('date_relative'),
+            current_state=basic_info_data.get('current_state'),
+            description=basic_info_data.get('description'),
+            labels=basic_info_data.get('labels')
+        ) if basic_info_data else None
+
+        # Extract core features
+        core_features = data.get('core_features', [])
+
+        # Extract people
+        people_data = data.get('people', [])
+        people = [
+            ResearchPerson(
+                name=p.get('name', ''),
+                role=p.get('role'),
+                personality=p.get('personality'),
+                origin=p.get('origin'),
+                relationship_type=p.get('relationship_type'),
+                labels=p.get('labels')
+            ) for p in people_data
+        ] if people_data else None
+
+        # Extract events
+        events_data = data.get('events', [])
+        events = [
+            ResearchEvent(
+                name=e.get('name', ''),
+                date=e.get('date'),
+                significance=e.get('significance'),
+                labels=e.get('labels')
+            ) for e in events_data
+        ] if events_data else None
+
+        # Extract locations
+        locations_data = data.get('locations', [])
+        locations = [
+            ResearchLocation(
+                name=l.get('name', ''),
+                description=l.get('description'),
+                labels=l.get('labels')
+            ) for l in locations_data
+        ] if locations_data else None
+
+        # Extract concepts
+        concepts_data = data.get('concepts', [])
+        concepts = [
+            ResearchConcept(
+                name=c.get('name', ''),
+                explanation=c.get('explanation'),
+                labels=c.get('labels')
+            ) for c in concepts_data
+        ] if concepts_data else None
+
+        return ResearchData(
+            poi_id=poi_id,
+            name=data.get('name', ''),
+            city=data.get('city', city),
+            basic_info=basic_info,
+            core_features=core_features,
+            people=people,
+            events=events,
+            locations=locations,
+            concepts=concepts,
+            raw_yaml=raw_yaml
+        )
+
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing YAML: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error parsing YAML: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error reading research data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error reading research data: {str(e)}"
         )
 
 

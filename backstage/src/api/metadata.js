@@ -61,6 +61,20 @@ export default {
     return apiClient.post(`/pois/${city}/${poiId}/recollect`)
   },
 
+  // Transcript
+  getTranscript(city, poiId) {
+    return apiClient.get(`/pois/${city}/${poiId}/transcript`)
+  },
+
+  updateTranscript(city, poiId, transcript) {
+    return apiClient.put(`/pois/${city}/${poiId}/transcript`, { transcript })
+  },
+
+  // Research
+  getResearch(city, poiId) {
+    return apiClient.get(`/pois/${city}/${poiId}/research`)
+  },
+
   // Distance Matrix
   getDistanceMatrix(city) {
     return apiClient.get(`/distances/${city}`)

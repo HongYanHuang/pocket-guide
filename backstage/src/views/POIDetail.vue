@@ -35,6 +35,20 @@
         <el-button type="primary" @click="showEditDialog = true">Edit</el-button>
         <el-button @click="recollect" :loading="recollecting">Recollect from Google Maps</el-button>
       </div>
+
+      <el-divider />
+
+      <div style="margin-top: 20px">
+        <h4 style="margin-bottom: 10px">Content & Research</h4>
+        <el-button-group>
+          <el-button @click="$router.push(`/poi/${poi.city}/${poi.poi_id}/transcript`)">
+            View Transcript
+          </el-button>
+          <el-button @click="$router.push(`/poi/${poi.city}/${poi.poi_id}/research`)">
+            View Research
+          </el-button>
+        </el-button-group>
+      </div>
     </div>
 
     <POIEditor

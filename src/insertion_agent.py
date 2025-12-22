@@ -370,3 +370,290 @@ Generate the paragraph:"""
         )
 
         return response.text
+
+    # ===== Natural Integration Methods (Smart Verification Loop) =====
+
+    def integrate_feature_with_facts(
+        self,
+        feature: str,
+        relevant_facts: List[str],
+        full_transcript: str,
+        poi_name: str,
+        city: str,
+        provider: str
+    ) -> str:
+        """
+        Integrate missing feature naturally into full transcript using explicit facts
+
+        This is the NEW approach for smart verification:
+        - Takes FULL transcript (not just surrounding context)
+        - AI decides where and how to integrate (sentence, expand paragraph, or new paragraph)
+        - Requires using specific facts from research
+        - No forced paragraph length - natural integration
+
+        Args:
+            feature: Missing feature description
+            relevant_facts: List of relevant facts extracted from research
+            full_transcript: Complete current transcript
+            poi_name: POI name
+            city: City name
+            provider: AI provider to use
+
+        Returns:
+            Complete updated transcript with feature integrated
+        """
+        print(f"  [INTEGRATE] Integrating feature with {len(relevant_facts)} facts...")
+
+        # Build prompt for natural integration
+        facts_formatted = '\n'.join([f"  - {fact}" for fact in relevant_facts])
+
+        prompt = f"""
+POI: {poi_name}, {city}
+
+TASK: Integrate the following missing feature into the transcript naturally.
+
+MISSING FEATURE:
+{feature}
+
+RESEARCH FACTS YOU MUST USE (use at least 2):
+{facts_formatted}
+
+CURRENT TRANSCRIPT:
+{full_transcript}
+
+INSTRUCTIONS:
+1. Read the full transcript to understand the narrative flow and tone
+2. Find the BEST place(s) to integrate this missing feature
+3. You can choose to:
+   - Add a sentence to an existing paragraph
+   - Expand an existing paragraph with 2-3 sentences
+   - Insert a new paragraph if truly needed (but avoid if possible)
+4. MUST use at least 2 specific facts from the research facts list above
+5. Match the existing tone and style
+6. Use exact measurements and details (no approximations)
+7. Ensure smooth narrative flow
+
+OUTPUT: Return the COMPLETE updated transcript with the feature integrated.
+Do NOT explain your changes or add comments. Just return the full updated transcript.
+"""
+
+        # Call AI provider
+        updated_transcript = self._call_provider(prompt, provider)
+
+        return updated_transcript.strip()
+
+    def integrate_feature_with_expansion(
+        self,
+        feature: str,
+        new_research: Dict,
+        full_transcript: str,
+        poi_name: str,
+        city: str,
+        provider: str
+    ) -> str:
+        """
+        Integrate missing feature using newly expanded research
+
+        Used when research was expanded to cover a gap.
+        Gives AI full transcript to integrate new information naturally.
+
+        Args:
+            feature: Missing feature description
+            new_research: Newly discovered research data
+            full_transcript: Complete current transcript
+            poi_name: POI name
+            city: City name
+            provider: AI provider to use
+
+        Returns:
+            Complete updated transcript with new information integrated
+        """
+        print(f"  [INTEGRATE] Integrating feature with expanded research...")
+
+        # Format new research for prompt
+        research_formatted = self._format_research_data(new_research)
+
+        prompt = f"""
+POI: {poi_name}, {city}
+
+TASK: Integrate newly discovered information into the transcript.
+
+MISSING FEATURE:
+{feature}
+
+NEW RESEARCH DISCOVERED:
+{research_formatted}
+
+CURRENT TRANSCRIPT:
+{full_transcript}
+
+INSTRUCTIONS:
+1. This research was just discovered to fill a knowledge gap
+2. Find the BEST place(s) in the transcript to integrate this information
+3. You can choose to:
+   - Add a sentence to an existing paragraph
+   - Expand an existing paragraph with 2-3 sentences
+   - Insert a new paragraph if the information is substantial
+4. Highlight the new details naturally
+5. Match the existing tone and style
+6. Ensure smooth narrative flow
+
+OUTPUT: Return the COMPLETE updated transcript with the new information integrated.
+Do NOT explain your changes or add comments. Just return the full updated transcript.
+"""
+
+        # Call AI provider
+        updated_transcript = self._call_provider(prompt, provider)
+
+        return updated_transcript.strip()
+
+    def _format_research_data(self, research_data: Dict) -> str:
+        """Format research data for prompt"""
+        lines = []
+
+        # Core features
+        if 'core_features' in research_data:
+            lines.append("Core Features:")
+            for feature in research_data['core_features']:
+                lines.append(f"  - {feature}")
+
+        # People
+        if 'people' in research_data:
+            lines.append("\nPeople:")
+            for person in research_data['people']:
+                name = person.get('name', 'Unknown')
+                role = person.get('role', '')
+                info = f"  - {name}"
+                if role:
+                    info += f" ({role})"
+                if person.get('personality'):
+                    info += f": {person['personality']}"
+                lines.append(info)
+
+        # Events
+        if 'events' in research_data:
+            lines.append("\nEvents:")
+            for event in research_data['events']:
+                name = event.get('name', 'Unknown')
+                date = event.get('date', '')
+                info = f"  - {name}"
+                if date:
+                    info += f" ({date})"
+                if event.get('significance'):
+                    info += f": {event['significance']}"
+                lines.append(info)
+
+        # Locations
+        if 'locations' in research_data:
+            lines.append("\nLocations:")
+            for location in research_data['locations']:
+                name = location.get('name', 'Unknown')
+                desc = location.get('description', '')
+                info = f"  - {name}"
+                if desc:
+                    info += f": {desc}"
+                lines.append(info)
+
+        # Concepts
+        if 'concepts' in research_data:
+            lines.append("\nConcepts:")
+            for concept in research_data['concepts']:
+                name = concept.get('name', 'Unknown')
+                explanation = concept.get('explanation', '')
+                info = f"  - {name}"
+                if explanation:
+                    info += f": {explanation}"
+                lines.append(info)
+
+        return '\n'.join(lines)
+
+    def _call_provider(self, prompt: str, provider: str, max_tokens: int = 4000) -> str:
+        """
+        Call appropriate AI provider with custom max_tokens
+
+        Args:
+            prompt: Prompt string
+            provider: AI provider name
+            max_tokens: Maximum tokens for response (default 4000 for full transcripts)
+
+        Returns:
+            AI response text
+        """
+        if provider == 'anthropic':
+            return self._generate_anthropic_custom(prompt, max_tokens)
+        elif provider == 'openai':
+            return self._generate_openai_custom(prompt, max_tokens)
+        elif provider == 'google':
+            return self._generate_google_custom(prompt, max_tokens)
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
+
+    def _generate_anthropic_custom(self, prompt: str, max_tokens: int = 4000) -> str:
+        """Generate using Anthropic with custom max_tokens"""
+        config = self.ai_config.get('anthropic', {})
+        api_key = config.get('api_key')
+        model = config.get('model', 'claude-sonnet-4-5-20250929')
+
+        if not api_key:
+            raise ValueError("Anthropic API key not configured")
+
+        client = anthropic.Anthropic(api_key=api_key)
+
+        message = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system="You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details.",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return message.content[0].text
+
+    def _generate_openai_custom(self, prompt: str, max_tokens: int = 4000) -> str:
+        """Generate using OpenAI with custom max_tokens"""
+        config = self.ai_config.get('openai', {})
+        api_key = config.get('api_key')
+        model = config.get('model', 'gpt-4')
+
+        if not api_key:
+            raise ValueError("OpenAI API key not configured")
+
+        client = openai.OpenAI(api_key=api_key)
+
+        system_prompt = "You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details."
+
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        return response.choices[0].message.content
+
+    def _generate_google_custom(self, prompt: str, max_tokens: int = 4000) -> str:
+        """Generate using Google Gemini with custom max_tokens"""
+        config = self.ai_config.get('google', {})
+        api_key = config.get('api_key')
+        model_name = config.get('model', 'gemini-pro')
+
+        if not api_key:
+            raise ValueError("Google API key not configured")
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+
+        full_prompt = f"""You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details.
+
+{prompt}"""
+
+        response = model.generate_content(
+            full_prompt,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=0.7
+            )
+        )
+
+        return response.text

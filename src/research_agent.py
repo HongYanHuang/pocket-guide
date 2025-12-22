@@ -679,3 +679,211 @@ Output in YAML format.
         """
         with open(research_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
+
+    # ===== Research Expansion Methods =====
+
+    def expand_research_for_feature(
+        self,
+        feature: str,
+        poi_name: str,
+        city: str,
+        existing_research: Dict,
+        provider: str
+    ) -> Dict:
+        """
+        Expand research to cover a missing feature
+
+        This is called when diagnosis identifies a research gap - the research
+        data doesn't contain enough information about a specific feature.
+
+        Strategy:
+        1. Extract aspect from feature (e.g., "towers" from "Two massive stone towers")
+        2. Build focused research prompt targeting that aspect
+        3. Call AI to research that specific aspect
+        4. Parse and return new research data (to be merged with existing)
+
+        Args:
+            feature: Feature description that's missing from research
+            poi_name: Name of POI
+            city: City name
+            existing_research: Current research data
+            provider: AI provider to use
+
+        Returns:
+            New research data dictionary to merge with existing
+        """
+        print(f"\n  [RESEARCH EXPANSION] Expanding research for feature: {feature[:60]}...")
+
+        # Extract main aspect from feature
+        aspect = self._extract_aspect(feature)
+        print(f"  [ASPECT] Identified aspect: {aspect}")
+
+        # Build focused research prompt
+        prompt = self._build_aspect_research_prompt(
+            poi_name=poi_name,
+            city=city,
+            aspect=aspect,
+            feature_context=feature,
+            existing_research=existing_research
+        )
+
+        # Call AI to research this specific aspect
+        raw_response = self._call_ai(prompt, provider)
+        self.api_calls_made += 1
+
+        # Parse response
+        new_research = self._parse_research_response(raw_response, "aspect_expansion")
+
+        print(f"  [EXPANSION] Successfully expanded research for: {aspect}")
+
+        return new_research
+
+    def _extract_aspect(self, feature: str) -> str:
+        """
+        Extract the main aspect/focus from a feature description
+
+        Examples:
+        - "Two massive stone towers flank the gate" → "tower structures"
+        - "Relief carvings show Galerius defeating Persians" → "relief carvings"
+        - "Built during the reign of Emperor Diocletian" → "construction period"
+
+        Args:
+            feature: Feature description
+
+        Returns:
+            Extracted aspect string
+        """
+        feature_lower = feature.lower()
+
+        # Common architectural elements
+        architectural_terms = {
+            'tower': 'tower structures',
+            'column': 'column structures',
+            'pillar': 'pillar structures',
+            'arch': 'arched structures',
+            'dome': 'dome structures',
+            'wall': 'wall structures',
+            'gate': 'gateway architecture',
+            'relief': 'relief carvings',
+            'carving': 'sculptural carvings',
+            'sculpture': 'sculptural elements',
+            'mosaic': 'mosaic artwork',
+            'fresco': 'fresco paintings',
+            'inscription': 'inscriptions and text'
+        }
+
+        for term, aspect in architectural_terms.items():
+            if term in feature_lower:
+                return aspect
+
+        # Historical/temporal references
+        temporal_terms = {
+            'built': 'construction history',
+            'reign': 'historical period',
+            'century': 'historical period',
+            'emperor': 'imperial context',
+            'king': 'royal context',
+            'battle': 'military history',
+            'war': 'military history',
+            'conquest': 'military conquest'
+        }
+
+        for term, aspect in temporal_terms.items():
+            if term in feature_lower:
+                return aspect
+
+        # Fallback: extract key nouns (capitalized words or long words)
+        import re
+        capitalized = re.findall(r'\b[A-Z][a-z]+\b', feature)
+        if capitalized:
+            return f"{capitalized[0].lower()} context"
+
+        long_words = re.findall(r'\b[a-z]{6,}\b', feature_lower)
+        if long_words:
+            return f"{long_words[0]} details"
+
+        # Ultimate fallback
+        return "additional details"
+
+    def _build_aspect_research_prompt(
+        self,
+        poi_name: str,
+        city: str,
+        aspect: str,
+        feature_context: str,
+        existing_research: Dict
+    ) -> str:
+        """
+        Build focused research prompt for specific aspect
+
+        Args:
+            poi_name: POI name
+            city: City name
+            aspect: Extracted aspect (e.g., "tower structures")
+            feature_context: Original feature description
+            existing_research: Existing research data (for context)
+
+        Returns:
+            Research prompt string
+        """
+        # Build summary of existing research
+        existing_summary = ""
+        if 'poi' in existing_research and 'description' in existing_research['poi']:
+            existing_summary = f"Known: {existing_research['poi']['description']}"
+
+        prompt = f"""
+You are a historical researcher conducting FOCUSED research to fill a specific gap.
+
+POI: {poi_name}
+City: {city}
+EXISTING RESEARCH: {existing_summary}
+
+MISSING INFORMATION:
+We need detailed information about: {aspect}
+
+CONTEXT: The tour guide needs to cover this feature:
+"{feature_context}"
+
+But our current research lacks specific details about {aspect}.
+
+TASK: Research {poi_name} specifically focusing on {aspect}.
+
+Extract information in YAML format:
+
+```yaml
+aspect: "{aspect}"
+poi_name: "{poi_name}"
+
+core_features:  # Physical details about {aspect} that visitors can see/experience
+  - # Specific measurements, materials, visual characteristics
+  - # How to identify or recognize this aspect
+  - # Current condition and state
+
+people:  # People associated with {aspect} (if applicable)
+  - name:
+    role:
+    relationship_to_aspect:  # How they relate to {aspect}
+
+events:  # Events related to {aspect} (if applicable)
+  - name:
+    date:
+    significance:  # How this event relates to {aspect}
+
+locations:  # Sub-locations or parts related to {aspect} (if applicable)
+  - name:
+    description:
+
+concepts:  # Historical/cultural concepts related to {aspect} (if applicable)
+  - name:
+    explanation:
+```
+
+IMPORTANT:
+- Focus ONLY on {aspect} - don't repeat general information
+- Include SPECIFIC DETAILS: exact measurements, materials, numbers, dates
+- Prioritize information that helps a tour guide explain {aspect} to visitors
+- If {aspect} doesn't exist or you find no information, return minimal structure
+
+Output ONLY valid YAML, no markdown fences or extra text.
+"""
+        return prompt

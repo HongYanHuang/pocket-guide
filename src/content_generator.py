@@ -22,9 +22,11 @@ except ImportError:
 try:
     from .verification_agent import VerificationAgent
     from .insertion_agent import InsertionAgent
+    from .diagnosis_agent import DiagnosisAgent
 except ImportError:
     from verification_agent import VerificationAgent
     from insertion_agent import InsertionAgent
+    from diagnosis_agent import DiagnosisAgent
 
 
 class ContentGenerator:
@@ -42,15 +44,20 @@ class ContentGenerator:
         # Initialize verification agent
         verification_config = config.get('verification', {})
         self.verification_enabled = verification_config.get('enabled', True)
+        self.smart_mode = verification_config.get('smart_mode', True)  # Enable smart mode by default
+        self.coverage_threshold = verification_config.get('coverage_threshold', 0.90)
+
         if self.verification_enabled:
             self.verification_agent = VerificationAgent(
-                coverage_threshold=verification_config.get('coverage_threshold', 0.90),
+                coverage_threshold=self.coverage_threshold,
                 similarity_threshold=verification_config.get('similarity_threshold', 0.35)
             )
             self.insertion_agent = None  # Initialized lazily when needed
+            self.diagnosis_agent = DiagnosisAgent(config) if self.smart_mode else None
         else:
             self.verification_agent = None
             self.insertion_agent = None
+            self.diagnosis_agent = None
 
     def _detect_active_modules(self, research_data: Dict, interests: List[str] = None) -> List[str]:
         """
@@ -297,13 +304,25 @@ class ContentGenerator:
             core_features = research_data.get('poi', {}).get('core_features', [])
             if core_features:
                 print(f"  [VERIFICATION] Checking core features coverage...", flush=True)
-                transcript, verification_metadata = self._verify_and_refine(
-                    transcript=transcript,
-                    core_features=core_features,
-                    poi_name=poi_name,
-                    city=city,
-                    provider=provider
-                )
+
+                # Use smart verification if enabled, otherwise use legacy version
+                if self.smart_mode:
+                    transcript, verification_metadata = self._verify_and_refine_smart(
+                        transcript=transcript,
+                        core_features=core_features,
+                        research_data=research_data,
+                        poi_name=poi_name,
+                        city=city,
+                        provider=provider
+                    )
+                else:
+                    transcript, verification_metadata = self._verify_and_refine(
+                        transcript=transcript,
+                        core_features=core_features,
+                        poi_name=poi_name,
+                        city=city,
+                        provider=provider
+                    )
 
         # Build generation metadata for audit trail
         generation_metadata = {
@@ -1043,3 +1062,222 @@ class ContentGenerator:
                 "The prompt may have triggered safety filters. "
                 "Try using --provider openai or --provider anthropic instead."
             ) from e
+
+    # ===== Smart Verification Loop Methods =====
+
+    def _verify_and_refine_smart(
+        self,
+        transcript: str,
+        core_features: List[str],
+        research_data: Dict,
+        poi_name: str,
+        city: str,
+        provider: str,
+        max_iterations: int = 2
+    ) -> Tuple[str, Dict]:
+        """
+        Smart verification loop with diagnosis and targeted fixes
+
+        This is the NEW smart verification approach that:
+        1. Skips features that already passed (>70% confidence)
+        2. Diagnoses WHY features fail (research gap vs selection gap)
+        3. Expands research when needed (research gaps)
+        4. Generates targeted insertions with explicit facts (selection gaps)
+        5. Uses natural integration (full transcript, AI chooses placement)
+
+        Args:
+            transcript: Initial transcript text
+            core_features: List of core feature strings from research
+            research_data: Full research data dictionary (may be expanded)
+            poi_name: POI name for context
+            city: City name for context
+            provider: AI provider to use
+            max_iterations: Maximum refinement iterations (default: 2)
+
+        Returns:
+            Tuple of (refined_transcript, verification_metadata)
+        """
+        verification_config = self.config.get('verification', {})
+        max_iterations = verification_config.get('max_iterations', max_iterations)
+
+        current_transcript = transcript
+        passed_features = set()  # Track features that passed
+        iteration = 0
+        refinement_history = []
+
+        print(f"  [SMART VERIFICATION] Using smart verification loop with diagnosis", flush=True)
+
+        while iteration < max_iterations:
+            iteration += 1
+            print(f"\n  [ITERATION {iteration}/{max_iterations}]", flush=True)
+
+            # STEP 1: Smart verification (skip already-passed features)
+            verification = self.verification_agent.verify_coverage_smart(
+                current_transcript,
+                core_features,
+                passed_features
+            )
+
+            # Print status
+            passed_count = len(verification['passed'])
+            partial_count = len(verification['partial'])
+            missing_count = len(verification['missing'])
+            print(f"  Coverage: {verification['coverage']*100:.1f}% | Passed: {passed_count}, Partial: {partial_count}, Missing: {missing_count}", flush=True)
+
+            # STEP 2: Update passed features
+            passed_features = verification['passed_features']
+
+            # Store iteration results
+            refinement_history.append({
+                'iteration': iteration,
+                'coverage': verification['coverage'],
+                'passed_count': passed_count,
+                'partial_count': partial_count,
+                'missing_count': missing_count,
+                'passes_threshold': verification['passes_threshold']
+            })
+
+            # STEP 3: Check if we're done
+            if verification['passes_threshold']:
+                print(f"  ✅ Coverage threshold met: {verification['coverage']*100:.1f}%", flush=True)
+                break
+
+            # STEP 4: Get failed features (partial + missing)
+            failed_features = verification['partial'] + verification['missing']
+
+            if not failed_features or iteration >= max_iterations:
+                if not failed_features:
+                    print(f"  ℹ️  No failed features to fix", flush=True)
+                else:
+                    print(f"  ⚠️  Max iterations reached. Final coverage: {verification['coverage']*100:.1f}%", flush=True)
+                break
+
+            print(f"  📋 Processing {len(failed_features)} failed features...", flush=True)
+
+            # STEP 5: Diagnose failures
+            diagnoses = self.diagnosis_agent.diagnose_feature_failures(
+                failed_features,
+                research_data,
+                current_transcript,
+                provider
+            )
+
+            # STEP 6: Initialize insertion agent if needed
+            if self.insertion_agent is None:
+                self.insertion_agent = InsertionAgent(self.config, provider)
+
+            # STEP 7: Process each diagnosis
+            for i, diagnosis in enumerate(diagnoses, 1):
+                feature_short = diagnosis['feature'][:60] + "..." if len(diagnosis['feature']) > 60 else diagnosis['feature']
+                print(f"\n  [{i}/{len(diagnoses)}] Processing: {feature_short}", flush=True)
+
+                try:
+                    if diagnosis['diagnosis_type'] == 'research_gap':
+                        # Research gap: Expand research then integrate
+                        print(f"    → Research gap detected. Expanding research...", flush=True)
+
+                        new_research = self.research_agent.expand_research_for_feature(
+                            feature=diagnosis['feature'],
+                            poi_name=poi_name,
+                            city=city,
+                            existing_research=research_data,
+                            provider=provider
+                        )
+
+                        # Merge new research into existing
+                        research_data = self._merge_research(research_data, new_research)
+
+                        # Integrate with expanded research
+                        current_transcript = self.insertion_agent.integrate_feature_with_expansion(
+                            feature=diagnosis['feature'],
+                            new_research=new_research,
+                            full_transcript=current_transcript,
+                            poi_name=poi_name,
+                            city=city,
+                            provider=provider
+                        )
+
+                        print(f"    ✓ Integrated with expanded research", flush=True)
+
+                    else:  # selection_gap
+                        # Selection gap: Integrate with explicit facts
+                        print(f"    → Selection gap detected. Integrating with {len(diagnosis['relevant_facts'])} facts...", flush=True)
+
+                        current_transcript = self.insertion_agent.integrate_feature_with_facts(
+                            feature=diagnosis['feature'],
+                            relevant_facts=diagnosis['relevant_facts'],
+                            full_transcript=current_transcript,
+                            poi_name=poi_name,
+                            city=city,
+                            provider=provider
+                        )
+
+                        print(f"    ✓ Integrated with explicit facts", flush=True)
+
+                except Exception as e:
+                    print(f"    ❌ Failed: {str(e)}", flush=True)
+                    continue
+
+        # Build metadata
+        metadata = {
+            'smart_mode': True,
+            'iterations': iteration,
+            'final_coverage': verification['coverage'],
+            'passed_features': len(passed_features),
+            'total_features': len(core_features),
+            'refinement_history': refinement_history,
+            'final_verification': {
+                'passed': len(verification['passed']),
+                'partial': len(verification['partial']),
+                'missing': len(verification['missing'])
+            }
+        }
+
+        return current_transcript, metadata
+
+    def _merge_research(self, existing: Dict, new_research: Dict) -> Dict:
+        """
+        Merge new research into existing research data
+
+        Strategy:
+        - Append to core_features list
+        - Extend people, events, locations, concepts lists
+        - Merge entities dict (avoiding duplicates)
+        - Preserve existing structure
+
+        Args:
+            existing: Existing research data
+            new_research: New research data to merge
+
+        Returns:
+            Merged research data dictionary
+        """
+        merged = existing.copy()
+
+        # Merge into 'poi' section
+        if 'poi' in merged:
+            poi = merged['poi']
+
+            # Merge core_features
+            if 'core_features' in new_research:
+                if 'core_features' not in poi:
+                    poi['core_features'] = []
+                poi['core_features'].extend(new_research['core_features'])
+
+        # Merge top-level arrays
+        for section in ['people', 'events', 'locations', 'concepts']:
+            if section in new_research:
+                if section not in merged:
+                    merged[section] = []
+                merged[section].extend(new_research[section])
+
+        # Merge entities (avoid duplicates by name)
+        if 'entities' in new_research:
+            if 'entities' not in merged:
+                merged['entities'] = {}
+
+            for entity_name, entity_data in new_research['entities'].items():
+                if entity_name not in merged['entities']:
+                    merged['entities'][entity_name] = entity_data
+
+        return merged

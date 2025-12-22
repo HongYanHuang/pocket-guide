@@ -329,3 +329,131 @@ class VerificationAgent:
         lines.append("=" * 60)
 
         return "\n".join(lines)
+
+    # ===== Smart Verification Methods =====
+
+    def verify_coverage_smart(
+        self,
+        transcript: str,
+        features: List[str],
+        passed_features: set = None
+    ) -> Dict:
+        """
+        Smart verification that skips already-passed features
+
+        This is an optimized version of verify_coverage() that:
+        1. Skips features that already passed in previous iterations
+        2. Classifies features into tiers (PASSED, PARTIAL, MISSING)
+        3. Only re-checks features that previously failed
+
+        Args:
+            transcript: Transcript text to verify
+            features: List of all core features
+            passed_features: Set of feature strings that already passed (>70% confidence)
+
+        Returns:
+            {
+                'coverage': float,  # Overall coverage percentage
+                'passed': List[Dict],  # Features >70% confidence
+                'partial': List[Dict],  # Features 40-70% confidence
+                'missing': List[Dict],  # Features <40% confidence
+                'passed_features': Set[str],  # Updated set of passed features
+                'feature_status': List[Dict],  # Full status for all features
+                'passes_threshold': bool
+            }
+        """
+        if passed_features is None:
+            passed_features = set()
+
+        feature_status = []
+        found_count = 0
+
+        # Check each feature (but skip ones that already passed)
+        for feature in features:
+            if feature in passed_features:
+                # Already passed, skip detailed check
+                feature_status.append({
+                    'feature': feature,
+                    'found': True,
+                    'confidence': 1.0,  # Assume full confidence for passed features
+                    'matched_text': '[Previously verified]',
+                    'line_numbers': [],
+                    'skipped': True
+                })
+                found_count += 1
+            else:
+                # Check this feature
+                result = self._check_feature(feature, transcript.lower(), transcript.split('\n'))
+                feature_status.append(result)
+
+                if result['found']:
+                    found_count += 1
+
+        # Calculate coverage
+        coverage = found_count / len(features) if features else 0.0
+        passes_threshold = coverage >= self.coverage_threshold
+
+        # Classify features into tiers
+        classification = self.classify_features(feature_status)
+
+        # Update passed_features set with new passes
+        new_passed = {
+            status['feature'] for status in feature_status
+            if status['confidence'] > 0.70 and not status.get('skipped', False)
+        }
+        updated_passed_features = passed_features | new_passed
+
+        return {
+            'coverage': coverage,
+            'passed': classification['passed'],
+            'partial': classification['partial'],
+            'missing': classification['missing'],
+            'passed_features': updated_passed_features,
+            'feature_status': feature_status,
+            'total_features': len(features),
+            'found_features': found_count,
+            'passes_threshold': passes_threshold
+        }
+
+    def classify_features(self, feature_status: List[Dict]) -> Dict:
+        """
+        Classify features into tiers based on confidence scores
+
+        Tiers:
+        - PASSED: confidence > 0.70 (feature well-covered)
+        - PARTIAL: 0.40 <= confidence <= 0.70 (feature partially covered)
+        - MISSING: confidence < 0.40 (feature not adequately covered)
+
+        Args:
+            feature_status: List of feature status dictionaries from verification
+
+        Returns:
+            {
+                'passed': List[Dict],  # Features that passed
+                'partial': List[Dict],  # Features partially covered
+                'missing': List[Dict]  # Features missing
+            }
+        """
+        passed = []
+        partial = []
+        missing = []
+
+        for status in feature_status:
+            confidence = status['confidence']
+            feature_dict = {
+                'feature': status['feature'],
+                'score': confidence
+            }
+
+            if confidence > 0.70:
+                passed.append(feature_dict)
+            elif confidence >= 0.40:
+                partial.append(feature_dict)
+            else:
+                missing.append(feature_dict)
+
+        return {
+            'passed': passed,
+            'partial': partial,
+            'missing': missing
+        }

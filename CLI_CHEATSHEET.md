@@ -2,6 +2,27 @@
 
 Quick reference for all CLI commands in the Pocket Guide project.
 
+## ⚠️ Important: How to Run Commands
+
+All commands in this cheatsheet use `./pocket-guide` which must be run from the project root directory:
+
+```bash
+# Make sure you're in the project directory
+cd /path/to/pocket-guide
+
+# Run commands with ./
+./pocket-guide poi research Rome --count 50
+```
+
+**Alternative: Add to PATH** (optional)
+```bash
+# Add project directory to PATH in ~/.zshrc or ~/.bashrc
+export PATH="/path/to/pocket-guide:$PATH"
+
+# Then you can run without ./
+pocket-guide poi research Rome --count 50
+```
+
 ---
 
 ## 📋 Table of Contents
@@ -61,12 +82,12 @@ lsof -ti:5173 | xargs kill -9
 Discover and research top POIs in a city using AI.
 
 ```bash
-pocket-guide poi research <city> [OPTIONS]
+./pocket-guide poi research <city> [OPTIONS]
 
 # Examples:
-pocket-guide poi research Paris --count 15
-pocket-guide poi research Tokyo --provider anthropic
-pocket-guide poi research Rome --count 20 --provider openai
+./pocket-guide poi research Paris --count 15
+./pocket-guide poi research Tokyo --provider anthropic
+./pocket-guide poi research Rome --count 20 --provider openai
 ```
 
 **Options:**
@@ -82,11 +103,11 @@ pocket-guide poi research Rome --count 20 --provider openai
 Check if research candidates duplicate existing POIs.
 
 ```bash
-pocket-guide poi check-redundancy <city> [OPTIONS]
+./pocket-guide poi check-redundancy <city> [OPTIONS]
 
 # Examples:
-pocket-guide poi check-redundancy Athens
-pocket-guide poi check-redundancy Istanbul --provider anthropic
+./pocket-guide poi check-redundancy Athens
+./pocket-guide poi check-redundancy Istanbul --provider anthropic
 ```
 
 **What it does:**
@@ -103,14 +124,14 @@ pocket-guide poi check-redundancy Istanbul --provider anthropic
 Generate tour guide content for one POI with full research.
 
 ```bash
-pocket-guide generate \
+./pocket-guide generate \
   --poi-name "Eiffel Tower" \
   --city "Paris" \
   --provider anthropic \
   --language English
 
 # With custom description:
-pocket-guide generate \
+./pocket-guide generate \
   --poi-name "Colosseum" \
   --city "Rome" \
   --description "Ancient amphitheater, gladiator battles" \
@@ -141,12 +162,12 @@ pocket-guide generate \
 Generate multiple POIs from a text file (one POI name per line).
 
 ```bash
-pocket-guide poi batch-generate <input_file> --city <city> [OPTIONS]
+./pocket-guide poi batch-generate <input_file> --city <city> [OPTIONS]
 
 # Examples:
-pocket-guide poi batch-generate pois.txt --city Istanbul
-pocket-guide poi batch-generate paris_pois.txt --city Paris --provider anthropic
-pocket-guide poi batch-generate quick_batch.txt --city Athens --skip-research
+./pocket-guide poi batch-generate pois.txt --city Istanbul
+./pocket-guide poi batch-generate paris_pois.txt --city Paris --provider anthropic
+./pocket-guide poi batch-generate quick_batch.txt --city Athens --skip-research
 ```
 
 **Input file format** (`pois.txt`):
@@ -297,10 +318,10 @@ pocket-guide/
 
 ```bash
 # 1. Research POIs
-pocket-guide poi research "New York" --count 15
+./pocket-guide poi research "New York" --count 15
 
 # 2. Check for duplicates (if you have existing content)
-pocket-guide poi check-redundancy "New York"
+./pocket-guide poi check-redundancy "New York"
 
 # 3. Create input file with POI names
 cat > nyc_pois.txt << EOF
@@ -310,7 +331,7 @@ Empire State Building
 EOF
 
 # 4. Batch generate
-pocket-guide poi batch-generate nyc_pois.txt --city "New York"
+./pocket-guide poi batch-generate nyc_pois.txt --city "New York"
 
 # 5. Collect metadata (requires Google Maps API)
 curl -X POST http://localhost:8000/cities/new-york/collect
@@ -320,7 +341,7 @@ curl -X POST http://localhost:8000/cities/new-york/collect
 
 ```bash
 # Generate with full research
-pocket-guide generate \
+./pocket-guide generate \
   --poi-name "Notre-Dame Cathedral" \
   --city "Paris" \
   --provider anthropic
@@ -349,7 +370,7 @@ open http://localhost:5173
 python3 generate_missing_research.py
 
 # Or generate for specific POI:
-pocket-guide generate \
+./pocket-guide generate \
   --poi-name "Existing POI" \
   --city "City" \
   --force-research  # Re-research even if content exists
@@ -431,7 +452,7 @@ ping anthropic.com
 python test-api-keys.py
 
 # Try with a different provider
-pocket-guide poi batch-generate pois.txt --city City --provider google
+./pocket-guide poi batch-generate pois.txt --city City --provider google
 ```
 
 ---

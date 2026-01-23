@@ -9,6 +9,7 @@ import json
 import yaml
 import re
 import time
+import signal
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -16,6 +17,16 @@ from typing import Dict, List, Any, Optional
 import anthropic
 import openai
 from google import generativeai as genai
+
+
+class TimeoutError(Exception):
+    """Custom timeout exception"""
+    pass
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for timeout"""
+    raise TimeoutError("API call timed out")
 
 
 class POIResearchAgent:
@@ -184,7 +195,8 @@ class POIResearchAgent:
         if not api_key:
             raise ValueError("Anthropic API key not configured")
 
-        client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
+        print(f"  [DEBUG] Preparing Anthropic API call (model: {model})...")
+        client = anthropic.Anthropic(api_key=api_key, timeout=120.0)  # Increased timeout for large responses
 
         # Retry logic with exponential backoff
         max_retries = 5
@@ -202,12 +214,41 @@ class POIResearchAgent:
                 if attempt == 0:
                     time.sleep(0.5)  # 500ms delay between normal calls
 
-                message = client.messages.create(
-                    model=model,
-                    max_tokens=4096,
-                    temperature=0.7,
-                    messages=[{"role": "user", "content": prompt}]
-                )
+                import sys
+                print(f"  [DEBUG] Sending request to Anthropic API... (this may take 60-120 seconds for large requests)", flush=True)
+                sys.stdout.flush()
+
+                # Set up signal-based timeout (Unix/Mac only)
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(120)  # 120 second timeout
+
+                try:
+                    message = client.messages.create(
+                        model=model,
+                        max_tokens=16000,  # Increased from 4096 to handle large POI lists (50+ POIs)
+                        temperature=0.7,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    signal.alarm(0)  # Cancel the alarm
+                except TimeoutError:
+                    signal.alarm(0)
+                    print(f"  [ERROR] API call timed out after 120 seconds", flush=True)
+                    raise Exception(
+                        f"API request timed out after 120 seconds. "
+                        f"The request may be too large. Try reducing --count to 30 or less."
+                    )
+                except Exception as e:
+                    signal.alarm(0)
+                    print(f"  [ERROR] API call failed: {type(e).__name__}: {str(e)}", flush=True)
+                    raise
+
+                print(f"  [DEBUG] Response received! Length: {len(message.content[0].text)} characters", flush=True)
+                print(f"  [DEBUG] Stop reason: {message.stop_reason}", flush=True)
+
+                # Warn if response was truncated
+                if message.stop_reason == "max_tokens":
+                    print(f"  [WARNING] Response may be truncated due to max_tokens limit. Consider reducing --count")
+
                 return message.content[0].text
 
             except anthropic.APIStatusError as e:
@@ -379,7 +420,18 @@ Output ONLY valid JSON with no markdown formatting:
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse AI response as JSON: {e}\nResponse: {json_str[:500]}")
+            # Show more context for debugging
+            error_pos = getattr(e, 'pos', 0)
+            context_start = max(0, error_pos - 100)
+            context_end = min(len(json_str), error_pos + 100)
+            context = json_str[context_start:context_end]
+
+            raise ValueError(
+                f"Failed to parse AI response as JSON: {e}\n"
+                f"Response length: {len(json_str)} characters\n"
+                f"Context around error:\n{context}\n"
+                f"Hint: If response is very long, the API may have truncated it. Try reducing --count."
+            )
 
         # Extract POIs list
         pois = data.get('pois', [])

@@ -6,6 +6,7 @@ in feature coverage. Uses AI to generate contextually appropriate paragraphs.
 """
 
 import re
+import time
 from typing import List, Dict, Tuple
 import anthropic
 import openai
@@ -300,7 +301,7 @@ Generate the paragraph:"""
     # AI Provider Methods
 
     def _generate_anthropic(self, prompt: str) -> str:
-        """Generate insertion using Anthropic Claude"""
+        """Generate insertion using Anthropic Claude with retry logic"""
         config = self.ai_config.get('anthropic', {})
         api_key = config.get('api_key')
         model = config.get('model', 'claude-3-5-sonnet-20241022')
@@ -308,18 +309,57 @@ Generate the paragraph:"""
         if not api_key:
             raise ValueError("Anthropic API key not configured")
 
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
 
         system_prompt = "You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details."
 
-        response = client.messages.create(
-            model=model,
-            max_tokens=800,  # Longer insertions for Option D (100-150 words)
-            system=system_prompt,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        # Retry logic with exponential backoff
+        max_retries = 5
+        base_delay = 1.0
 
-        return response.content[0].text
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    wait_time = base_delay * (2 ** (attempt - 1))
+                    print(f"  [DEBUG] Retry {attempt}/{max_retries} - waiting {wait_time}s...")
+                    time.sleep(wait_time)
+
+                # Small delay between API calls to prevent rate limiting
+                if attempt == 0:
+                    time.sleep(0.5)
+
+                response = client.messages.create(
+                    model=model,
+                    max_tokens=800,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+
+                return response.content[0].text
+
+            except anthropic.APIStatusError as e:
+                if e.status_code in [429, 529]:
+                    if attempt < max_retries - 1:
+                        error_type = "rate limit" if e.status_code == 429 else "overloaded"
+                        print(f"  [WARNING] Anthropic API {error_type}, retrying...")
+                        continue
+                    else:
+                        print(f"  [ERROR] Anthropic API error after {max_retries} attempts")
+                        raise Exception(f"Anthropic API error (status {e.status_code})") from e
+                else:
+                    raise
+
+            except (anthropic.APIConnectionError, anthropic.APITimeoutError,
+                    ConnectionError, TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    print(f"  [WARNING] Connection error, retrying...")
+                    continue
+                else:
+                    print(f"  [ERROR] Connection failed after {max_retries} attempts")
+                    raise Exception(f"Connection error after {max_retries} attempts") from e
+
+            except Exception as e:
+                raise
 
     def _generate_openai(self, prompt: str) -> str:
         """Generate insertion using OpenAI"""
@@ -589,7 +629,7 @@ Do NOT explain your changes or add comments. Just return the full updated transc
             raise ValueError(f"Unknown provider: {provider}")
 
     def _generate_anthropic_custom(self, prompt: str, max_tokens: int = 4000) -> str:
-        """Generate using Anthropic with custom max_tokens"""
+        """Generate using Anthropic with custom max_tokens and retry logic"""
         config = self.ai_config.get('anthropic', {})
         api_key = config.get('api_key')
         model = config.get('model', 'claude-sonnet-4-5-20250929')
@@ -597,16 +637,55 @@ Do NOT explain your changes or add comments. Just return the full updated transc
         if not api_key:
             raise ValueError("Anthropic API key not configured")
 
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
 
-        message = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system="You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details.",
-            messages=[{"role": "user", "content": prompt}]
-        )
+        # Retry logic with exponential backoff
+        max_retries = 5
+        base_delay = 1.0
 
-        return message.content[0].text
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    wait_time = base_delay * (2 ** (attempt - 1))
+                    print(f"  [DEBUG] Retry {attempt}/{max_retries} - waiting {wait_time}s...")
+                    time.sleep(wait_time)
+
+                # Small delay between API calls to prevent rate limiting
+                if attempt == 0:
+                    time.sleep(0.5)
+
+                message = client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    system="You are a master storyteller helping refine a tour guide transcript. Your insertions should blend seamlessly with the existing narrative, matching the dramatic storytelling tone perfectly while including all required factual details.",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+
+                return message.content[0].text
+
+            except anthropic.APIStatusError as e:
+                if e.status_code in [429, 529]:
+                    if attempt < max_retries - 1:
+                        error_type = "rate limit" if e.status_code == 429 else "overloaded"
+                        print(f"  [WARNING] Anthropic API {error_type}, retrying...")
+                        continue
+                    else:
+                        print(f"  [ERROR] Anthropic API error after {max_retries} attempts")
+                        raise Exception(f"Anthropic API error (status {e.status_code})") from e
+                else:
+                    raise
+
+            except (anthropic.APIConnectionError, anthropic.APITimeoutError,
+                    ConnectionError, TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    print(f"  [WARNING] Connection error, retrying...")
+                    continue
+                else:
+                    print(f"  [ERROR] Connection failed after {max_retries} attempts")
+                    raise Exception(f"Connection error after {max_retries} attempts") from e
+
+            except Exception as e:
+                raise
 
     def _generate_openai_custom(self, prompt: str, max_tokens: int = 4000) -> str:
         """Generate using OpenAI with custom max_tokens"""

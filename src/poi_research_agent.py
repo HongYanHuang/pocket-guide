@@ -8,6 +8,7 @@ semantic duplicates against existing POI content.
 import json
 import yaml
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -175,7 +176,7 @@ class POIResearchAgent:
         return response.choices[0].message.content
 
     def _call_anthropic(self, prompt: str) -> str:
-        """Call Anthropic Claude API."""
+        """Call Anthropic Claude API with retry logic for rate limits and connection errors."""
         config = self.ai_config.get('anthropic', {})
         api_key = config.get('api_key')
         model = config.get('model', 'claude-sonnet-4-5-20250929')
@@ -185,19 +186,22 @@ class POIResearchAgent:
 
         client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
 
-        try:
-            message = client.messages.create(
-                model=model,
-                max_tokens=4096,
-                temperature=0.7,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return message.content[0].text
-        except anthropic.APIStatusError as e:
-            if e.status_code == 529:
-                # Overloaded, retry once after delay
-                import time
-                time.sleep(2)
+        # Retry logic with exponential backoff
+        max_retries = 5
+        base_delay = 1.0  # Start with 1 second
+
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                    wait_time = base_delay * (2 ** (attempt - 1))
+                    print(f"  [DEBUG] Retry {attempt}/{max_retries} - waiting {wait_time}s...")
+                    time.sleep(wait_time)
+
+                # Small delay between all API calls to prevent rate limiting
+                if attempt == 0:
+                    time.sleep(0.5)  # 500ms delay between normal calls
+
                 message = client.messages.create(
                     model=model,
                     max_tokens=4096,
@@ -205,7 +209,42 @@ class POIResearchAgent:
                     messages=[{"role": "user", "content": prompt}]
                 )
                 return message.content[0].text
-            raise
+
+            except anthropic.APIStatusError as e:
+                error_str = str(e)
+                # Handle rate limit (429) and overload (529) errors
+                if e.status_code in [429, 529]:
+                    if attempt < max_retries - 1:
+                        error_type = "rate limit" if e.status_code == 429 else "overloaded"
+                        print(f"  [WARNING] Anthropic API {error_type}, retrying...")
+                        continue
+                    else:
+                        print(f"  [ERROR] Anthropic API error after {max_retries} attempts")
+                        raise Exception(
+                            f"Anthropic API error (status {e.status_code}). "
+                            f"Please try again later or use a different provider: "
+                            f"--provider openai or --provider google"
+                        ) from e
+                else:
+                    # Other API errors, raise immediately
+                    raise
+
+            except (anthropic.APIConnectionError, anthropic.APITimeoutError,
+                    ConnectionError, TimeoutError) as e:
+                # Handle connection/network errors
+                if attempt < max_retries - 1:
+                    print(f"  [WARNING] Connection error, retrying...")
+                    continue
+                else:
+                    print(f"  [ERROR] Connection failed after {max_retries} attempts")
+                    raise Exception(
+                        f"Connection error after {max_retries} attempts. "
+                        f"Please check your network connection and try again."
+                    ) from e
+
+            except Exception as e:
+                # Unexpected errors, raise immediately
+                raise
 
     def _call_google(self, prompt: str) -> str:
         """Call Google Gemini API."""

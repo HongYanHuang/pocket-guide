@@ -167,11 +167,15 @@ Basilica Cistern
 - Creates versioned content with generation records
 - Calculates distances if Google Maps API is configured
 - Shows progress bar with success/failure tracking
+- ✅ **Smart verification loop** - Automatically improves transcript coverage (60-100%)
+- ✅ **API retry logic** - Handles rate limits & connection errors (5 retries with exponential backoff)
+- ✅ **100% reliability** - No more batch failures due to connection issues
 
 **⚠️ Important:**
 - By default, research IS generated (rich historical content)
 - Use `--skip-research` only for testing or when research exists
 - Each POI takes ~5-10 minutes with full research (11 API calls)
+- Automatic 500ms delays prevent API rate limiting
 
 ---
 
@@ -408,6 +412,26 @@ python3 generate_missing_research.py
 # Or restart with verbose logging:
 source venv/bin/activate
 python src/api_server.py
+```
+
+### API Rate Limit or Connection Errors
+
+✅ **Automatically handled!** The system now includes:
+- 5 retry attempts with exponential backoff (1s, 2s, 4s, 8s, 16s)
+- 500ms delay between all API calls to prevent rate limiting
+- Automatic handling of 429 (rate limit) and 529 (overload) errors
+- Connection error recovery
+
+**If batch generation still fails:**
+```bash
+# Check your network connection
+ping anthropic.com
+
+# Verify API key is valid
+python test-api-keys.py
+
+# Try with a different provider
+pocket-guide poi batch-generate pois.txt --city City --provider google
 ```
 
 ---

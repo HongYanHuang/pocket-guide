@@ -168,8 +168,17 @@ def save_poi_yaml(city: str, poi_id: str, data: dict) -> None:
 # ==== Transcript and Research Helper Functions ====
 
 def kebab_to_snake(text: str) -> str:
-    """Convert kebab-case to snake_case"""
-    return text.replace('-', '_')
+    """
+    Convert kebab-case to snake_case, handling special characters
+
+    This matches the naming convention used by ContentGenerator._get_research_path()
+    which converts any non-alphanumeric character (except space, -, _) to underscore
+    """
+    # Convert any special character (including apostrophes) to underscore
+    safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in text)
+    # Replace spaces and hyphens with underscores
+    safe_name = safe_name.replace(' ', '_').replace('-', '_').lower()
+    return safe_name
 
 
 def snake_to_kebab(text: str) -> str:

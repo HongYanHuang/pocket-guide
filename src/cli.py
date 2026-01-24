@@ -795,8 +795,9 @@ def poi_check_redundancy(ctx, city, provider):
 @click.option('--city', help='City name (required if not in research_candidates.json)')
 @click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
 @click.option('--skip-research', is_flag=True, help='Skip research phase for faster generation')
+@click.option('--force', is_flag=True, help='Force regeneration even if content already exists')
 @click.pass_context
-def poi_batch_generate(ctx, input_file, city, provider, skip_research):
+def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
     """Batch generate POI content from input file (one POI name per line)"""
     config = ctx.obj['config']
     content_dir = ctx.obj['content_dir']
@@ -848,7 +849,8 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
             to_generate.append(name)
 
     console.print(f"\n[cyan]Batch generating POIs for {city}[/cyan]")
-    console.print(f"[dim]Provider: {provider} | Total: {len(poi_names)} | To generate: {len(to_generate)} | Skipped: {len(skipped)}[/dim]\n")
+    force_msg = " | Force: enabled" if force else ""
+    console.print(f"[dim]Provider: {provider} | Total: {len(poi_names)} | To generate: {len(to_generate)} | Skipped: {len(skipped)}{force_msg}[/dim]\n")
 
     if skipped:
         console.print(f"[yellow]Skipping {len(skipped)} POIs marked as duplicates:[/yellow]")
@@ -875,6 +877,7 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
 
     succeeded = []
     failed = []
+    already_exists = []
 
     with Progress(
         SpinnerColumn(),
@@ -886,9 +889,23 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
         task = progress.add_task("[cyan]Generating POIs...", total=len(to_generate))
 
         for poi_name in to_generate:
-            progress.update(task, description=f"[cyan]Generating: {poi_name}")
+            progress.update(task, description=f"[cyan]Checking: {poi_name}")
 
             try:
+                # Check if POI content already exists (unless --force is set)
+                poi_path = get_poi_path(content_dir, city, poi_name)
+                transcript_file = poi_path / 'transcript.txt'
+
+                if transcript_file.exists() and not force:
+                    # Skip POIs that already have generated content
+                    progress.console.print(f"[dim]⊘ {poi_name} (already exists, use --force to regenerate)[/dim]")
+                    already_exists.append(poi_name)
+                    progress.advance(task)
+                    continue
+
+                # Generate new content
+                progress.update(task, description=f"[cyan]Generating: {poi_name}")
+
                 # Call existing generate logic
                 generator = ContentGenerator(config)
                 transcript, summary_points, metadata = generator.generate(
@@ -985,6 +1002,8 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research):
     # Summary
     console.print(f"\n[bold]Batch Generation Summary:[/bold]")
     console.print(f"[green]✓ Succeeded: {len(succeeded)}[/green]")
+    if already_exists:
+        console.print(f"[dim]⊘ Already exists: {len(already_exists)} (skipped)[/dim]")
     if failed:
         console.print(f"[red]✗ Failed: {len(failed)}[/red]")
         console.print(f"\n[yellow]Failed POIs:[/yellow]")

@@ -274,8 +274,10 @@ Basilica Cistern
 - `--city`: City name (required)
 - `--provider`: AI provider (`anthropic`, `openai`, `google`)
 - `--skip-research`: Skip research for faster generation (NOT recommended)
+- `--force`: Force regeneration even if content already exists
 
 **Features:**
+- ✅ **Resumes from failures** - Skips POIs that already have content (use `--force` to regenerate)
 - Automatically skips POIs marked with `skip: true` in research_candidates.json
 - Creates versioned content with generation records
 - Calculates distances if Google Maps API is configured
@@ -289,6 +291,21 @@ Basilica Cistern
 - Use `--skip-research` only for testing or when research exists
 - Each POI takes ~5-10 minutes with full research (11 API calls)
 - Automatic 500ms delays prevent API rate limiting
+
+**Resuming after failures:**
+```bash
+# If batch-generate fails midway, just run it again!
+# It will automatically skip POIs that already have content
+./pocket-guide poi batch-generate rome_pois.txt --city Rome
+
+# Output example:
+# ⊘ Colosseum (already exists, use --force to regenerate)
+# ⊘ Roman Forum (already exists, use --force to regenerate)
+# [cyan]Generating: Pantheon[/cyan]  ← Resumes from here
+
+# To regenerate ALL POIs (create new versions):
+./pocket-guide poi batch-generate rome_pois.txt --city Rome --force
+```
 
 ---
 

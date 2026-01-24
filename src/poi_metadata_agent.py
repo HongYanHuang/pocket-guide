@@ -640,14 +640,13 @@ class POIMetadataAgent:
             logger.info(f"Calculating {mode} distances for new POI...")
 
             try:
-                # Build coordinate lists
-                # Origins: [new_poi] + existing_pois
-                # Destinations: [new_poi] + existing_pois
-                all_poi_data = [new_poi_data] + existing_poi_data
-                origins = [p['coords'] for p in all_poi_data]
-                destinations = origins
+                # INCREMENTAL CALCULATION: Only calculate new_poi ↔ existing_pois
+                # This avoids MAX_ELEMENTS_EXCEEDED error
 
-                # Call Distance Matrix API
+                # Call 1: new_poi → existing_pois
+                origins = [new_poi_data['coords']]  # 1 origin
+                destinations = [p['coords'] for p in existing_poi_data]  # N destinations
+
                 result = self.google_maps.client.distance_matrix(
                     origins=origins,
                     destinations=destinations,
@@ -660,38 +659,84 @@ class POIMetadataAgent:
                     logger.warning(f"Distance Matrix API returned status: {result.get('status')} for {mode}")
                     continue
 
-                # Parse results - only extract pairs involving the new POI
-                for i, origin in enumerate(all_poi_data):
-                    row = result.get('rows', [])[i]
+                # Parse results: new_poi → existing_pois
+                row = result.get('rows', [{}])[0]  # Only one row (new_poi)
 
-                    for j, dest in enumerate(all_poi_data):
-                        # Skip same POI
-                        if i == j:
-                            continue
+                for j, dest_poi in enumerate(existing_poi_data):
+                    element = row.get('elements', [])[j]
 
-                        # Only process pairs where new_poi is either origin or destination
-                        if origin['poi_id'] != new_poi_id and dest['poi_id'] != new_poi_id:
-                            continue
+                    if element.get('status') != 'OK':
+                        logger.debug(
+                            f"No {mode} route from {new_poi_id} to {dest_poi['poi_id']}: "
+                            f"{element.get('status')}"
+                        )
+                        continue
 
-                        element = row.get('elements', [])[j]
+                    # Create pair key: new_poi → existing_poi
+                    pair_key = f"{new_poi_id}_to_{dest_poi['poi_id']}"
+
+                    # Initialize pair dictionary if needed
+                    if pair_key not in distance_matrix['poi_pairs']:
+                        distance_matrix['poi_pairs'][pair_key] = {
+                            'origin_poi_id': new_poi_id,
+                            'origin_poi_name': new_poi_data['poi_name'],
+                            'destination_poi_id': dest_poi['poi_id'],
+                            'destination_poi_name': dest_poi['poi_name']
+                        }
+
+                    # Add mode-specific data
+                    duration_seconds = element.get('duration', {}).get('value', 0)
+                    distance_meters = element.get('distance', {}).get('value', 0)
+
+                    distance_matrix['poi_pairs'][pair_key][mode] = {
+                        'duration_minutes': round(duration_seconds / 60, 1),
+                        'distance_km': round(distance_meters / 1000, 2),
+                        'duration_text': element.get('duration', {}).get('text'),
+                        'distance_text': element.get('distance', {}).get('text')
+                    }
+
+                    # For transit, include additional info if available
+                    if mode == 'transit' and 'duration_in_traffic' in element:
+                            traffic_seconds = element['duration_in_traffic']['value']
+                            distance_matrix['poi_pairs'][pair_key][mode]['duration_in_traffic_minutes'] = \
+                                round(traffic_seconds / 60, 1)
+
+                # Call 2: existing_pois → new_poi (reverse direction)
+                # For walking/driving, distances are symmetric, but transit may differ
+                origins = [p['coords'] for p in existing_poi_data]  # N origins
+                destinations = [new_poi_data['coords']]  # 1 destination
+
+                result_reverse = self.google_maps.client.distance_matrix(
+                    origins=origins,
+                    destinations=destinations,
+                    mode=mode,
+                    units='metric',
+                    departure_time='now' if mode == 'transit' else None
+                )
+
+                if result_reverse.get('status') == 'OK':
+                    # Parse results: existing_pois → new_poi
+                    for i, origin_poi in enumerate(existing_poi_data):
+                        row = result_reverse.get('rows', [])[i]
+                        element = row.get('elements', [{}])[0]  # Only one destination (new_poi)
 
                         if element.get('status') != 'OK':
                             logger.debug(
-                                f"No {mode} route from {origin['poi_id']} to {dest['poi_id']}: "
+                                f"No {mode} route from {origin_poi['poi_id']} to {new_poi_id}: "
                                 f"{element.get('status')}"
                             )
                             continue
 
-                        # Create pair key
-                        pair_key = f"{origin['poi_id']}_to_{dest['poi_id']}"
+                        # Create pair key: existing_poi → new_poi
+                        pair_key = f"{origin_poi['poi_id']}_to_{new_poi_id}"
 
                         # Initialize pair dictionary if needed
                         if pair_key not in distance_matrix['poi_pairs']:
                             distance_matrix['poi_pairs'][pair_key] = {
-                                'origin_poi_id': origin['poi_id'],
-                                'origin_poi_name': origin['poi_name'],
-                                'destination_poi_id': dest['poi_id'],
-                                'destination_poi_name': dest['poi_name']
+                                'origin_poi_id': origin_poi['poi_id'],
+                                'origin_poi_name': origin_poi['poi_name'],
+                                'destination_poi_id': new_poi_id,
+                                'destination_poi_name': new_poi_data['poi_name']
                             }
 
                         # Add mode-specific data
@@ -711,7 +756,7 @@ class POIMetadataAgent:
                             distance_matrix['poi_pairs'][pair_key][mode]['duration_in_traffic_minutes'] = \
                                 round(traffic_seconds / 60, 1)
 
-                logger.info(f"Successfully calculated {mode} distances for new POI")
+                logger.info(f"Successfully calculated {mode} distances for new POI (both directions)")
 
             except Exception as e:
                 logger.error(f"Error calculating {mode} distances: {e}")

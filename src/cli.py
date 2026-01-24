@@ -662,16 +662,23 @@ def poi_research(ctx, city, count, provider):
     if not provider:
         provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
 
-    console.print(f"\n[cyan]Researching top {count} POIs in {city}...[/cyan]")
-    console.print(f"[dim]Using {provider} for AI research[/dim]\n")
+    # Warn about large counts
+    if count > 30:
+        console.print(f"\n[yellow]⚠️  Warning: Requesting {count} POIs may cause timeouts![/yellow]")
+        console.print(f"[yellow]   Recommended: Use --count 30 or less for best results[/yellow]")
+        console.print(f"[yellow]   Large counts (>30) may take 90+ seconds and could timeout[/yellow]\n")
+
+    console.print(f"[cyan]Researching top {count} POIs in {city}...[/cyan]")
+    console.print(f"[dim]Using {provider} for AI research[/dim]")
+    console.print(f"[yellow]⏳ Note: Large requests may take 30-120 seconds. Please wait...[/yellow]\n")
 
     try:
         # Initialize agent
         agent = POIResearchAgent(config, provider=provider)
 
         # Research POIs
-        with console.status(f"[bold green]Calling {provider} API..."):
-            candidates = agent.research_city_pois(city, count, provider)
+        console.print(f"[dim]Sending request to {provider}... (waiting for response)[/dim]")
+        candidates = agent.research_city_pois(city, count, provider)
 
         # Save to JSON
         output_path = agent._save_research_candidates(city, candidates)

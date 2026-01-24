@@ -69,17 +69,25 @@ class POIResearchAgent:
         Returns:
             List of POI dictionaries with standardized fields
         """
+        print(f"[TRACE] research_city_pois() started: city={city}, count={count}, provider={provider}", flush=True)
+
         if provider:
             self.provider = provider
 
         # Build research prompt
+        print(f"[TRACE] Building research prompt...", flush=True)
         prompt = self._build_research_prompt(city, count)
+        print(f"[TRACE] Prompt built successfully. Length: {len(prompt)} characters", flush=True)
 
         # Call AI
+        print(f"[TRACE] Calling AI with provider: {self.provider}", flush=True)
         response = self._call_ai(prompt, self.provider)
+        print(f"[TRACE] AI response received. Length: {len(response)} characters", flush=True)
 
         # Parse response
+        print(f"[TRACE] Parsing AI response...", flush=True)
         candidates = self._parse_research_response(response)
+        print(f"[TRACE] Parsing complete. Found {len(candidates)} POIs", flush=True)
 
         return candidates
 
@@ -157,11 +165,15 @@ class POIResearchAgent:
 
     def _call_ai(self, prompt: str, provider: str) -> str:
         """Route to appropriate AI provider."""
+        print(f"[TRACE] _call_ai() routing to provider: {provider}", flush=True)
         if provider == 'openai':
+            print(f"[TRACE] Calling OpenAI...", flush=True)
             return self._call_openai(prompt)
         elif provider == 'anthropic':
+            print(f"[TRACE] Calling Anthropic...", flush=True)
             return self._call_anthropic(prompt)
         elif provider == 'google':
+            print(f"[TRACE] Calling Google...", flush=True)
             return self._call_google(prompt)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -188,39 +200,55 @@ class POIResearchAgent:
 
     def _call_anthropic(self, prompt: str) -> str:
         """Call Anthropic Claude API with retry logic for rate limits and connection errors."""
+        print(f"[TRACE] _call_anthropic() started", flush=True)
+
         config = self.ai_config.get('anthropic', {})
         api_key = config.get('api_key')
         model = config.get('model', 'claude-sonnet-4-5-20250929')
 
+        print(f"[TRACE] API config loaded: model={model}, api_key={'***' if api_key else 'MISSING'}", flush=True)
+
         if not api_key:
             raise ValueError("Anthropic API key not configured")
 
+        print(f"[TRACE] Creating Anthropic client with 120s timeout...", flush=True)
         print(f"  [DEBUG] Preparing Anthropic API call (model: {model})...")
         client = anthropic.Anthropic(api_key=api_key, timeout=120.0)  # Increased timeout for large responses
+        print(f"[TRACE] Client created successfully", flush=True)
 
         # Retry logic with exponential backoff
         max_retries = 5
         base_delay = 1.0  # Start with 1 second
 
+        print(f"[TRACE] Starting retry loop (max_retries={max_retries})", flush=True)
+
         for attempt in range(max_retries):
+            print(f"[TRACE] Attempt {attempt + 1}/{max_retries} starting...", flush=True)
             try:
                 if attempt > 0:
                     # Exponential backoff: 1s, 2s, 4s, 8s, 16s
                     wait_time = base_delay * (2 ** (attempt - 1))
+                    print(f"[TRACE] Retry attempt - sleeping {wait_time}s before retry...", flush=True)
                     print(f"  [DEBUG] Retry {attempt}/{max_retries} - waiting {wait_time}s...")
                     time.sleep(wait_time)
+                    print(f"[TRACE] Sleep complete, retrying now...", flush=True)
 
                 # Small delay between all API calls to prevent rate limiting
                 if attempt == 0:
+                    print(f"[TRACE] First attempt - applying 500ms rate limit delay...", flush=True)
                     time.sleep(0.5)  # 500ms delay between normal calls
+                    print(f"[TRACE] Rate limit delay complete", flush=True)
 
                 import sys
+                print(f"[TRACE] About to send HTTP request to Anthropic...", flush=True)
                 print(f"  [DEBUG] Sending request to Anthropic API... (this may take 60-120 seconds for large requests)", flush=True)
                 sys.stdout.flush()
 
                 # Set up signal-based timeout (Unix/Mac only)
+                print(f"[TRACE] Setting up 120s alarm timeout...", flush=True)
                 signal.signal(signal.SIGALRM, timeout_handler)
                 signal.alarm(120)  # 120 second timeout
+                print(f"[TRACE] Alarm set, calling client.messages.create()...", flush=True)
 
                 try:
                     message = client.messages.create(
@@ -229,9 +257,12 @@ class POIResearchAgent:
                         temperature=0.7,
                         messages=[{"role": "user", "content": prompt}]
                     )
+                    print(f"[TRACE] client.messages.create() returned successfully!", flush=True)
                     signal.alarm(0)  # Cancel the alarm
+                    print(f"[TRACE] Alarm cancelled", flush=True)
                 except TimeoutError:
                     signal.alarm(0)
+                    print(f"[TRACE] Caught TimeoutError from alarm", flush=True)
                     print(f"  [ERROR] API call timed out after 120 seconds", flush=True)
                     raise Exception(
                         f"API request timed out after 120 seconds. "
@@ -239,27 +270,34 @@ class POIResearchAgent:
                     )
                 except Exception as e:
                     signal.alarm(0)
+                    print(f"[TRACE] Caught exception in API call: {type(e).__name__}", flush=True)
                     print(f"  [ERROR] API call failed: {type(e).__name__}: {str(e)}", flush=True)
                     raise
 
-                print(f"  [DEBUG] Response received! Length: {len(message.content[0].text)} characters", flush=True)
+                print(f"[TRACE] Extracting response content...", flush=True)
+                response_text = message.content[0].text
+                print(f"  [DEBUG] Response received! Length: {len(response_text)} characters", flush=True)
                 print(f"  [DEBUG] Stop reason: {message.stop_reason}", flush=True)
 
                 # Warn if response was truncated
                 if message.stop_reason == "max_tokens":
                     print(f"  [WARNING] Response may be truncated due to max_tokens limit. Consider reducing --count")
 
-                return message.content[0].text
+                print(f"[TRACE] Returning response text from _call_anthropic()", flush=True)
+                return response_text
 
             except anthropic.APIStatusError as e:
+                print(f"[TRACE] Caught APIStatusError: status_code={e.status_code}", flush=True)
                 error_str = str(e)
                 # Handle rate limit (429) and overload (529) errors
                 if e.status_code in [429, 529]:
                     if attempt < max_retries - 1:
                         error_type = "rate limit" if e.status_code == 429 else "overloaded"
+                        print(f"[TRACE] Retryable error {e.status_code}, will retry...", flush=True)
                         print(f"  [WARNING] Anthropic API {error_type}, retrying...")
                         continue
                     else:
+                        print(f"[TRACE] Max retries exhausted for status {e.status_code}", flush=True)
                         print(f"  [ERROR] Anthropic API error after {max_retries} attempts")
                         raise Exception(
                             f"Anthropic API error (status {e.status_code}). "
@@ -268,15 +306,19 @@ class POIResearchAgent:
                         ) from e
                 else:
                     # Other API errors, raise immediately
+                    print(f"[TRACE] Non-retryable APIStatusError {e.status_code}, raising...", flush=True)
                     raise
 
             except (anthropic.APIConnectionError, anthropic.APITimeoutError,
                     ConnectionError, TimeoutError) as e:
+                print(f"[TRACE] Caught connection/timeout error: {type(e).__name__}", flush=True)
                 # Handle connection/network errors
                 if attempt < max_retries - 1:
+                    print(f"[TRACE] Will retry connection error...", flush=True)
                     print(f"  [WARNING] Connection error, retrying...")
                     continue
                 else:
+                    print(f"[TRACE] Max retries exhausted for connection error", flush=True)
                     print(f"  [ERROR] Connection failed after {max_retries} attempts")
                     raise Exception(
                         f"Connection error after {max_retries} attempts. "
@@ -285,6 +327,7 @@ class POIResearchAgent:
 
             except Exception as e:
                 # Unexpected errors, raise immediately
+                print(f"[TRACE] Caught unexpected exception: {type(e).__name__}: {str(e)[:100]}", flush=True)
                 raise
 
     def _call_google(self, prompt: str) -> str:
@@ -399,32 +442,51 @@ Output ONLY valid JSON with no markdown formatting:
 
     def _parse_research_response(self, response: str) -> List[Dict[str, Any]]:
         """Parse AI research response into POI list."""
+        print(f"[TRACE] _parse_research_response() started, response length: {len(response)}", flush=True)
+
         # Extract JSON from response (handle markdown code blocks)
+        print(f"[TRACE] Stripping response...", flush=True)
         json_str = response.strip()
+        print(f"[TRACE] Stripped length: {len(json_str)}", flush=True)
 
         # Remove markdown code blocks if present
+        print(f"[TRACE] Checking for markdown code blocks...", flush=True)
         if json_str.startswith('```'):
+            print(f"[TRACE] Found markdown code blocks, removing...", flush=True)
             lines = json_str.split('\n')
             json_str = '\n'.join(lines[1:-1])
+            print(f"[TRACE] After removing markdown: length={len(json_str)}", flush=True)
 
         # Remove language identifier
         if json_str.startswith('json'):
+            print(f"[TRACE] Removing 'json' identifier...", flush=True)
             json_str = json_str[4:].strip()
 
         # Try extracting JSON from markdown
+        print(f"[TRACE] Trying regex extraction...", flush=True)
         json_match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
         if json_match:
+            print(f"[TRACE] Regex match found!", flush=True)
             json_str = json_match.group(1)
 
         # Parse JSON
+        print(f"[TRACE] About to parse JSON (length: {len(json_str)})...", flush=True)
+        print(f"[TRACE] First 100 chars: {json_str[:100]}", flush=True)
+        print(f"[TRACE] Last 100 chars: {json_str[-100:]}", flush=True)
+
         try:
+            print(f"[TRACE] Calling json.loads()...", flush=True)
             data = json.loads(json_str)
+            print(f"[TRACE] JSON parsed successfully! Type: {type(data)}", flush=True)
         except json.JSONDecodeError as e:
+            print(f"[TRACE] JSON parsing failed! Error: {e}", flush=True)
             # Show more context for debugging
             error_pos = getattr(e, 'pos', 0)
             context_start = max(0, error_pos - 100)
             context_end = min(len(json_str), error_pos + 100)
             context = json_str[context_start:context_end]
+
+            print(f"[TRACE] Error position: {error_pos}, context: {context}", flush=True)
 
             raise ValueError(
                 f"Failed to parse AI response as JSON: {e}\n"
@@ -434,7 +496,9 @@ Output ONLY valid JSON with no markdown formatting:
             )
 
         # Extract POIs list
+        print(f"[TRACE] Extracting 'pois' key from data...", flush=True)
         pois = data.get('pois', [])
+        print(f"[TRACE] Found {len(pois)} POIs in response", flush=True)
 
         # Validate and normalize each POI
         validated_pois = []

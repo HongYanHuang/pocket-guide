@@ -25,8 +25,36 @@ pocket-guide poi research Rome --count 50
 
 ---
 
+## 🎯 Quick Start: Complete Workflow
+
+```bash
+# Step 1: Research POIs (AI discovers top attractions)
+./pocket-guide poi research Rome --count 30 --provider anthropic
+# ↓ Creates: poi_research/Rome/research_candidates.json
+
+# Step 2: Check for duplicates (optional, skip for new cities)
+./pocket-guide poi check-redundancy Rome
+# ↓ Updates: research_candidates.json with skip:true for duplicates
+
+# Step 3: Create input file (one POI name per line)
+cat > rome_pois.txt << EOF
+Colosseum
+Roman Forum
+Pantheon
+EOF
+
+# Step 4: Generate content (5-10 min per POI)
+./pocket-guide poi batch-generate rome_pois.txt --city Rome
+# ↓ Creates: content/rome/<poi-id>/{transcript.txt, summary.txt, metadata.json}
+```
+
+**That's it!** Now you have full tour guide content for your POIs.
+
+---
+
 ## 📋 Table of Contents
 
+- [Quick Start: Complete Workflow](#quick-start-complete-workflow)
 - [Server Management](#server-management)
 - [POI Research & Discovery](#poi-research--discovery)
 - [POI Content Generation](#poi-content-generation)
@@ -87,16 +115,50 @@ Discover and research top POIs in a city using AI.
 # Examples:
 ./pocket-guide poi research Paris --count 15
 ./pocket-guide poi research Tokyo --provider anthropic
-./pocket-guide poi research Rome --count 20 --provider openai
+./pocket-guide poi research Rome --count 50 --provider anthropic
 ```
 
 **Options:**
-- `--count`: Number of POIs to research (default: 10)
+- `--count`: Number of POIs to research (default: 10, recommended: ≤30 for faster results)
 - `--provider`: AI provider (`anthropic`, `openai`, `google`)
 
 **Output:**
 - Creates `poi_research/<City>/research_candidates.json`
-- Lists POI candidates with metadata
+- Lists POI candidates with metadata (name, description, category, historical_period)
+
+**⚠️ Note:**
+- Counts >30 may take 90+ seconds due to large response generation
+- Uses streaming API to prevent timeouts on large requests (count=50 works!)
+- Dynamic token allocation: `count × 250 + 500` tokens
+
+**What to do next?**
+
+1. **Review the results:**
+   ```bash
+   cat poi_research/Rome/research_candidates.json | python3 -m json.tool
+   ```
+
+2. **Check for duplicates** (if you have existing POIs):
+   ```bash
+   ./pocket-guide poi check-redundancy Rome
+   ```
+
+3. **Create input file** with POI names (one per line):
+   ```bash
+   # Extract POI names from research_candidates.json
+   cat > rome_pois.txt << EOF
+   Colosseum
+   Roman Forum
+   Pantheon
+   Trevi Fountain
+   Vatican Museums
+   EOF
+   ```
+
+4. **Generate content** for all POIs:
+   ```bash
+   ./pocket-guide poi batch-generate rome_pois.txt --city Rome
+   ```
 
 ### Check for Duplicates
 
@@ -317,24 +379,54 @@ pocket-guide/
 ### Workflow 1: Generate Content for New City
 
 ```bash
-# 1. Research POIs
-./pocket-guide poi research "New York" --count 15
+# 1. Research POIs (discover top attractions using AI)
+./pocket-guide poi research "New York" --count 30 --provider anthropic
 
-# 2. Check for duplicates (if you have existing content)
+# Output: poi_research/New York/research_candidates.json
+# Contains: 30 POI candidates with names, descriptions, categories, historical periods
+
+# 2. Review the research results
+cat poi_research/New\ York/research_candidates.json | python3 -m json.tool
+
+# 3. Check for duplicates (skip if this is a brand new city)
 ./pocket-guide poi check-redundancy "New York"
 
-# 3. Create input file with POI names
+# Output: Updates research_candidates.json with skip:true for duplicates
+# Shows: Which POIs are unique vs. duplicates
+
+# 4. Create input file with POI names (one per line)
+# Option A: Manually create from research results
 cat > nyc_pois.txt << EOF
 Statue of Liberty
 Central Park
 Empire State Building
+Brooklyn Bridge
+Times Square
 EOF
 
-# 4. Batch generate
-./pocket-guide poi batch-generate nyc_pois.txt --city "New York"
+# Option B: Extract all unique POIs programmatically
+python3 -c "
+import json
+with open('poi_research/New York/research_candidates.json') as f:
+    data = json.load(f)
+    unique_pois = [poi['name'] for poi in data['pois'] if not poi.get('skip')]
+    print('\n'.join(unique_pois))
+" > nyc_pois.txt
 
-# 5. Collect metadata (requires Google Maps API)
+# 5. Batch generate content (5-10 min per POI with full research)
+./pocket-guide poi batch-generate nyc_pois.txt --city "New York" --provider anthropic
+
+# Features: Smart verification loop + API retry (100% reliability)
+# Output: transcript.txt, summary.txt, metadata.json for each POI
+
+# 6. Collect metadata (requires Google Maps API key in config.yaml)
 curl -X POST http://localhost:8000/cities/new-york/collect
+
+# Output: Adds coordinates, hours, ratings, distance matrix
+
+# 7. View in backstage UI
+./start-dev.sh
+open http://localhost:5173
 ```
 
 ### Workflow 2: Add Single POI to Existing City

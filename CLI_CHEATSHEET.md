@@ -37,11 +37,7 @@ pocket-guide poi research Rome --count 50
 # ↓ Updates: research_candidates.json with skip:true for duplicates
 
 # Step 3: Create input file (one POI name per line)
-cat > rome_pois.txt << EOF
-Colosseum
-Roman Forum
-Pantheon
-EOF
+python3 extract_pois.py Rome > rome_pois.txt
 
 # Step 4: Generate content (5-10 min per POI)
 ./pocket-guide poi batch-generate rome_pois.txt --city Rome
@@ -145,13 +141,14 @@ Discover and research top POIs in a city using AI.
 
 3. **Create input file** with POI names (one per line):
    ```bash
-   # Extract POI names from research_candidates.json
+   # Option A: Use the extraction script (recommended - fastest!)
+   python3 extract_pois.py Rome > rome_pois.txt
+
+   # Option B: Manually create the file
    cat > rome_pois.txt << EOF
    Colosseum
    Roman Forum
    Pantheon
-   Trevi Fountain
-   Vatican Museums
    EOF
    ```
 
@@ -176,6 +173,39 @@ Check if research candidates duplicate existing POIs.
 - Compares candidates against existing POIs in `content/<city>/`
 - Marks duplicates with `skip: true` in research_candidates.json
 - Shows unique POIs ready for generation
+
+### Extract POI Names to Text File
+
+Automatically extract POI names from research_candidates.json to create input file for batch generation.
+
+```bash
+python3 extract_pois.py <city> > <output_file>
+
+# Examples:
+python3 extract_pois.py Rome > rome_pois.txt
+python3 extract_pois.py Athens > athens_pois.txt
+
+# Include duplicates/skipped POIs
+python3 extract_pois.py Istanbul --include-skipped > istanbul_all_pois.txt
+```
+
+**Options:**
+- `--include-skipped`: Include POIs marked as duplicates (skip: true)
+
+**What it does:**
+- Reads `poi_research/<City>/research_candidates.json`
+- Extracts POI names (one per line)
+- By default, excludes duplicates (skip: true)
+- Prints to stdout (use `>` to save to file)
+
+**Output example** (rome_pois.txt):
+```
+Colosseum
+Roman Forum
+Pantheon
+Vatican Museums
+...
+```
 
 ---
 
@@ -395,7 +425,10 @@ cat poi_research/New\ York/research_candidates.json | python3 -m json.tool
 # Shows: Which POIs are unique vs. duplicates
 
 # 4. Create input file with POI names (one per line)
-# Option A: Manually create from research results
+# Option A: Use extraction script (recommended - extracts all unique POIs)
+python3 extract_pois.py "New York" > nyc_pois.txt
+
+# Option B: Manually create from research results
 cat > nyc_pois.txt << EOF
 Statue of Liberty
 Central Park
@@ -403,15 +436,6 @@ Empire State Building
 Brooklyn Bridge
 Times Square
 EOF
-
-# Option B: Extract all unique POIs programmatically
-python3 -c "
-import json
-with open('poi_research/New York/research_candidates.json') as f:
-    data = json.load(f)
-    unique_pois = [poi['name'] for poi in data['pois'] if not poi.get('skip')]
-    print('\n'.join(unique_pois))
-" > nyc_pois.txt
 
 # 5. Batch generate content (5-10 min per POI with full research)
 ./pocket-guide poi batch-generate nyc_pois.txt --city "New York" --provider anthropic

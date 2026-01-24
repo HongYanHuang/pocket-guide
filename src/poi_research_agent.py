@@ -79,9 +79,9 @@ class POIResearchAgent:
         prompt = self._build_research_prompt(city, count)
         print(f"[TRACE] Prompt built successfully. Length: {len(prompt)} characters", flush=True)
 
-        # Call AI
+        # Call AI with count parameter for dynamic token calculation
         print(f"[TRACE] Calling AI with provider: {self.provider}", flush=True)
-        response = self._call_ai(prompt, self.provider)
+        response = self._call_ai(prompt, self.provider, count=count)
         print(f"[TRACE] AI response received. Length: {len(response)} characters", flush=True)
 
         # Parse response
@@ -163,23 +163,34 @@ class POIResearchAgent:
 
     # ===== AI Provider Methods =====
 
-    def _call_ai(self, prompt: str, provider: str) -> str:
-        """Route to appropriate AI provider."""
-        print(f"[TRACE] _call_ai() routing to provider: {provider}", flush=True)
+    def _call_ai(self, prompt: str, provider: str, count: int = 10) -> str:
+        """Route to appropriate AI provider.
+
+        Args:
+            prompt: The prompt to send
+            provider: AI provider name
+            count: Number of POIs being requested (for dynamic token calculation)
+        """
+        print(f"[TRACE] _call_ai() routing to provider: {provider}, count={count}", flush=True)
         if provider == 'openai':
             print(f"[TRACE] Calling OpenAI...", flush=True)
-            return self._call_openai(prompt)
+            return self._call_openai(prompt, count)
         elif provider == 'anthropic':
             print(f"[TRACE] Calling Anthropic...", flush=True)
-            return self._call_anthropic(prompt)
+            return self._call_anthropic(prompt, count)
         elif provider == 'google':
             print(f"[TRACE] Calling Google...", flush=True)
-            return self._call_google(prompt)
+            return self._call_google(prompt, count)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
-    def _call_openai(self, prompt: str) -> str:
-        """Call OpenAI API."""
+    def _call_openai(self, prompt: str, count: int = 10) -> str:
+        """Call OpenAI API.
+
+        Args:
+            prompt: The prompt to send
+            count: Number of POIs being requested (for dynamic token calculation)
+        """
         config = self.ai_config.get('openai', {})
         api_key = config.get('api_key')
         model = config.get('model', 'gpt-4-turbo-preview')
@@ -187,20 +198,32 @@ class POIResearchAgent:
         if not api_key:
             raise ValueError("OpenAI API key not configured")
 
+        # Calculate dynamic max_tokens
+        max_tokens = min(count * 250 + 500, 16000)
+        print(f"  [DEBUG] Using {max_tokens} max_tokens for {count} POIs", flush=True)
+
         client = openai.OpenAI(api_key=api_key, timeout=60.0)
 
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=4096
+            max_tokens=max_tokens  # Use dynamic max_tokens
         )
 
         return response.choices[0].message.content
 
-    def _call_anthropic(self, prompt: str) -> str:
-        """Call Anthropic Claude API with retry logic for rate limits and connection errors."""
-        print(f"[TRACE] _call_anthropic() started", flush=True)
+    def _call_anthropic(self, prompt: str, count: int = 10) -> str:
+        """Call Anthropic Claude API with streaming to avoid read timeouts.
+
+        Args:
+            prompt: The prompt to send
+            count: Number of POIs being requested (for dynamic token calculation)
+
+        Returns:
+            AI response text
+        """
+        print(f"[TRACE] _call_anthropic() started with count={count}", flush=True)
 
         config = self.ai_config.get('anthropic', {})
         api_key = config.get('api_key')
@@ -211,9 +234,16 @@ class POIResearchAgent:
         if not api_key:
             raise ValueError("Anthropic API key not configured")
 
+        # Calculate dynamic max_tokens based on count
+        # Formula: count × 250 tokens per POI + 500 buffer
+        # Cap at 16000 (API limit for this model)
+        max_tokens = min(count * 250 + 500, 16000)
+        print(f"[TRACE] Dynamic max_tokens calculated: {max_tokens} (count={count} × 250 + 500)", flush=True)
+        print(f"  [DEBUG] Using {max_tokens} max_tokens for {count} POIs", flush=True)
+
         print(f"[TRACE] Creating Anthropic client with 120s timeout...", flush=True)
         print(f"  [DEBUG] Preparing Anthropic API call (model: {model})...")
-        client = anthropic.Anthropic(api_key=api_key, timeout=120.0)  # Increased timeout for large responses
+        client = anthropic.Anthropic(api_key=api_key, timeout=120.0)
         print(f"[TRACE] Client created successfully", flush=True)
 
         # Retry logic with exponential backoff
@@ -240,48 +270,48 @@ class POIResearchAgent:
                     print(f"[TRACE] Rate limit delay complete", flush=True)
 
                 import sys
-                print(f"[TRACE] About to send HTTP request to Anthropic...", flush=True)
-                print(f"  [DEBUG] Sending request to Anthropic API... (this may take 60-120 seconds for large requests)", flush=True)
+                print(f"[TRACE] Using STREAMING to avoid read timeout...", flush=True)
+                print(f"  [DEBUG] Sending STREAMING request to Anthropic API...", flush=True)
                 sys.stdout.flush()
 
-                # Set up signal-based timeout (Unix/Mac only)
-                print(f"[TRACE] Setting up 120s alarm timeout...", flush=True)
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(120)  # 120 second timeout
-                print(f"[TRACE] Alarm set, calling client.messages.create()...", flush=True)
-
                 try:
-                    message = client.messages.create(
+                    # Use streaming to avoid read timeout
+                    # Tokens arrive continuously → resets read timeout every 1-2 seconds
+                    print(f"[TRACE] Creating streaming message...", flush=True)
+                    response_text = ""
+
+                    with client.messages.stream(
                         model=model,
-                        max_tokens=16000,  # Increased from 4096 to handle large POI lists (50+ POIs)
+                        max_tokens=max_tokens,  # Dynamic based on count
                         temperature=0.7,
                         messages=[{"role": "user", "content": prompt}]
-                    )
-                    print(f"[TRACE] client.messages.create() returned successfully!", flush=True)
-                    signal.alarm(0)  # Cancel the alarm
-                    print(f"[TRACE] Alarm cancelled", flush=True)
-                except TimeoutError:
-                    signal.alarm(0)
-                    print(f"[TRACE] Caught TimeoutError from alarm", flush=True)
-                    print(f"  [ERROR] API call timed out after 120 seconds", flush=True)
-                    raise Exception(
-                        f"API request timed out after 120 seconds. "
-                        f"The request may be too large. Try reducing --count to 30 or less."
-                    )
+                    ) as stream:
+                        print(f"[TRACE] Stream opened, receiving tokens...", flush=True)
+
+                        # Receive streamed tokens
+                        for text in stream.text_stream:
+                            response_text += text
+                            # Data flows continuously, preventing read timeout
+
+                        print(f"[TRACE] Stream completed successfully!", flush=True)
+
+                        # Get final message to check stop reason
+                        final_message = stream.get_final_message()
+                        stop_reason = final_message.stop_reason
+                        print(f"  [DEBUG] Stop reason: {stop_reason}", flush=True)
+
+                        # Warn if response was truncated
+                        if stop_reason == "max_tokens":
+                            print(f"  [WARNING] Response truncated! Increase max_tokens or reduce --count", flush=True)
+                            print(f"  [WARNING] Current max_tokens: {max_tokens}, consider using count × 300 instead", flush=True)
+
                 except Exception as e:
-                    signal.alarm(0)
-                    print(f"[TRACE] Caught exception in API call: {type(e).__name__}", flush=True)
+                    print(f"[TRACE] Caught exception in streaming: {type(e).__name__}", flush=True)
                     print(f"  [ERROR] API call failed: {type(e).__name__}: {str(e)}", flush=True)
                     raise
 
-                print(f"[TRACE] Extracting response content...", flush=True)
-                response_text = message.content[0].text
+                print(f"[TRACE] Response complete. Length: {len(response_text)} characters", flush=True)
                 print(f"  [DEBUG] Response received! Length: {len(response_text)} characters", flush=True)
-                print(f"  [DEBUG] Stop reason: {message.stop_reason}", flush=True)
-
-                # Warn if response was truncated
-                if message.stop_reason == "max_tokens":
-                    print(f"  [WARNING] Response may be truncated due to max_tokens limit. Consider reducing --count")
 
                 print(f"[TRACE] Returning response text from _call_anthropic()", flush=True)
                 return response_text
@@ -330,8 +360,13 @@ class POIResearchAgent:
                 print(f"[TRACE] Caught unexpected exception: {type(e).__name__}: {str(e)[:100]}", flush=True)
                 raise
 
-    def _call_google(self, prompt: str) -> str:
-        """Call Google Gemini API."""
+    def _call_google(self, prompt: str, count: int = 10) -> str:
+        """Call Google Gemini API.
+
+        Args:
+            prompt: The prompt to send
+            count: Number of POIs being requested (for dynamic token calculation)
+        """
         config = self.ai_config.get('google', {})
         api_key = config.get('api_key')
         model_name = config.get('model', 'gemini-pro')
@@ -339,13 +374,17 @@ class POIResearchAgent:
         if not api_key:
             raise ValueError("Google API key not configured")
 
+        # Calculate dynamic max_tokens
+        max_tokens = min(count * 250 + 500, 16000)
+        print(f"  [DEBUG] Using {max_tokens} max_output_tokens for {count} POIs", flush=True)
+
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name)
 
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
-                max_output_tokens=4000,
+                max_output_tokens=max_tokens,  # Use dynamic max_tokens
                 temperature=0.7
             )
         )

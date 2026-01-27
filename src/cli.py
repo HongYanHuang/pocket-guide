@@ -22,6 +22,7 @@ from content_generator import ContentGenerator
 from tts_generator import TTSGenerator
 from poi_metadata_agent import POIMetadataAgent
 from poi_research_agent import POIResearchAgent
+from trip_planner import POISelectorAgent, ItineraryOptimizerAgent, TourManager
 
 console = Console()
 
@@ -1012,6 +1013,273 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
 
     if succeeded:
         console.print(f"\n[dim]Generated content saved to: {content_dir}/{city}/[/dim]")
+
+
+@cli.group()
+def trip():
+    """Trip planning commands"""
+    pass
+
+
+@trip.command('plan')
+@click.option('--city', required=True, help='City name (e.g., Rome, Athens)')
+@click.option('--days', type=int, required=True, help='Number of days for the trip')
+@click.option('--interests', multiple=True, help='Interests (can specify multiple: --interests history --interests architecture)')
+@click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), default='anthropic', help='AI provider for POI selection')
+@click.option('--must-see', multiple=True, help='POIs that must be included (can specify multiple)')
+@click.option('--pace', type=click.Choice(['relaxed', 'normal', 'packed']), default='normal', help='Trip pace')
+@click.option('--walking', type=click.Choice(['low', 'moderate', 'high']), default='moderate', help='Walking tolerance')
+@click.option('--save', is_flag=True, help='Save the generated tour')
+@click.pass_context
+def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, save):
+    """
+    Generate an optimized trip itinerary for a city.
+
+    Example:
+        ./pocket-guide trip plan --city Rome --days 3 --interests history --interests architecture --pace normal
+    """
+    config = ctx.obj['config']
+
+    try:
+        console.print(f"\n[cyan]Planning {days}-day trip to {city}...[/cyan]\n")
+
+        # Convert interests tuple to list
+        interests_list = list(interests) if interests else []
+        must_see_list = list(must_see) if must_see else []
+
+        # Build preferences dict
+        preferences = {
+            'pace': pace,
+            'walking_tolerance': walking,
+            'indoor_outdoor': 'balanced'
+        }
+
+        console.print(f"[dim]Interests: {', '.join(interests_list) if interests_list else 'General tourism'}[/dim]")
+        console.print(f"[dim]Pace: {pace} | Walking: {walking}[/dim]")
+        if must_see_list:
+            console.print(f"[dim]Must-see: {', '.join(must_see_list)}[/dim]")
+        console.print()
+
+        # Step 1: POI Selection
+        console.print("[bold cyan]Step 1: Selecting POIs...[/bold cyan]")
+        selector = POISelectorAgent(config, provider=provider)
+
+        selection_result = selector.select_pois(
+            city=city,
+            duration_days=days,
+            interests=interests_list,
+            preferences=preferences,
+            must_see=must_see_list,
+            avoid=[]
+        )
+
+        starting_pois = selection_result.get('starting_pois', [])
+        backup_pois = selection_result.get('backup_pois', {})
+
+        console.print(f"[green]✓ Selected {len(starting_pois)} POIs for itinerary[/green]")
+        console.print(f"[dim]  + {len(backup_pois)} backup POIs available[/dim]\n")
+
+        # Display selected POIs
+        table = Table(title="Selected POIs")
+        table.add_column("POI", style="cyan")
+        table.add_column("Reason", style="dim")
+
+        for poi_info in starting_pois:
+            poi_name = poi_info.get('poi', 'Unknown')
+            reason = poi_info.get('selection_reason', 'N/A')
+            table.add_row(poi_name, reason[:60] + '...' if len(reason) > 60 else reason)
+
+        console.print(table)
+        console.print()
+
+        # Step 2: Itinerary Optimization
+        console.print("[bold cyan]Step 2: Optimizing itinerary...[/bold cyan]")
+        optimizer = ItineraryOptimizerAgent(config)
+
+        optimized_result = optimizer.optimize_itinerary(
+            selected_pois=starting_pois,
+            city=city,
+            duration_days=days,
+            start_time="09:00",
+            preferences=preferences
+        )
+
+        itinerary = optimized_result.get('itinerary', [])
+        scores = optimized_result.get('optimization_scores', {})
+
+        console.print(f"[green]✓ Itinerary optimized[/green]")
+        console.print(f"[dim]  Distance score: {scores.get('distance_score', 0):.2f}[/dim]")
+        console.print(f"[dim]  Coherence score: {scores.get('coherence_score', 0):.2f}[/dim]")
+        console.print(f"[dim]  Overall score: {scores.get('overall_score', 0):.2f}[/dim]\n")
+
+        # Display itinerary
+        for day_plan in itinerary:
+            day_num = day_plan.get('day', 0)
+            day_pois = day_plan.get('pois', [])
+            total_hours = day_plan.get('total_hours', 0)
+            total_km = day_plan.get('total_walking_km', 0)
+
+            console.print(f"[bold yellow]Day {day_num}[/bold yellow] ({total_hours:.1f}h total, {total_km:.1f}km walking)")
+
+            for i, poi_entry in enumerate(day_pois, 1):
+                poi_name = poi_entry.get('poi', 'Unknown')
+                visit_time = poi_entry.get('visit_duration_hours', 0)
+                walking_from_prev = poi_entry.get('walking_time_from_previous_minutes', 0)
+
+                if i == 1:
+                    console.print(f"  {i}. [cyan]{poi_name}[/cyan] ({visit_time:.1f}h)")
+                else:
+                    console.print(f"  {i}. [cyan]{poi_name}[/cyan] ({visit_time:.1f}h) [dim]← {walking_from_prev:.0f}min walk[/dim]")
+
+            console.print()
+
+        # Step 3: Save tour (optional)
+        if save:
+            console.print("[bold cyan]Step 3: Saving tour...[/bold cyan]")
+            tour_manager = TourManager(config)
+
+            input_parameters = {
+                'city': city,
+                'duration_days': days,
+                'interests': interests_list,
+                'preferences': preferences,
+                'must_see': must_see_list,
+                'provider': provider
+            }
+
+            save_result = tour_manager.save_tour(
+                tour_data=optimized_result,
+                city=city,
+                input_parameters=input_parameters
+            )
+
+            console.print(f"[green]✓ Tour saved with ID: {save_result['tour_id']}[/green]")
+            console.print(f"[dim]  Version: {save_result['version_string']}[/dim]")
+            console.print(f"[dim]  Location: {save_result['tour_path']}[/dim]")
+        else:
+            console.print("[dim]💡 Tip: Use --save to save this itinerary for later[/dim]")
+
+        console.print(f"\n[green]✓ Trip planning complete![/green]")
+
+    except Exception as e:
+        console.print(f"[red]Error planning trip: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@trip.command('list')
+@click.option('--city', help='Filter by city')
+@click.pass_context
+def trip_list(ctx, city):
+    """List saved tours"""
+    config = ctx.obj['config']
+
+    try:
+        tour_manager = TourManager(config)
+        tours = tour_manager.list_tours(city=city)
+
+        if not tours:
+            console.print(f"[yellow]No saved tours found{' for ' + city if city else ''}[/yellow]")
+            return
+
+        table = Table(title=f"Saved Tours{' - ' + city if city else ''}")
+        table.add_column("Tour ID", style="cyan")
+        table.add_column("City", style="green")
+        table.add_column("Days", style="yellow")
+        table.add_column("Version", style="magenta")
+        table.add_column("Score", style="blue")
+        table.add_column("Updated", style="dim")
+
+        for tour in tours:
+            tour_id = tour.get('tour_id', 'N/A')
+            tour_city = tour.get('city', 'N/A')
+
+            # Get latest version info
+            version_history = tour.get('version_history', [])
+            if version_history:
+                latest = version_history[-1]
+                version = latest.get('version', 1)
+                score = latest.get('optimization_score', 0)
+            else:
+                version = 1
+                score = 0
+
+            # Calculate days from version history or metadata
+            days = len(tour.get('itinerary', [])) if 'itinerary' in tour else 'N/A'
+
+            updated = tour.get('updated_at', 'N/A')[:10]  # Show date only
+
+            table.add_row(
+                tour_id,
+                tour_city,
+                str(days),
+                f"v{version}",
+                f"{score:.2f}",
+                updated
+            )
+
+        console.print(table)
+        console.print(f"\n[dim]Total: {len(tours)} tour(s)[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error listing tours: {e}[/red]")
+        sys.exit(1)
+
+
+@trip.command('show')
+@click.argument('tour_id')
+@click.option('--city', required=True, help='City name')
+@click.option('--version', type=int, help='Version number (defaults to latest)')
+@click.pass_context
+def trip_show(ctx, tour_id, city, version):
+    """Show details of a saved tour"""
+    config = ctx.obj['config']
+
+    try:
+        tour_manager = TourManager(config)
+        tour_data = tour_manager.load_tour(city, tour_id, version)
+
+        console.print(f"\n[bold cyan]Tour: {tour_id}[/bold cyan]")
+        console.print(f"[dim]City: {city}{f' | Version: v{version}' if version else ' | Latest version'}[/dim]\n")
+
+        # Show optimization scores
+        scores = tour_data.get('optimization_scores', {})
+        console.print(f"[bold]Optimization Scores:[/bold]")
+        console.print(f"  Distance: {scores.get('distance_score', 0):.2f}")
+        console.print(f"  Coherence: {scores.get('coherence_score', 0):.2f}")
+        console.print(f"  Overall: {scores.get('overall_score', 0):.2f}\n")
+
+        # Show itinerary
+        itinerary = tour_data.get('itinerary', [])
+        for day_plan in itinerary:
+            day_num = day_plan.get('day', 0)
+            day_pois = day_plan.get('pois', [])
+            total_hours = day_plan.get('total_hours', 0)
+            total_km = day_plan.get('total_walking_km', 0)
+
+            console.print(f"[bold yellow]Day {day_num}[/bold yellow] ({total_hours:.1f}h, {total_km:.1f}km)")
+
+            for i, poi_entry in enumerate(day_pois, 1):
+                poi_name = poi_entry.get('poi', 'Unknown')
+                visit_time = poi_entry.get('visit_duration_hours', 0)
+                walking_time = poi_entry.get('walking_time_from_previous_minutes', 0)
+
+                if i == 1:
+                    console.print(f"  {i}. {poi_name} ({visit_time:.1f}h)")
+                else:
+                    console.print(f"  {i}. {poi_name} ({visit_time:.1f}h) ← {walking_time:.0f}min walk")
+
+            console.print()
+
+    except FileNotFoundError as e:
+        console.print(f"[red]Tour not found: {e}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error showing tour: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

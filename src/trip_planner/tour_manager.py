@@ -20,15 +20,26 @@ try:
         create_tour_id
     )
 except ImportError:
-    from src.utils import (
-        ensure_tour_directory,
-        load_tour_metadata,
-        save_tour_metadata,
-        get_next_tour_version,
-        save_versioned_tour,
-        save_tour_generation_record,
-        create_tour_id
-    )
+    try:
+        from src.utils import (
+            ensure_tour_directory,
+            load_tour_metadata,
+            save_tour_metadata,
+            get_next_tour_version,
+            save_versioned_tour,
+            save_tour_generation_record,
+            create_tour_id
+        )
+    except ImportError:
+        from utils import (
+            ensure_tour_directory,
+            load_tour_metadata,
+            save_tour_metadata,
+            get_next_tour_version,
+            save_versioned_tour,
+            save_tour_generation_record,
+            create_tour_id
+        )
 
 
 class TourManager:

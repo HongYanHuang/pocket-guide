@@ -15,6 +15,7 @@ from datetime import datetime
 
 from api_models import (
     City, POISummary, POIDetail, POIMetadata, POIMetadataUpdate,
+    MultilingualName, get_name_from_multilingual,
     DistanceMatrix, CollectionResult, VerificationReport,
     ErrorResponse, SuccessResponse,
     TranscriptData, TranscriptUpdate, ResearchData,
@@ -58,6 +59,39 @@ except Exception as e:
 
 
 # ==== Helper Functions ====
+
+def build_multilingual_name(poi_data: dict) -> Optional[MultilingualName]:
+    """
+    Build a MultilingualName from POI data.
+
+    Looks for a 'name' dict with multilingual entries, or constructs one
+    from the scalar 'poi_name' / 'name' fields as the default.
+
+    Expected multilingual YAML/JSON structure:
+        name:
+          default: "Acropolis"
+          names:
+            en: "Acropolis"
+            zh: "雅典卫城"
+            ja: "アクロポリス"
+
+    Falls back to treating 'name' or 'poi_name' as a plain string default.
+    """
+    # Check for explicit multilingual structure
+    name_field = poi_data.get('name')
+    if isinstance(name_field, dict) and 'default' in name_field:
+        return MultilingualName(
+            default=name_field['default'],
+            names=name_field.get('names', {})
+        )
+
+    # Fall back to scalar name as default-only MultilingualName
+    default_name = poi_data.get('poi_name') or poi_data.get('name') or ''
+    if isinstance(default_name, str) and default_name:
+        return MultilingualName(default=default_name, names={})
+
+    return None
+
 
 def get_agent() -> POIMetadataAgent:
     """Get metadata agent instance or raise error"""
@@ -334,10 +368,12 @@ async def list_city_pois(city: str):
         summaries = []
         for poi in pois:
             metadata = poi.get('metadata', {})
+            default_name = poi.get('poi_name', 'unknown')
 
             summaries.append(POISummary(
                 poi_id=poi.get('poi_id', 'unknown'),
-                poi_name=poi.get('poi_name', 'unknown'),
+                poi_name=default_name,
+                name=build_multilingual_name(poi) or MultilingualName(default=default_name),
                 city=city,
                 has_metadata=bool(metadata),
                 has_coordinates=bool(metadata.get('coordinates')),
@@ -367,10 +403,14 @@ async def get_poi_metadata(city: str, poi_id: str):
     try:
         data = load_poi_from_content(city, poi_id)
         poi_data = data.get('poi', {})
+        default_name = poi_data.get('poi_name', poi_data.get('name', poi_id))
+        if isinstance(default_name, dict):
+            default_name = default_name.get('default', poi_id)
 
         return POIDetail(
             poi_id=poi_data.get('poi_id', poi_id),
-            poi_name=poi_data.get('poi_name', poi_data.get('name', poi_id)),
+            poi_name=default_name,
+            name=build_multilingual_name(poi_data) or MultilingualName(default=default_name),
             city=city,
             metadata=poi_data.get('metadata')
         )
@@ -832,7 +872,8 @@ async def get_research(city: str, poi_id: str):
 
         return ResearchData(
             poi_id=poi_id,
-            name=data.get('name', ''),
+            name=data.get('name', '') if isinstance(data.get('name'), str) else (data.get('name', {}).get('default', '') if isinstance(data.get('name'), dict) else ''),
+            multilingual_name=build_multilingual_name(data),
             city=data.get('city', city),
             basic_info=basic_info,
             core_features=core_features,

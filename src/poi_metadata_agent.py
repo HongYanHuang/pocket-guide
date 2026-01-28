@@ -249,7 +249,12 @@ class POIMetadataAgent:
                     poi_data['poi_id'] = yaml_file.stem
 
                 if 'poi_name' not in poi_data:
-                    poi_data['poi_name'] = poi_data.get('name', yaml_file.stem)
+                    # Handle multilingual name structure
+                    raw_name = poi_data.get('name', yaml_file.stem)
+                    if isinstance(raw_name, dict):
+                        poi_data['poi_name'] = raw_name.get('default', raw_name.get('names', {}).get('en', yaml_file.stem))
+                    else:
+                        poi_data['poi_name'] = raw_name
 
                 pois.append(poi_data)
 

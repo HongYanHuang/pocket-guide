@@ -415,7 +415,19 @@ AVOID:
 
 For each POI, provide:
 - poi_id: lowercase slug with hyphens (e.g., "acropolis", "hagia-sophia", "temple-of-zeus")
-- name: Official name as tourists would recognize it
+- name: A multilingual name object with:
+    - default: Official name as tourists would recognize it (English)
+    - names: An object mapping language codes to localized names. Include at least these languages where applicable:
+        - en: English name
+        - zh: Simplified Chinese name
+        - ja: Japanese name
+        - ko: Korean name
+        - fr: French name
+        - de: German name
+        - es: Spanish name
+        - it: Italian name
+        - pt: Portuguese name
+        - ar: Arabic name
 - description: 2-3 sentence description of what it is and why it matters
 - category: ONE of [monument, museum, temple, palace, archaeological_site, landmark, square, bridge, gate, fortress, theater, stadium]
 - historical_period: Primary historical era (e.g., "Classical Greece (5th century BC)", "Ottoman Empire (15th-19th century)")
@@ -426,7 +438,15 @@ Output ONLY valid JSON with no markdown formatting:
   "pois": [
     {{
       "poi_id": "...",
-      "name": "...",
+      "name": {{
+        "default": "...",
+        "names": {{
+          "en": "...",
+          "zh": "...",
+          "ja": "...",
+          "ko": "..."
+        }}
+      }},
       "description": "...",
       "category": "...",
       "historical_period": "...",
@@ -435,6 +455,13 @@ Output ONLY valid JSON with no markdown formatting:
   ]
 }}"""
 
+    def _get_display_name(self, poi: Dict[str, Any]) -> str:
+        """Extract a display-friendly name from a POI (handles both scalar and multilingual)."""
+        name = poi.get('name', 'unknown')
+        if isinstance(name, dict):
+            return name.get('default', name.get('names', {}).get('en', 'unknown'))
+        return name
+
     def _build_redundancy_prompt(
         self,
         candidate: Dict[str, Any],
@@ -442,14 +469,16 @@ Output ONLY valid JSON with no markdown formatting:
     ) -> str:
         """Build prompt for semantic duplicate detection."""
         existing_list = "\n".join([
-            f"- {p['name']}: {p.get('description', 'N/A')[:150]}"
+            f"- {self._get_display_name(p)}: {p.get('description', 'N/A')[:150]}"
             for p in existing_pois
         ])
+
+        candidate_name = self._get_display_name(candidate)
 
         return f"""You are analyzing whether a POI candidate is a duplicate of existing POIs.
 
 CANDIDATE POI:
-Name: {candidate['name']}
+Name: {candidate_name}
 Description: {candidate['description']}
 Category: {candidate.get('category', 'unknown')}
 
@@ -546,8 +575,25 @@ Output ONLY valid JSON with no markdown formatting:
             required = ['poi_id', 'name', 'description', 'category', 'historical_period']
             missing = [f for f in required if f not in poi]
             if missing:
-                print(f"Warning: POI '{poi.get('name', 'unknown')}' missing fields: {missing}, skipping")
+                display_name = poi.get('name', 'unknown')
+                if isinstance(display_name, dict):
+                    display_name = display_name.get('default', 'unknown')
+                print(f"Warning: POI '{display_name}' missing fields: {missing}, skipping")
                 continue
+
+            # Normalize 'name' field: ensure it is always a multilingual dict
+            name_val = poi['name']
+            if isinstance(name_val, str):
+                # Legacy scalar name → wrap into multilingual structure
+                poi['name'] = {
+                    'default': name_val,
+                    'names': {'en': name_val}
+                }
+            elif isinstance(name_val, dict):
+                # Ensure 'default' key exists
+                if 'default' not in name_val:
+                    name_val['default'] = name_val.get('names', {}).get('en', 'unknown')
+                    poi['name'] = name_val
 
             # Add default fields
             poi['skip'] = False
@@ -628,9 +674,16 @@ Output ONLY valid JSON with no markdown formatting:
 
                 basic_info = poi_data.get('basic_info', {})
 
+                # Handle both scalar and multilingual name
+                raw_name = poi_data.get('name', yaml_file.stem)
+                if isinstance(raw_name, dict):
+                    display_name = raw_name.get('default', raw_name.get('names', {}).get('en', yaml_file.stem))
+                else:
+                    display_name = raw_name
+
                 pois.append({
                     'poi_id': poi_data.get('poi_id', yaml_file.stem),
-                    'name': poi_data.get('name', yaml_file.stem),
+                    'name': display_name,
                     'description': basic_info.get('description', ''),
                     'period': basic_info.get('period', ''),
                     'category': poi_data.get('category', 'unknown')

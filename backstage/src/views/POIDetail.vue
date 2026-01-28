@@ -2,7 +2,7 @@
   <el-card v-loading="loading">
     <template #header>
       <div style="display: flex; justify-content: space-between; align-items: center">
-        <span>{{ poi?.poi_name || 'POI Details' }}</span>
+        <span>{{ getDisplayName(poi) }}</span>
         <el-button @click="$router.back()">Back</el-button>
       </div>
     </template>
@@ -11,6 +11,13 @@
       <el-descriptions :column="2" border>
         <el-descriptions-item label="POI ID">{{ poi.poi_id }}</el-descriptions-item>
         <el-descriptions-item label="City">{{ poi.city }}</el-descriptions-item>
+
+        <el-descriptions-item label="Names" :span="2" v-if="poi.name?.names && Object.keys(poi.name.names).length > 0">
+          <el-tag v-for="(val, lang) in poi.name.names" :key="lang"
+                  size="small" style="margin-right: 6px; margin-bottom: 4px">
+            {{ lang }}: {{ val }}
+          </el-tag>
+        </el-descriptions-item>
 
         <el-descriptions-item label="Latitude" v-if="poi.metadata?.coordinates">
           {{ poi.metadata.coordinates.latitude }}
@@ -84,6 +91,15 @@ const loadPOI = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const getDisplayName = (p) => {
+  if (!p) return 'POI Details'
+  if (p.name?.names) {
+    const lang = navigator.language?.split('-')[0]
+    if (lang && p.name.names[lang]) return p.name.names[lang]
+  }
+  return p.name?.default || p.poi_name || 'POI Details'
 }
 
 const recollect = async () => {

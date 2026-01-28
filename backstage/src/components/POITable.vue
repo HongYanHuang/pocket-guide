@@ -13,7 +13,15 @@
     </template>
 
     <el-table :data="pois" v-loading="loading" style="width: 100%">
-      <el-table-column prop="poi_name" label="POI Name" />
+      <el-table-column label="POI Name">
+        <template #default="{ row }">
+          {{ getDisplayName(row) }}
+          <el-tag v-if="row.name?.names && Object.keys(row.name.names).length > 1"
+                  size="small" type="info" style="margin-left: 6px">
+            {{ Object.keys(row.name.names).length }} langs
+          </el-tag>
+        </template>
+      </el-table-column>
 
       <el-table-column label="Has Metadata" width="120" align="center">
         <template #default="{ row }">
@@ -116,6 +124,15 @@ const viewDetails = (poi) => {
 
 const onPOISaved = () => {
   loadPOIs()
+}
+
+const getDisplayName = (poi) => {
+  if (poi.name?.names) {
+    // Use browser locale to pick localized name
+    const lang = navigator.language?.split('-')[0]
+    if (lang && poi.name.names[lang]) return poi.name.names[lang]
+  }
+  return poi.name?.default || poi.poi_name || 'Unknown'
 }
 
 const formatDate = (dateString) => {

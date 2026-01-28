@@ -91,6 +91,75 @@ class POIResearchAgent:
 
         return candidates
 
+    def fulfill_city_pois(
+        self,
+        city: str,
+        count: int = 10,
+        provider: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Research additional POIs for a city that were missed in the first stage.
+
+        Loads existing POIs (from content/ and poi_research/) and asks the AI
+        to suggest new ones not already covered.
+
+        Args:
+            city: City name (e.g., "Athens")
+            count: Number of additional POIs to discover
+            provider: Override default provider
+
+        Returns:
+            List of new POI candidate dictionaries
+        """
+        if provider:
+            self.provider = provider
+
+        # Load existing POIs from content directory
+        existing_content_pois = self._load_content_pois(city)
+
+        # Load existing research candidates (if any)
+        try:
+            existing_research_pois = self._load_research_candidates(city)
+        except FileNotFoundError:
+            existing_research_pois = []
+
+        # Merge all known POIs into one list
+        all_existing = {}
+        for poi in existing_content_pois:
+            all_existing[poi['poi_id']] = poi
+        for poi in existing_research_pois:
+            all_existing[poi['poi_id']] = poi
+
+        if not all_existing:
+            print(f"[INFO] No existing POIs found for {city}. Running full research instead.", flush=True)
+            return self.research_city_pois(city, count, self.provider)
+
+        print(f"[INFO] Found {len(all_existing)} existing POIs for {city}. Researching {count} additional ones.", flush=True)
+
+        # Build fulfill prompt with existing POIs context
+        prompt = self._build_fulfill_prompt(city, count, list(all_existing.values()))
+
+        # Call AI
+        response = self._call_ai(prompt, self.provider, count=count)
+
+        # Parse response
+        candidates = self._parse_research_response(response)
+
+        # Filter out any that match existing POIs by ID
+        new_candidates = [
+            c for c in candidates
+            if c['poi_id'] not in all_existing
+        ]
+
+        if len(new_candidates) < len(candidates):
+            skipped = len(candidates) - len(new_candidates)
+            print(f"[INFO] Filtered out {skipped} POI(s) already in existing set.", flush=True)
+
+        # Save new candidates (append to existing research_candidates.json)
+        self._save_fulfill_candidates(city, new_candidates, all_existing)
+
+        return new_candidates
+
     def check_redundancy(
         self,
         city: str,
@@ -435,6 +504,61 @@ Output ONLY valid JSON with no markdown formatting:
   ]
 }}"""
 
+    def _build_fulfill_prompt(self, city: str, count: int, existing_pois: List[Dict[str, Any]]) -> str:
+        """Build prompt for fulfilling missing POIs, given the existing set."""
+        existing_list = "\n".join([
+            f"- {p['name']} (ID: {p['poi_id']}, Category: {p.get('category', 'unknown')}): {p.get('description', 'N/A')[:120]}"
+            for p in existing_pois
+        ])
+
+        return f"""You are an expert travel guide researching additional points of interest in {city}.
+
+A previous research stage already identified these POIs for {city}:
+
+EXISTING POIs (DO NOT suggest these or similar):
+{existing_list}
+
+Your task: Identify {count} ADDITIONAL must-visit POIs that are NOT already in the list above.
+These should be POIs that were missed or overlooked in the first stage.
+
+SELECTION CRITERIA:
+- Historical significance (ancient ruins, monuments, battlefields)
+- Architectural marvels (temples, palaces, bridges, fortresses)
+- Cultural importance (museums, theaters, art galleries)
+- Tourist appeal (famous landmarks, Instagram-worthy locations)
+- Storytelling potential (dramatic history, interesting anecdotes)
+- Lesser-known gems that deserve more attention
+
+AVOID:
+- Any POI already listed above (or a renamed/alternate version of it)
+- Generic restaurants, cafes, or shops (unless historically significant)
+- Modern shopping malls
+- Generic parks without historical significance
+- Hotels or accommodations
+- Generic streets or neighborhoods (unless major historical importance)
+
+For each POI, provide:
+- poi_id: lowercase slug with hyphens (e.g., "acropolis", "hagia-sophia", "temple-of-zeus")
+- name: Official name as tourists would recognize it
+- description: 2-3 sentence description of what it is and why it matters
+- category: ONE of [monument, museum, temple, palace, archaeological_site, landmark, square, bridge, gate, fortress, theater, stadium]
+- historical_period: Primary historical era (e.g., "Classical Greece (5th century BC)", "Ottoman Empire (15th-19th century)")
+- why_significant: 1-2 sentences explaining tourist appeal and dramatic history
+
+Output ONLY valid JSON with no markdown formatting:
+{{
+  "pois": [
+    {{
+      "poi_id": "...",
+      "name": "...",
+      "description": "...",
+      "category": "...",
+      "historical_period": "...",
+      "why_significant": "..."
+    }}
+  ]
+}}"""
+
     def _build_redundancy_prompt(
         self,
         candidate: Dict[str, Any],
@@ -709,3 +833,100 @@ Output ONLY valid JSON with no markdown formatting:
         # Save
         with open(candidates_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def _load_content_pois(self, city: str) -> List[Dict[str, Any]]:
+        """
+        Load existing POIs from the content directory for a city.
+
+        Returns:
+            List of POI dicts with poi_id, name, and description fields
+        """
+        project_root = Path(__file__).parent.parent
+        city_slug = city.lower().replace(' ', '-')
+        city_dir = project_root / "content" / city_slug
+
+        if not city_dir.exists():
+            return []
+
+        pois = []
+        for poi_dir in city_dir.iterdir():
+            if not poi_dir.is_dir():
+                continue
+
+            metadata_file = poi_dir / "metadata.json"
+            poi_name = poi_dir.name.replace('-', ' ').title()
+            poi_id = poi_dir.name
+
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+                    poi_name = metadata.get('poi', poi_name)
+                    description = metadata.get('description', '')
+                except (json.JSONDecodeError, OSError):
+                    description = ''
+            else:
+                description = ''
+
+            pois.append({
+                'poi_id': poi_id,
+                'name': poi_name,
+                'description': description,
+                'category': 'unknown',
+                'source': 'content'
+            })
+
+        return pois
+
+    def _save_fulfill_candidates(
+        self,
+        city: str,
+        new_candidates: List[Dict[str, Any]],
+        existing_pois: Dict[str, Dict[str, Any]]
+    ) -> Path:
+        """
+        Save fulfill candidates, merging with any existing research_candidates.json.
+
+        New candidates are appended with a 'fulfill_stage' marker so they can
+        be distinguished from the original research batch.
+
+        Returns:
+            Path to the updated research_candidates.json
+        """
+        project_root = Path(__file__).parent.parent
+        city_dir = project_root / "poi_research" / city
+        city_dir.mkdir(parents=True, exist_ok=True)
+
+        candidates_path = city_dir / "research_candidates.json"
+
+        # Load existing candidates if present
+        existing_candidates = []
+        if candidates_path.exists():
+            with open(candidates_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            existing_candidates = data.get('pois', [])
+
+        # Mark new candidates with fulfill metadata
+        for candidate in new_candidates:
+            candidate['fulfill_stage'] = True
+            candidate['skip'] = False
+            candidate['redundancy_note'] = None
+
+        # Merge: keep existing candidates, append new ones
+        merged = existing_candidates + new_candidates
+
+        # Save
+        output_data = {
+            "city": city,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "provider": self.provider,
+            "count": len(merged),
+            "original_count": len(existing_candidates),
+            "fulfill_count": len(new_candidates),
+            "pois": merged
+        }
+
+        with open(candidates_path, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+        return candidates_path

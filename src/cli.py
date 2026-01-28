@@ -716,6 +716,69 @@ def poi_research(ctx, city, count, provider):
         sys.exit(1)
 
 
+@poi.command('fulfill')
+@click.argument('city')
+@click.option('--count', default=10, help='Number of additional POIs to discover')
+@click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
+@click.pass_context
+def poi_fulfill(ctx, city, count, provider):
+    """Discover additional POIs for a city that were missed in the first research stage"""
+    config = ctx.obj['config']
+
+    if not provider:
+        provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
+
+    if count > 30:
+        console.print(f"\n[yellow]⚠️  Warning: Requesting {count} POIs may cause timeouts![/yellow]")
+        console.print(f"[yellow]   Recommended: Use --count 30 or less for best results[/yellow]\n")
+
+    console.print(f"[cyan]Fulfilling POIs for {city} (looking for {count} additional)...[/cyan]")
+    console.print(f"[dim]Using {provider} for AI research[/dim]")
+    console.print(f"[yellow]⏳ Note: This may take 30-120 seconds. Please wait...[/yellow]\n")
+
+    try:
+        agent = POIResearchAgent(config, provider=provider)
+
+        console.print(f"[dim]Loading existing POIs...[/dim]")
+        candidates = agent.fulfill_city_pois(city, count, provider)
+
+        if not candidates:
+            console.print(f"\n[yellow]No new POIs found. The existing set may already be comprehensive.[/yellow]")
+            return
+
+        # Display results table
+        table = Table(title=f"New POI Candidates - {city} (Fulfill Stage)")
+        table.add_column("POI ID", style="cyan", width=25)
+        table.add_column("Name", style="white", width=30)
+        table.add_column("Category", style="yellow", width=18)
+        table.add_column("Period", style="magenta", width=25)
+
+        for poi in candidates:
+            table.add_row(
+                poi['poi_id'][:25],
+                poi['name'][:30],
+                poi['category'],
+                poi.get('historical_period', 'N/A')[:25]
+            )
+
+        console.print(table)
+
+        # Summary
+        console.print(f"\n[green]✓ Fulfill research complete! Found {len(candidates)} new POIs[/green]")
+
+        # Next steps
+        console.print(f"\n[bold]Next steps:[/bold]")
+        console.print(f"[dim]1. Check for duplicates: pocket-guide poi check-redundancy {city}[/dim]")
+        console.print(f"[dim]2. Create text file with POI names to generate[/dim]")
+        console.print(f"[dim]3. Run: pocket-guide poi batch-generate <file> --city {city}[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error fulfilling POIs: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
 @poi.command('check-redundancy')
 @click.argument('city')
 @click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')

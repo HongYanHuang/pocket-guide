@@ -790,6 +790,79 @@ def poi_check_redundancy(ctx, city, provider):
         sys.exit(1)
 
 
+@poi.command('fulfill')
+@click.argument('city')
+@click.option('--count', default=10, help='Number of additional POIs to discover')
+@click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
+@click.pass_context
+def poi_fulfill(ctx, city, count, provider):
+    """Discover additional POIs missed during initial research"""
+    config = ctx.obj['config']
+
+    if not provider:
+        provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
+
+    console.print(f"\n[cyan]Fulfilling additional POIs for {city}...[/cyan]")
+    console.print(f"[dim]Looking for {count} POIs not covered in previous research[/dim]")
+    console.print(f"[dim]Using {provider} for AI research[/dim]\n")
+
+    try:
+        agent = POIResearchAgent(config, provider=provider)
+
+        # Run fulfill
+        console.print(f"[dim]Sending request to {provider}... (waiting for response)[/dim]")
+        new_candidates = agent.fulfill_city_pois(city, count, provider)
+
+        if not new_candidates:
+            console.print(f"\n[yellow]No new POIs discovered. The existing set may already be comprehensive.[/yellow]")
+            sys.exit(0)
+
+        # Determine existing count for tracking
+        try:
+            existing = agent._load_research_candidates(city)
+            existing_count = len(existing)
+        except FileNotFoundError:
+            existing_count = 0
+
+        # Save with versioning
+        output_path = agent._save_fulfill_candidates(city, new_candidates, existing_count)
+
+        # Display results table
+        table = Table(title=f"New POIs Found - {city} (Fulfill Stage)")
+        table.add_column("POI ID", style="cyan", width=22)
+        table.add_column("Name", style="white", width=30)
+        table.add_column("Category", style="yellow", width=15)
+        table.add_column("Period", style="magenta", width=25)
+
+        for poi in new_candidates:
+            table.add_row(
+                poi['poi_id'][:22],
+                poi['name'][:30],
+                poi['category'],
+                poi.get('historical_period', 'N/A')[:25]
+            )
+
+        console.print(table)
+
+        # Summary
+        console.print(f"\n[green]✓ Fulfill complete! Found {len(new_candidates)} new POIs[/green]")
+        console.print(f"[dim]Original candidates: {existing_count} | New from fulfill: {len(new_candidates)} | Total: {existing_count + len(new_candidates)}[/dim]")
+        console.print(f"[dim]Saved to: {output_path}[/dim]")
+        console.print(f"[dim]Previous research file versioned automatically[/dim]")
+
+        # Next steps
+        console.print(f"\n[bold]Next steps:[/bold]")
+        console.print(f"[dim]1. Review updated candidates: {output_path}[/dim]")
+        console.print(f"[dim]2. Check for duplicates: pocket-guide poi check-redundancy {city}[/dim]")
+        console.print(f"[dim]3. Batch generate: pocket-guide poi batch-generate <file> --city {city}[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error fulfilling POIs: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
 @poi.command('batch-generate')
 @click.argument('input_file', type=click.Path(exists=True))
 @click.option('--city', help='City name (required if not in research_candidates.json)')

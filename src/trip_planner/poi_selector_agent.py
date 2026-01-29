@@ -408,7 +408,16 @@ Generate the POI selection now:"""
         # Validate and normalize Rejected POI names
         validated_rejected = []
         for rejected_entry in selection.get('rejected_pois', []):
-            rejected_name = rejected_entry.get('poi', '')
+            # Handle both formats: string or dict
+            if isinstance(rejected_entry, str):
+                # AI returned just POI name as string
+                rejected_name = rejected_entry
+                rejected_reason = "Not selected"
+            else:
+                # AI returned proper dict with poi and reason
+                rejected_name = rejected_entry.get('poi', '')
+                rejected_reason = rejected_entry.get('reason', 'Not selected')
+
             normalized_rejected = available_names.get(rejected_name.lower())
 
             if not normalized_rejected:
@@ -420,8 +429,10 @@ Generate the POI selection now:"""
                 print(f"  Warning: Rejected POI '{normalized_rejected}' is in starting POIs, skipping", flush=True)
                 continue
 
-            rejected_entry['poi'] = normalized_rejected
-            validated_rejected.append(rejected_entry)
+            validated_rejected.append({
+                'poi': normalized_rejected,
+                'reason': rejected_reason
+            })
 
         return {
             'starting_pois': validated_starting,

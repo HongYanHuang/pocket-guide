@@ -92,15 +92,26 @@ class POISelectorAgent:
             available_pois=available_pois
         )
 
+        # Calculate dynamic max_tokens based on POI count
+        # Formula: poi_count * tokens_per_poi + base_tokens
+        # - Each POI needs tokens for: starting selection (~150), backups (~250), or rejection (~30)
+        # - Average per POI: ~150 tokens
+        # - Base tokens: 1000 (for structure, reasoning_summary, metadata)
+        tokens_per_poi = 150
+        base_tokens = 1000
+        max_tokens = len(available_pois) * tokens_per_poi + base_tokens
+
+        print(f"  [POI SELECTOR] Calculated max_tokens: {max_tokens} (for {len(available_pois)} POIs)", flush=True)
+
         # Call AI based on provider
         print(f"  [POI SELECTOR] Calling {self.provider} API for selection...", flush=True)
 
         if self.provider == 'anthropic':
-            response = self._call_anthropic(prompt)
+            response = self._call_anthropic(prompt, max_tokens)
         elif self.provider == 'openai':
-            response = self._call_openai(prompt)
+            response = self._call_openai(prompt, max_tokens)
         elif self.provider == 'google':
-            response = self._call_google(prompt)
+            response = self._call_google(prompt, max_tokens)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
@@ -408,7 +419,7 @@ Generate the POI selection now:"""
 
     # AI Provider Methods
 
-    def _call_anthropic(self, prompt: str) -> str:
+    def _call_anthropic(self, prompt: str, max_tokens: int) -> str:
         """Call Anthropic Claude API"""
         config = self.ai_config.get('anthropic', {})
         api_key = config.get('api_key')
@@ -421,14 +432,14 @@ Generate the POI selection now:"""
 
         response = client.messages.create(
             model=model,
-            max_tokens=8000,  # Increased to handle rejected_pois for large POI counts
+            max_tokens=max_tokens,
             temperature=0.3,  # Lower temperature for more consistent selections
             messages=[{"role": "user", "content": prompt}]
         )
 
         return response.content[0].text
 
-    def _call_openai(self, prompt: str) -> str:
+    def _call_openai(self, prompt: str, max_tokens: int) -> str:
         """Call OpenAI API"""
         config = self.ai_config.get('openai', {})
         api_key = config.get('api_key')
@@ -441,7 +452,7 @@ Generate the POI selection now:"""
 
         response = client.chat.completions.create(
             model=model,
-            max_tokens=8000,  # Increased to handle rejected_pois for large POI counts
+            max_tokens=max_tokens,
             temperature=0.3,
             messages=[
                 {"role": "system", "content": "You are an expert travel planner. Output valid JSON only."},
@@ -452,7 +463,7 @@ Generate the POI selection now:"""
 
         return response.choices[0].message.content
 
-    def _call_google(self, prompt: str) -> str:
+    def _call_google(self, prompt: str, max_tokens: int) -> str:
         """Call Google Gemini API"""
         config = self.ai_config.get('google', {})
         api_key = config.get('api_key')
@@ -467,7 +478,7 @@ Generate the POI selection now:"""
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
-                max_output_tokens=8000,  # Increased to handle rejected_pois for large POI counts
+                max_output_tokens=max_tokens,
                 temperature=0.3
             )
         )

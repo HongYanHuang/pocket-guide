@@ -288,7 +288,7 @@ OUTPUT FORMAT (JSON):
   "rejected_pois": [
     {{
       "poi": "Modern Shopping Mall",
-      "reason": "Doesn't match user interests in history and architecture"
+      "reason": "Not historical/architectural focus"
     }}
   ],
   "total_estimated_hours": 24.0,
@@ -300,7 +300,7 @@ IMPORTANT:
 - POI names must EXACTLY match the available POIs list above
 - Each Starting POI must have 2-3 backups
 - Similarity scores must be realistic (0.6-1.0 range)
-- Include ALL POIs not selected in "rejected_pois" with brief reason why they don't fit
+- Include ALL POIs not selected in "rejected_pois" with very brief reason (5-8 words max)
 
 Generate the POI selection now:"""
 
@@ -421,7 +421,7 @@ Generate the POI selection now:"""
 
         response = client.messages.create(
             model=model,
-            max_tokens=4000,
+            max_tokens=8000,  # Increased to handle rejected_pois for large POI counts
             temperature=0.3,  # Lower temperature for more consistent selections
             messages=[{"role": "user", "content": prompt}]
         )
@@ -441,7 +441,7 @@ Generate the POI selection now:"""
 
         response = client.chat.completions.create(
             model=model,
-            max_tokens=4000,
+            max_tokens=8000,  # Increased to handle rejected_pois for large POI counts
             temperature=0.3,
             messages=[
                 {"role": "system", "content": "You are an expert travel planner. Output valid JSON only."},
@@ -467,7 +467,7 @@ Generate the POI selection now:"""
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
-                max_output_tokens=4000,
+                max_output_tokens=8000,  # Increased to handle rejected_pois for large POI counts
                 temperature=0.3
             )
         )

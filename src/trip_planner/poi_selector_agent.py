@@ -270,6 +270,7 @@ SELECTION CRITERIA:
 - Ensure Back-ups can actually replace their Starting POI (similar theme/duration/location)
 
 BACKUP SELECTION RULES:
+- Backups must NOT be in the Starting POIs list (they are alternatives, not duplicates)
 - Each backup must be similar enough to substitute for the Starting POI
 - Rate similarity on 0.0-1.0 scale (0.8+ = very similar, 0.6-0.8 = moderately similar)
 - Include at least one "theme match" (same type/period) and one "location match" (nearby)
@@ -375,6 +376,9 @@ Generate the POI selection now:"""
             poi_entry['poi'] = normalized_name
             validated_starting.append(poi_entry)
 
+        # Build set of starting POI names for quick lookup
+        starting_poi_names = {poi['poi'] for poi in validated_starting}
+
         # Validate and normalize Back-up POI names
         validated_backups = {}
         for starting_poi, backups in selection['backup_pois'].items():
@@ -388,6 +392,11 @@ Generate the POI selection now:"""
 
                 if not normalized_backup:
                     print(f"  Warning: Backup POI '{backup_name}' not found, skipping", flush=True)
+                    continue
+
+                # CRITICAL: Filter out backups that are already in starting POIs
+                if normalized_backup in starting_poi_names:
+                    print(f"  Warning: Backup POI '{normalized_backup}' is already in starting POIs, skipping", flush=True)
                     continue
 
                 backup_entry['poi'] = normalized_backup
@@ -404,6 +413,11 @@ Generate the POI selection now:"""
 
             if not normalized_rejected:
                 print(f"  Warning: Rejected POI '{rejected_name}' not found, skipping", flush=True)
+                continue
+
+            # Filter out rejected POIs that are in starting POIs (logical error)
+            if normalized_rejected in starting_poi_names:
+                print(f"  Warning: Rejected POI '{normalized_rejected}' is in starting POIs, skipping", flush=True)
                 continue
 
             rejected_entry['poi'] = normalized_rejected

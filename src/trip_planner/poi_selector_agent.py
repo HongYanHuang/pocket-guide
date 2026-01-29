@@ -117,11 +117,13 @@ class POISelectorAgent:
             'provider': self.provider,
             'total_pois_available': len(available_pois),
             'total_starting_pois': len(selection['starting_pois']),
-            'total_backup_pois': sum(len(backups) for backups in selection['backup_pois'].values())
+            'total_backup_pois': sum(len(backups) for backups in selection['backup_pois'].values()),
+            'total_rejected_pois': len(selection['rejected_pois'])
         }
 
         print(f"  ✓ Selected {len(selection['starting_pois'])} Starting POIs", flush=True)
         print(f"  ✓ Generated {selection['metadata']['total_backup_pois']} Back-up POIs", flush=True)
+        print(f"  ✓ Rejected {selection['metadata']['total_rejected_pois']} POIs", flush=True)
 
         return selection
 
@@ -283,6 +285,12 @@ OUTPUT FORMAT (JSON):
       }}
     ]
   }},
+  "rejected_pois": [
+    {{
+      "poi": "Modern Shopping Mall",
+      "reason": "Doesn't match user interests in history and architecture"
+    }}
+  ],
   "total_estimated_hours": 24.0,
   "reasoning_summary": "Brief explanation of overall selection strategy"
 }}
@@ -292,6 +300,7 @@ IMPORTANT:
 - POI names must EXACTLY match the available POIs list above
 - Each Starting POI must have 2-3 backups
 - Similarity scores must be realistic (0.6-1.0 range)
+- Include ALL POIs not selected in "rejected_pois" with brief reason why they don't fit
 
 Generate the POI selection now:"""
 
@@ -335,6 +344,9 @@ Generate the POI selection now:"""
             raise ValueError("AI response missing 'starting_pois' field")
         if 'backup_pois' not in selection:
             raise ValueError("AI response missing 'backup_pois' field")
+        if 'rejected_pois' not in selection:
+            print("  Warning: AI response missing 'rejected_pois' field, using empty list", flush=True)
+            selection['rejected_pois'] = []
 
         # Build POI name lookup
         available_names = {poi['name'].lower(): poi['name'] for poi in available_pois}
@@ -373,9 +385,23 @@ Generate the POI selection now:"""
             if validated_backup_list:
                 validated_backups[normalized_starting] = validated_backup_list
 
+        # Validate and normalize Rejected POI names
+        validated_rejected = []
+        for rejected_entry in selection.get('rejected_pois', []):
+            rejected_name = rejected_entry.get('poi', '')
+            normalized_rejected = available_names.get(rejected_name.lower())
+
+            if not normalized_rejected:
+                print(f"  Warning: Rejected POI '{rejected_name}' not found, skipping", flush=True)
+                continue
+
+            rejected_entry['poi'] = normalized_rejected
+            validated_rejected.append(rejected_entry)
+
         return {
             'starting_pois': validated_starting,
             'backup_pois': validated_backups,
+            'rejected_pois': validated_rejected,
             'total_estimated_hours': selection.get('total_estimated_hours', 0),
             'reasoning_summary': selection.get('reasoning_summary', '')
         }

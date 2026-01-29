@@ -71,7 +71,8 @@ class TourManager:
         city: str,
         input_parameters: Dict[str, Any],
         user_info: Dict[str, Any] = None,
-        tour_id: str = None
+        tour_id: str = None,
+        selection_result: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Save tour with full versioning and metadata tracking.
@@ -82,6 +83,7 @@ class TourManager:
             input_parameters: All input params used to generate tour
             user_info: Optional user information
             tour_id: Optional tour ID (creates new if None)
+            selection_result: Optional POI selection result (with backup_pois and rejected_pois)
 
         Returns:
             Dictionary with tour_id, version, and paths
@@ -114,6 +116,15 @@ class TourManager:
             'total_pois': len(tour_data.get('itinerary', [])),
             'total_days': len(tour_data.get('itinerary', []))
         }
+
+        # Add POI selection details if available
+        if selection_result:
+            generation_record['poi_selection'] = {
+                'backup_pois': selection_result.get('backup_pois', {}),
+                'rejected_pois': selection_result.get('rejected_pois', []),
+                'total_backup_pois': sum(len(backups) for backups in selection_result.get('backup_pois', {}).values()),
+                'total_rejected_pois': len(selection_result.get('rejected_pois', []))
+            }
 
         # Save versioned tour
         save_versioned_tour(tour_path, tour_data, version_string)

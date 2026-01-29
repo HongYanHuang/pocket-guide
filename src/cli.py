@@ -1075,9 +1075,11 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, sav
 
         starting_pois = selection_result.get('starting_pois', [])
         backup_pois = selection_result.get('backup_pois', {})
+        rejected_pois = selection_result.get('rejected_pois', [])
 
         console.print(f"[green]✓ Selected {len(starting_pois)} POIs for itinerary[/green]")
-        console.print(f"[dim]  + {len(backup_pois)} backup POIs available[/dim]\n")
+        console.print(f"[dim]  + {len(backup_pois)} backup POIs available[/dim]")
+        console.print(f"[dim]  + {len(rejected_pois)} POIs rejected[/dim]\n")
 
         # Display selected POIs
         table = Table(title="Selected POIs")
@@ -1150,7 +1152,8 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, sav
             save_result = tour_manager.save_tour(
                 tour_data=optimized_result,
                 city=city,
-                input_parameters=input_parameters
+                input_parameters=input_parameters,
+                selection_result=selection_result
             )
 
             console.print(f"[green]✓ Tour saved with ID: {save_result['tour_id']}[/green]")

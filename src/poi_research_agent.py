@@ -168,6 +168,8 @@ class POIResearchAgent:
         """
         Check research candidates for duplicates against existing POIs.
 
+        Uses batch processing - ONE API call to check all candidates at once.
+
         Args:
             city: City name
             provider: Override default provider
@@ -184,40 +186,62 @@ class POIResearchAgent:
         # Load existing POIs
         existing_pois = self._load_existing_pois(city)
 
-        # Check each candidate for redundancy
+        # Filter candidates that need checking (not already marked as skip)
+        candidates_to_check = [c for c in candidates if not c.get('skip')]
+        already_skipped = [c for c in candidates if c.get('skip')]
+
+        print(f"[INFO] Checking {len(candidates_to_check)} candidates against {len(existing_pois)} existing POIs...", flush=True)
+
         duplicates_found = []
         updated_candidates = []
 
-        for candidate in candidates:
-            # Skip if already marked as duplicate
-            if candidate.get('skip'):
-                updated_candidates.append(candidate)
-                continue
+        # If no existing POIs or no candidates to check, mark all as unique
+        if not existing_pois or not candidates_to_check:
+            for candidate in candidates_to_check:
+                candidate['skip'] = False
+                candidate['redundancy_note'] = None
 
-            # Check against existing POIs
-            if existing_pois:
-                prompt = self._build_redundancy_prompt(candidate, existing_pois)
-                response = self._call_ai(prompt, self.provider)
-                result = self._parse_redundancy_response(response)
+            # Combine with already skipped
+            updated_candidates = already_skipped + candidates_to_check
 
-                if result['is_duplicate']:
-                    candidate['skip'] = True
-                    candidate['redundancy_note'] = result['reason']
-                    duplicates_found.append({
-                        'candidate_name': candidate['name'],
-                        'duplicate_of': result['duplicate_of'],
-                        'confidence': result['confidence'],
-                        'reason': result['reason']
-                    })
-                else:
-                    candidate['skip'] = False
-                    candidate['redundancy_note'] = None
+            # Update research_candidates.json
+            self._update_research_candidates(city, updated_candidates)
+
+            return {
+                'total_candidates': len(updated_candidates),
+                'duplicates_found': 0,
+                'unique_pois': len(candidates_to_check),
+                'duplicates': []
+            }
+
+        # BATCH CHECK: Single API call for all candidates
+        print(f"[INFO] Making single API call to check all {len(candidates_to_check)} candidates...", flush=True)
+        prompt = self._build_batch_redundancy_prompt(candidates_to_check, existing_pois)
+        response = self._call_ai(prompt, self.provider, count=len(candidates_to_check))
+        batch_results = self._parse_batch_redundancy_response(response, candidates_to_check)
+
+        # Apply results to candidates
+        for candidate in candidates_to_check:
+            poi_id = candidate['poi_id']
+            result = batch_results.get(poi_id)
+
+            if result and result['is_duplicate']:
+                candidate['skip'] = True
+                candidate['redundancy_note'] = result['reason']
+                duplicates_found.append({
+                    'candidate_name': candidate['name'],
+                    'duplicate_of': result['duplicate_of'],
+                    'confidence': result['confidence'],
+                    'reason': result['reason']
+                })
             else:
-                # No existing POIs, mark as unique
                 candidate['skip'] = False
                 candidate['redundancy_note'] = None
 
             updated_candidates.append(candidate)
+
+        # Add back the already-skipped candidates
+        updated_candidates.extend(already_skipped)
 
         # Update research_candidates.json
         self._update_research_candidates(city, updated_candidates)
@@ -564,7 +588,11 @@ Output ONLY valid JSON with no markdown formatting:
         candidate: Dict[str, Any],
         existing_pois: List[Dict[str, Any]]
     ) -> str:
-        """Build prompt for semantic duplicate detection."""
+        """
+        Build prompt for semantic duplicate detection (single candidate).
+
+        DEPRECATED: Use _build_batch_redundancy_prompt() instead for better performance.
+        """
         existing_list = "\n".join([
             f"- {p['name']}: {p.get('description', 'N/A')[:150]}"
             for p in existing_pois
@@ -600,6 +628,71 @@ Output ONLY valid JSON with no markdown formatting:
   "confidence": "high" or "medium" or "low",
   "reason": "1-2 sentence explanation"
 }}"""
+
+    def _build_batch_redundancy_prompt(
+        self,
+        candidates: List[Dict[str, Any]],
+        existing_pois: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Build prompt for batch semantic duplicate detection.
+
+        Checks ALL candidates in a single API call instead of one-by-one.
+        """
+        # Format existing POIs
+        existing_list = "\n".join([
+            f"- {p['name']}: {p.get('description', 'N/A')[:150]}"
+            for p in existing_pois
+        ])
+
+        # Format candidate POIs
+        candidates_list = "\n".join([
+            f"{i+1}. ID: {c['poi_id']}\n   Name: {c['name']}\n   Description: {c.get('description', 'N/A')[:200]}\n   Category: {c.get('category', 'unknown')}"
+            for i, c in enumerate(candidates)
+        ])
+
+        return f"""You are analyzing whether POI candidates are duplicates of existing POIs.
+
+EXISTING POIs IN DATABASE:
+{existing_list}
+
+CANDIDATE POIs TO CHECK ({len(candidates)} total):
+{candidates_list}
+
+Task: For EACH candidate, determine if it is a TRUE DUPLICATE of any existing POI.
+
+RULES FOR DUPLICATES:
+- Same physical location (e.g., "Acropolis" vs "The Acropolis of Athens")
+- Same monument with different names (e.g., "Hagia Sophia" vs "Ayasofya Mosque")
+- Part of a larger complex already covered (e.g., "Parthenon" when "Acropolis" already exists and mentions the Parthenon)
+- Subset of existing POI (e.g., "North Slope of Acropolis" when "Acropolis" exists)
+
+NOT DUPLICATES (these are separate POIs):
+- Different monuments in same area (e.g., "Arch of Hadrian" vs "Temple of Zeus" - both near Acropolis but different structures)
+- Different sections of large site that deserve separate entries (e.g., "Acropolis Museum" vs "Acropolis" itself)
+- Adjacent but distinct structures (e.g., "Roman Agora" vs "Ancient Agora")
+
+Output ONLY valid JSON with no markdown formatting.
+For EACH candidate, use its poi_id as the key:
+
+{{
+  "results": {{
+    "candidate-poi-id-1": {{
+      "is_duplicate": true or false,
+      "duplicate_of": "existing poi name or null",
+      "confidence": "high" or "medium" or "low",
+      "reason": "Brief explanation (1 sentence)"
+    }},
+    "candidate-poi-id-2": {{
+      "is_duplicate": false,
+      "duplicate_of": null,
+      "confidence": "high",
+      "reason": "Unique POI"
+    }}
+  }}
+}}
+
+IMPORTANT: Include ALL {len(candidates)} candidates in your results using their exact poi_id values."""
 
     # ===== Response Parsing Methods =====
 
@@ -717,6 +810,85 @@ Output ONLY valid JSON with no markdown formatting:
             data['duplicate_of'] = None
 
         return data
+
+    def _parse_batch_redundancy_response(
+        self,
+        response: str,
+        candidates: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Parse AI batch redundancy check response.
+
+        Args:
+            response: AI response string
+            candidates: List of candidate POIs that were checked
+
+        Returns:
+            Dict keyed by poi_id with duplicate detection results
+        """
+        # Extract JSON from response
+        json_str = response.strip()
+
+        # Remove markdown code blocks if present
+        if json_str.startswith('```'):
+            lines = json_str.split('\n')
+            json_str = '\n'.join(lines[1:-1])
+
+        # Remove language identifier
+        if json_str.startswith('json'):
+            json_str = json_str[4:].strip()
+
+        # Try extracting JSON from markdown
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+
+        # Parse JSON
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse batch redundancy response as JSON: {e}\nResponse: {json_str[:500]}")
+
+        # Validate structure
+        if 'results' not in data:
+            raise ValueError("Batch redundancy response missing 'results' field")
+
+        results = data['results']
+
+        # Validate each result has required fields
+        for poi_id, result in results.items():
+            required = ['is_duplicate', 'confidence', 'reason']
+            missing = [f for f in required if f not in result]
+            if missing:
+                print(f"  Warning: Result for '{poi_id}' missing fields {missing}, marking as unique", flush=True)
+                # Default to not duplicate if fields missing
+                results[poi_id] = {
+                    'is_duplicate': False,
+                    'duplicate_of': None,
+                    'confidence': 'low',
+                    'reason': 'Incomplete analysis'
+                }
+
+            # Default duplicate_of to None if not duplicate
+            if not result.get('is_duplicate'):
+                result['duplicate_of'] = None
+
+        # Check if we got results for all candidates
+        candidate_ids = {c['poi_id'] for c in candidates}
+        result_ids = set(results.keys())
+        missing_ids = candidate_ids - result_ids
+
+        if missing_ids:
+            print(f"  Warning: AI didn't return results for {len(missing_ids)} candidates, marking as unique", flush=True)
+            for poi_id in missing_ids:
+                results[poi_id] = {
+                    'is_duplicate': False,
+                    'duplicate_of': None,
+                    'confidence': 'low',
+                    'reason': 'Not analyzed by AI'
+                }
+
+        return results
 
     # ===== POI Loading/Saving Methods =====
 

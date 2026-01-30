@@ -55,6 +55,7 @@ python3 extract_pois.py Rome > rome_pois.txt
 - [POI Research & Discovery](#poi-research--discovery)
 - [POI Content Generation](#poi-content-generation)
 - [Batch Operations](#batch-operations)
+- [Trip Planning](#trip-planning)
 - [Metadata Management](#metadata-management)
 - [Utility Scripts](#utility-scripts)
 
@@ -309,6 +310,163 @@ Basilica Cistern
 
 ---
 
+## 🗺️ Trip Planning
+
+### Plan a Trip Itinerary
+
+Generate an optimized trip itinerary by selecting POIs and creating a day-by-day schedule.
+
+```bash
+./pocket-guide trip plan --city <city> --days <days> [OPTIONS]
+
+# Examples:
+./pocket-guide trip plan --city Rome --days 3 --interests history --interests architecture
+./pocket-guide trip plan --city Athens --days 2 --interests mythology --pace relaxed --save
+./pocket-guide trip plan --city Paris --days 5 --must-see "Eiffel Tower" --walking high --save
+```
+
+**Required Options:**
+- `--city`: City name (e.g., Rome, Athens, Paris)
+- `--days`: Number of days for the trip
+
+**Optional:**
+- `--interests`: User interests (can specify multiple: `--interests history --interests art`)
+- `--provider`: AI provider for POI selection (`anthropic`, `openai`, `google`, default: anthropic)
+- `--must-see`: POIs that must be included (can specify multiple)
+- `--pace`: Trip pace (`relaxed`, `normal`, `packed`, default: normal)
+- `--walking`: Walking tolerance (`low`, `moderate`, `high`, default: moderate)
+- `--save`: Save the generated tour for later
+
+**What it does:**
+
+**Step 1: POI Selection (AI-powered)**
+- Loads all available POIs for the city from `poi_research/`
+- Sends POI list + user preferences to Claude
+- AI selects 8-12 starting POIs that match your interests
+- AI provides 2-3 backup POIs for each selected POI (alternatives if closed/crowded)
+- AI lists rejected POIs with reasons why they weren't selected
+- Dynamic token calculation: `poi_count × 150 + 1000` tokens
+
+**Step 2: Itinerary Optimization**
+- Arranges selected POIs into optimal daily schedule
+- Minimizes walking distance between POIs
+- Maximizes thematic coherence (similar POIs on same day)
+- Respects time constraints (8 hours per day)
+- Calculates walking times and distances
+
+**Output:**
+- Day-by-day itinerary with POI order, visit duration, walking times
+- Optimization scores (distance, coherence, overall)
+- If `--save` used: Creates tour in `tours/<city>/<tour-id>/`
+
+**Example Output:**
+```
+✓ Selected 10 POIs for itinerary
+  + 25 backup POIs available
+  + 12 POIs rejected
+
+Day 1 (7.5h total, 3.2km walking)
+  1. Colosseum (2.5h)
+  2. Roman Forum (2.0h) ← 10min walk
+  3. Palatine Hill (1.5h) ← 5min walk
+
+Day 2 (8.0h total, 4.1km walking)
+  1. Pantheon (1.0h)
+  2. Trevi Fountain (0.5h) ← 8min walk
+  ...
+```
+
+**Saved Tour Structure:**
+```
+tours/rome/rome-tour-20260129-111100-aa7baf/
+├── tour_v1_2026-01-29.json              # Day-by-day itinerary
+├── generation_record_v1_2026-01-29.json # Selection transparency
+└── metadata.json                         # Tour version history
+```
+
+**Generation Record Contains:**
+```json
+{
+  "input_parameters": {
+    "city": "Rome",
+    "duration_days": 3,
+    "interests": ["history", "architecture"],
+    "preferences": {...}
+  },
+  "poi_selection": {
+    "backup_pois": {
+      "Colosseum": [
+        {
+          "poi": "Baths of Trajan",
+          "similarity_score": 0.85,
+          "reason": "Similar Roman imperial architecture, nearby location"
+        }
+      ]
+    },
+    "rejected_pois": [
+      {
+        "poi": "Modern Art Museum",
+        "reason": "Not historical/architectural focus"
+      }
+    ],
+    "total_backup_pois": 25,
+    "total_rejected_pois": 12
+  },
+  "optimization_scores": {
+    "distance_score": 0.85,
+    "coherence_score": 0.92,
+    "overall_score": 0.89
+  }
+}
+```
+
+### List Saved Tours
+
+View all saved tours for a city.
+
+```bash
+./pocket-guide trip list --city <city>
+
+# Examples:
+./pocket-guide trip list --city Rome
+./pocket-guide trip list --city Athens
+```
+
+**Output:**
+- Tour ID, creation date, duration, interests
+- Latest version for each tour
+
+### Show Tour Details
+
+Display full itinerary for a saved tour.
+
+```bash
+./pocket-guide trip show --tour-id <tour-id>
+
+# Examples:
+./pocket-guide trip show --tour-id rome-tour-20260129-111100-aa7baf
+```
+
+**Output:**
+- Complete day-by-day itinerary
+- POI details, walking times, daily totals
+- User preferences and constraints
+
+**Features:**
+- ✅ **Full transparency** - See which POIs were selected, which are backups, which were rejected and why
+- ✅ **Smart POI selection** - AI matches POIs to your interests and preferences
+- ✅ **Backup POIs** - Alternative POIs that can substitute if needed (NOT in the tour)
+- ✅ **Optimization** - Minimizes walking distance while maximizing thematic coherence
+- ✅ **Versioning** - Each tour can have multiple versions with full history
+- ✅ **Dynamic scaling** - Token allocation scales with POI count (efficient for small cities, handles large cities)
+
+**⚠️ Requirements:**
+- City must have POIs in `poi_research/<City>/` directory
+- Run `./pocket-guide poi research <city> --count 30` first if needed
+- Distance matrix improves optimization but is optional
+
+---
+
 ## 📊 Metadata Management
 
 ### Collect Metadata for City
@@ -507,6 +665,59 @@ python3 generate_missing_research.py
   --poi-name "Existing POI" \
   --city "City" \
   --force-research  # Re-research even if content exists
+```
+
+### Workflow 5: Plan a Trip Itinerary
+
+```bash
+# 1. Ensure you have POIs researched for the city
+./pocket-guide poi research Rome --count 50 --provider anthropic
+
+# Output: poi_research/Rome/research_candidates.json with 50 POIs
+
+# 2. Plan a trip with your preferences
+./pocket-guide trip plan \
+  --city Rome \
+  --days 3 \
+  --interests history \
+  --interests architecture \
+  --pace normal \
+  --walking moderate \
+  --save
+
+# AI will:
+# - Select 8-12 POIs matching your interests
+# - Provide 25+ backup POIs (alternatives, NOT in tour)
+# - List rejected POIs with reasons
+# - Optimize daily schedule to minimize walking
+# - Group similar POIs on same day
+
+# Output example:
+# ✓ Selected 10 POIs for itinerary
+#   + 25 backup POIs available
+#   + 15 POIs rejected
+#
+# Day 1 (7.5h total, 3.2km walking)
+#   1. Colosseum (2.5h)
+#   2. Roman Forum (2.0h) ← 10min walk
+#   3. Palatine Hill (1.5h) ← 5min walk
+
+# 3. View saved tours
+./pocket-guide trip list --city Rome
+
+# Output: List of all tours with IDs and dates
+
+# 4. Show tour details
+./pocket-guide trip show --tour-id rome-tour-20260129-111100-aa7baf
+
+# 5. Review selection transparency (why POIs were chosen/rejected)
+cat tours/rome/rome-tour-20260129-111100-aa7baf/generation_record_v1_2026-01-29.json | python3 -m json.tool
+
+# Shows:
+# - Input parameters (interests, preferences)
+# - Backup POIs with similarity scores and reasons
+# - Rejected POIs with rejection reasons
+# - Optimization scores
 ```
 
 ---

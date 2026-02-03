@@ -19,7 +19,9 @@ from api_models import (
     ErrorResponse, SuccessResponse,
     TranscriptData, TranscriptUpdate, ResearchData,
     ResearchBasicInfo, ResearchPerson, ResearchEvent,
-    ResearchLocation, ResearchConcept
+    ResearchLocation, ResearchConcept,
+    TourSummary, TourDetail, TourMetadata, TourDay, TourPOI,
+    BackupPOI, RejectedPOI, OptimizationScores
 )
 from poi_metadata_agent import POIMetadataAgent
 from utils import load_config
@@ -854,6 +856,198 @@ async def get_research(city: str, poi_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error reading research data: {str(e)}"
+        )
+
+
+# ==== Tour/Itinerary Endpoints ====
+
+@app.get("/tours", response_model=List[TourSummary])
+def list_tours():
+    """
+    List all saved tours, grouped by city.
+
+    Returns list of tour summaries with key metadata.
+    """
+    import json
+
+    try:
+        tours = []
+        tours_dir = Path("tours")
+
+        if not tours_dir.exists():
+            return []
+
+        # Iterate through city directories
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir() or city_dir.name.startswith('.'):
+                continue
+
+            city = city_dir.name
+
+            # Iterate through tour directories
+            for tour_dir in city_dir.iterdir():
+                if not tour_dir.is_dir() or tour_dir.name.startswith('.'):
+                    continue
+
+                # Load metadata
+                metadata_file = tour_dir / "metadata.json"
+                if not metadata_file.exists():
+                    continue
+
+                try:
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+
+                    # Load generation record for details
+                    gen_record_files = list(tour_dir.glob("generation_record_*.json"))
+                    interests = []
+                    duration_days = 0
+                    total_pois = 0
+                    optimization_score = None
+
+                    if gen_record_files:
+                        with open(gen_record_files[0], 'r', encoding='utf-8') as f:
+                            gen_record = json.load(f)
+
+                        input_params = gen_record.get('input_parameters', {})
+                        interests = input_params.get('interests', [])
+                        duration_days = input_params.get('duration_days', 0)
+                        total_pois = gen_record.get('metadata', {}).get('total_pois', 0)
+
+                        opt_scores = gen_record.get('optimization_scores', {})
+                        optimization_score = opt_scores.get('overall_score')
+
+                    tours.append(TourSummary(
+                        tour_id=metadata['tour_id'],
+                        city=metadata['city'],
+                        duration_days=duration_days,
+                        total_pois=total_pois,
+                        interests=interests,
+                        created_at=metadata['created_at'],
+                        optimization_score=optimization_score
+                    ))
+
+                except Exception as e:
+                    logger.warning(f"Error loading tour {tour_dir.name}: {e}")
+                    continue
+
+        # Sort by city, then by creation date (newest first)
+        tours.sort(key=lambda t: (t.city, t.created_at), reverse=True)
+
+        return tours
+
+    except Exception as e:
+        logger.error(f"Error listing tours: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing tours: {str(e)}"
+        )
+
+
+@app.get("/tours/{tour_id}", response_model=TourDetail)
+def get_tour(tour_id: str):
+    """
+    Get complete tour details including itinerary, backup POIs, and selection transparency.
+
+    Args:
+        tour_id: Tour identifier (e.g., "rome-tour-20260129-111100-aa7baf")
+
+    Returns:
+        Complete tour details with all metadata
+    """
+    import json
+
+    try:
+        # Find tour directory
+        tours_dir = Path("tours")
+        tour_path = None
+
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir():
+                continue
+            potential_path = city_dir / tour_id
+            if potential_path.exists():
+                tour_path = potential_path
+                break
+
+        if not tour_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour not found: {tour_id}"
+            )
+
+        # Load metadata
+        metadata_file = tour_path / "metadata.json"
+        with open(metadata_file, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+
+        # Load tour itinerary
+        tour_file = tour_path / "tour.json"
+        with open(tour_file, 'r', encoding='utf-8') as f:
+            tour_data = json.load(f)
+
+        # Load generation record
+        gen_record_files = list(tour_path.glob("generation_record_*.json"))
+        if not gen_record_files:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Generation record not found for tour"
+            )
+
+        with open(gen_record_files[0], 'r', encoding='utf-8') as f:
+            gen_record = json.load(f)
+
+        # Parse itinerary with POIs
+        itinerary = []
+        for day_data in tour_data.get('itinerary', []):
+            pois = []
+            for poi_data in day_data.get('pois', []):
+                pois.append(TourPOI(**poi_data))
+
+            itinerary.append(TourDay(
+                day=day_data['day'],
+                pois=pois,
+                total_hours=day_data['total_hours'],
+                total_walking_km=day_data['total_walking_km'],
+                start_time=day_data['start_time']
+            ))
+
+        # Parse backup POIs
+        backup_pois = {}
+        raw_backup = gen_record.get('poi_selection', {}).get('backup_pois', {})
+        for poi_name, backups in raw_backup.items():
+            backup_pois[poi_name] = [BackupPOI(**b) for b in backups]
+
+        # Parse rejected POIs
+        rejected_pois = []
+        raw_rejected = gen_record.get('poi_selection', {}).get('rejected_pois', [])
+        for rejected in raw_rejected:
+            rejected_pois.append(RejectedPOI(**rejected))
+
+        # Parse optimization scores
+        opt_scores = gen_record.get('optimization_scores', {})
+        optimization_scores = OptimizationScores(**opt_scores)
+
+        # Build tour detail
+        tour_detail = TourDetail(
+            metadata=TourMetadata(**metadata),
+            itinerary=itinerary,
+            input_parameters=gen_record.get('input_parameters', {}),
+            backup_pois=backup_pois,
+            rejected_pois=rejected_pois,
+            optimization_scores=optimization_scores,
+            constraints_violated=gen_record.get('constraints_violated', [])
+        )
+
+        return tour_detail
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading tour {tour_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error loading tour: {str(e)}"
         )
 
 

@@ -3,6 +3,8 @@ import Dashboard from '../views/Dashboard.vue'
 import POIDetail from '../views/POIDetail.vue'
 import TranscriptView from '../views/TranscriptView.vue'
 import ResearchView from '../views/ResearchView.vue'
+import ToursView from '../views/ToursView.vue'
+import TourDetail from '../views/TourDetail.vue'
 
 const routes = [
   {
@@ -24,6 +26,16 @@ const routes = [
     path: '/poi/:city/:poiId/research',
     name: 'ResearchView',
     component: ResearchView
+  },
+  {
+    path: '/tours',
+    name: 'ToursView',
+    component: ToursView
+  },
+  {
+    path: '/tours/:tourId',
+    name: 'TourDetail',
+    component: TourDetail
   }
 ]
 

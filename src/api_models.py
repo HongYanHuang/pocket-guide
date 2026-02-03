@@ -244,3 +244,84 @@ class ResearchData(BaseModel):
     locations: Optional[List[ResearchLocation]] = Field(None, description="Sub-locations")
     concepts: Optional[List[ResearchConcept]] = Field(None, description="Associated concepts")
     raw_yaml: str = Field(..., description="Raw YAML content")
+
+
+# ==== Tour/Itinerary Models ====
+
+class TourPOI(BaseModel):
+    """POI within a tour itinerary"""
+    poi: str = Field(..., description="POI name")
+    reason: str = Field(..., description="Why this POI was selected")
+    suggested_day: int = Field(..., description="Suggested day number")
+    estimated_hours: float = Field(..., description="Estimated visit duration in hours")
+    priority: str = Field(..., description="Priority level (high/medium/low)")
+    coordinates: Dict[str, Any] = Field(default_factory=dict)
+    operation_hours: Dict[str, Any] = Field(default_factory=dict)
+    visit_info: Dict[str, Any] = Field(default_factory=dict)
+    period: Optional[str] = Field(None, description="Historical period")
+    date_built: Optional[str] = Field(None, description="Construction date")
+    walking_time_to_next: Optional[str] = Field(None, description="Walking time to next POI")
+    distance_to_next_km: Optional[float] = Field(None, description="Distance to next POI in km")
+
+
+class TourDay(BaseModel):
+    """Single day in a tour itinerary"""
+    day: int = Field(..., description="Day number")
+    pois: List[TourPOI] = Field(..., description="POIs for this day")
+    total_hours: float = Field(..., description="Total hours for this day")
+    total_walking_km: float = Field(..., description="Total walking distance in km")
+    start_time: str = Field(..., description="Start time for the day")
+
+
+class BackupPOI(BaseModel):
+    """Backup/alternative POI"""
+    poi: str = Field(..., description="Backup POI name")
+    similarity_score: float = Field(..., description="Similarity score to original POI")
+    reason: str = Field(..., description="Why this is a good backup")
+    substitute_scenario: str = Field(..., description="When to use this backup")
+
+
+class RejectedPOI(BaseModel):
+    """POI that was rejected during selection"""
+    poi: str = Field(..., description="Rejected POI name")
+    reason: str = Field(..., description="Why this POI was rejected")
+
+
+class OptimizationScores(BaseModel):
+    """Optimization metrics for the tour"""
+    distance_score: float = Field(..., description="Distance optimization score (0-1)")
+    coherence_score: float = Field(..., description="Thematic coherence score (0-1)")
+    overall_score: float = Field(..., description="Overall optimization score (0-1)")
+    total_distance_km: float = Field(..., description="Total walking distance in km")
+
+
+class TourMetadata(BaseModel):
+    """Tour metadata and version history"""
+    tour_id: str = Field(..., description="Unique tour identifier")
+    city: str = Field(..., description="City name")
+    created_at: str = Field(..., description="Creation timestamp")
+    updated_at: str = Field(..., description="Last update timestamp")
+    current_version: int = Field(..., description="Current version number")
+    version_history: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class TourSummary(BaseModel):
+    """Summary of a tour for list view"""
+    tour_id: str = Field(..., description="Unique tour identifier")
+    city: str = Field(..., description="City name")
+    duration_days: int = Field(..., description="Number of days")
+    total_pois: int = Field(..., description="Total number of POIs")
+    interests: List[str] = Field(default_factory=list, description="User interests")
+    created_at: str = Field(..., description="Creation timestamp")
+    optimization_score: Optional[float] = Field(None, description="Overall optimization score")
+
+
+class TourDetail(BaseModel):
+    """Complete tour details"""
+    metadata: TourMetadata = Field(..., description="Tour metadata")
+    itinerary: List[TourDay] = Field(..., description="Day-by-day itinerary")
+    input_parameters: Dict[str, Any] = Field(..., description="Input parameters for tour generation")
+    backup_pois: Dict[str, List[BackupPOI]] = Field(default_factory=dict, description="Backup POIs per selected POI")
+    rejected_pois: List[RejectedPOI] = Field(default_factory=list, description="POIs that were rejected")
+    optimization_scores: OptimizationScores = Field(..., description="Optimization metrics")
+    constraints_violated: List[str] = Field(default_factory=list, description="List of constraint violations")

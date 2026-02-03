@@ -14,6 +14,9 @@
         <el-menu-item index="/">
           <span>Cities</span>
         </el-menu-item>
+        <el-menu-item index="/tours">
+          <span>Tours</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 

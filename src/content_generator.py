@@ -28,6 +28,12 @@ except ImportError:
     from insertion_agent import InsertionAgent
     from diagnosis_agent import DiagnosisAgent
 
+# Import language utilities
+try:
+    from .utils import get_language_name
+except ImportError:
+    from utils import get_language_name
+
 
 class ContentGenerator:
     def __init__(self, config: Dict[str, Any]):
@@ -216,7 +222,7 @@ class ContentGenerator:
         description: str = None,
         interests: list = None,
         custom_prompt: str = None,
-        language: str = "English",
+        language: str = "en",
         skip_research: bool = False,
         force_research: bool = False
     ) -> Tuple[str, List[str], Dict[str, Any]]:
@@ -230,7 +236,7 @@ class ContentGenerator:
             description: Basic description of the POI
             interests: List of interests/aspects to focus on
             custom_prompt: Custom prompt to use instead of default
-            language: Target language for content
+            language: Target language code (ISO 639-1, e.g., 'en', 'zh-tw', 'pt-br')
             skip_research: Skip research phase even if enabled in config
             force_research: Force research even if cached data exists
 
@@ -476,9 +482,24 @@ class ContentGenerator:
         city: str = None,
         description: str = None,
         interests: list = None,
-        language: str = "English"
+        language: str = "en"
     ) -> str:
-        """Build a prompt for content generation"""
+        """
+        Build a prompt for content generation
+
+        Args:
+            poi_name: Name of the POI
+            city: City name
+            description: Basic description of the POI
+            interests: List of interests/aspects to focus on
+            language: Target language code (ISO 639-1, e.g., 'en', 'zh-tw')
+
+        Returns:
+            Complete prompt string
+        """
+        # Convert language code to full descriptive name
+        language_name = get_language_name(language)
+
         # Get style guidelines from config
         content_config = self.config.get('content_generation', {})
         style_guidelines = content_config.get('style_guidelines', [
@@ -494,7 +515,22 @@ class ContentGenerator:
         ])
 
         prompt_parts = [
-            f"Create a {language} tour guide script for: {poi_name}"
+            "=" * 60,
+            "CRITICAL INSTRUCTION - LANGUAGE",
+            "=" * 60,
+            "",
+            f"Write the ENTIRE tour guide script in {language_name}.",
+            f"Every sentence, every word must be in {language_name}.",
+            "Do not use English (or any other language) except for:",
+            "- Proper names of people and places",
+            "- Historical terms that don't translate well",
+            "",
+            f"The audience speaks {language_name} as their primary language.",
+            f"They expect to hear the narration in {language_name}.",
+            "",
+            "=" * 60,
+            "",
+            f"Create a tour guide script for: {poi_name}"
         ]
 
         if city:
@@ -679,7 +715,7 @@ class ContentGenerator:
         city: str = None,
         research_data: Dict = None,
         interests: list = None,
-        language: str = "English"
+        language: str = "en"
     ) -> str:
         """
         Build storytelling prompt using research data
@@ -689,11 +725,14 @@ class ContentGenerator:
             city: City name
             research_data: Research data from research agent
             interests: User interests for filtering
-            language: Target language
+            language: Target language code (ISO 639-1, e.g., 'en', 'zh-tw')
 
         Returns:
             Complete prompt for storytelling phase
         """
+        # Convert language code to full descriptive name
+        language_name = get_language_name(language)
+
         # Get style guidelines and system prompt from config
         content_config = self.config.get('content_generation', {})
         system_prompt = content_config.get('system_prompt',
@@ -717,6 +756,21 @@ class ContentGenerator:
         # Build prompt
         prompt_parts = [
             system_prompt.strip(),
+            "",
+            "=" * 60,
+            "CRITICAL INSTRUCTION - LANGUAGE",
+            "=" * 60,
+            "",
+            f"Write the ENTIRE tour guide script in {language_name}.",
+            f"Every sentence, every word must be in {language_name}.",
+            "Do not use English (or any other language) except for:",
+            "- Proper names of people and places",
+            "- Historical terms that don't translate well",
+            "",
+            f"The audience speaks {language_name} as their primary language.",
+            f"They expect to hear the narration in {language_name}.",
+            "",
+            "=" * 60,
             "",
             "LEARNING OBJECTIVES: Your transcript must teach visitors these key things:",
         ]
@@ -755,7 +809,7 @@ class ContentGenerator:
             prompt_parts.append(f"Focus Areas: {interests_str}")
 
         prompt_parts.extend([
-            f"Language: {language}",
+            f"Target Language: {language_name}",
             "",
             "=" * 60,
             "RESEARCH FINDINGS",

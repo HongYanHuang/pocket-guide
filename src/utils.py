@@ -10,25 +10,75 @@ import re
 
 
 # ISO 639-1 language codes validation and mapping
-# Common languages - can be extended
+# Supports both base codes (en, zh) and region-specific codes (en-us, zh-tw)
 VALID_LANGUAGE_CODES = {
-    'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'ja', 'zh',
-    'ko', 'ar', 'hi', 'tr', 'pl', 'sv', 'no', 'da', 'fi', 'el',
-    'he', 'th', 'vi', 'id', 'ms', 'cs', 'hu', 'ro', 'uk', 'bg'
+    # English variants
+    'en', 'en-us', 'en-gb', 'en-au', 'en-ca', 'en-nz',
+    # Chinese variants
+    'zh', 'zh-tw', 'zh-cn', 'zh-hk', 'zh-sg',
+    # Spanish variants
+    'es', 'es-es', 'es-mx', 'es-ar', 'es-co', 'es-cl',
+    # Portuguese variants
+    'pt', 'pt-br', 'pt-pt',
+    # French variants
+    'fr', 'fr-fr', 'fr-ca', 'fr-be', 'fr-ch',
+    # German variants
+    'de', 'de-de', 'de-at', 'de-ch',
+    # Other languages (base codes)
+    'it', 'nl', 'ru', 'ja', 'ko', 'ar', 'hi', 'tr', 'pl',
+    'sv', 'no', 'da', 'fi', 'el', 'he', 'th', 'vi', 'id',
+    'ms', 'cs', 'hu', 'ro', 'uk', 'bg'
 }
 
-# Mapping from ISO 639-1 codes to full language names (for AI prompts)
+# Mapping from ISO 639-1 codes to full descriptive language names (for AI prompts)
+# These are what the AI will see to understand which language to write in
 LANGUAGE_CODE_TO_NAME = {
+    # English
     'en': 'English',
-    'fr': 'French',
+    'en-us': 'English (United States)',
+    'en-gb': 'English (United Kingdom)',
+    'en-au': 'English (Australian)',
+    'en-ca': 'English (Canadian)',
+    'en-nz': 'English (New Zealand)',
+
+    # Chinese
+    'zh': 'Chinese',
+    'zh-tw': 'Chinese (Traditional)',
+    'zh-cn': 'Chinese (Simplified)',
+    'zh-hk': 'Chinese (Hong Kong)',
+    'zh-sg': 'Chinese (Singaporean)',
+
+    # Spanish
     'es': 'Spanish',
-    'de': 'German',
-    'it': 'Italian',
+    'es-es': 'Spanish (European)',
+    'es-mx': 'Spanish (Mexican)',
+    'es-ar': 'Spanish (Argentinian)',
+    'es-co': 'Spanish (Colombian)',
+    'es-cl': 'Spanish (Chilean)',
+
+    # Portuguese
     'pt': 'Portuguese',
+    'pt-br': 'Portuguese (Brazilian)',
+    'pt-pt': 'Portuguese (European)',
+
+    # French
+    'fr': 'French',
+    'fr-fr': 'French (European)',
+    'fr-ca': 'French (Canadian)',
+    'fr-be': 'French (Belgian)',
+    'fr-ch': 'French (Swiss)',
+
+    # German
+    'de': 'German',
+    'de-de': 'German (Standard)',
+    'de-at': 'German (Austrian)',
+    'de-ch': 'German (Swiss)',
+
+    # Other languages
+    'it': 'Italian',
     'nl': 'Dutch',
     'ru': 'Russian',
     'ja': 'Japanese',
-    'zh': 'Chinese',
     'ko': 'Korean',
     'ar': 'Arabic',
     'hi': 'Hindi',

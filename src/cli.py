@@ -96,7 +96,7 @@ def pois(ctx, city):
 @click.option('--description', help='Description of the POI')
 @click.option('--interests', help='Comma-separated interests (e.g., history,architecture)')
 @click.option('--custom-prompt', help='Custom prompt for content generation')
-@click.option('--language', default='en', help='Content language (ISO 639-1 code, e.g., en, fr, es)')
+@click.option('--language', default='en', help='Content language (ISO 639-1 code with optional region, e.g., en, zh-tw, pt-br)')
 @click.option('--skip-research', is_flag=True, help='Skip research phase (use description only)')
 @click.option('--force-research', is_flag=True, help='Force new research even if cached')
 @click.pass_context
@@ -156,9 +156,7 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
         console.print(f"[dim]Step 3: Calling {provider} API to generate content...[/dim]")
         console.print(f"[dim]   (This usually takes 10-30 seconds)[/dim]")
 
-        # Convert language code to full name for AI prompt
-        language_name = get_language_name(language)
-
+        # Pass language code directly - generator will convert it internally
         transcript, summary_points, generation_metadata = generator.generate(
             poi_name=poi,
             provider=provider,
@@ -166,7 +164,7 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
             description=description or None,
             interests=[i.strip() for i in interests_list] if interests_list else None,
             custom_prompt=custom_prompt,
-            language=language_name,
+            language=language,
             skip_research=skip_research,
             force_research=force_research
         )
@@ -869,7 +867,7 @@ def poi_check_redundancy(ctx, city, provider):
 @click.argument('input_file', type=click.Path(exists=True))
 @click.option('--city', help='City name (required if not in research_candidates.json)')
 @click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
-@click.option('--language', default='en', help='Content language (ISO 639-1 code, e.g., en, fr, es)')
+@click.option('--language', default='en', help='Content language (ISO 639-1 code with optional region, e.g., en, zh-tw, pt-br)')
 @click.option('--skip-research', is_flag=True, help='Skip research phase for faster generation')
 @click.option('--force', is_flag=True, help='Force regeneration even if content already exists')
 @click.pass_context
@@ -994,16 +992,14 @@ def poi_batch_generate(ctx, input_file, city, provider, language, skip_research,
                 # Generate new content
                 progress.update(task, description=f"[cyan]Generating: {poi_name}")
 
-                # Convert language code to full name for AI prompt
-                language_name = get_language_name(language)
-
+                # Pass language code directly - generator will convert it internally
                 # Call existing generate logic
                 generator = ContentGenerator(config)
                 transcript, summary_points, metadata = generator.generate(
                     poi_name=poi_name,
                     city=city,
                     provider=provider,
-                    language=language_name,
+                    language=language,
                     skip_research=skip_research
                 )
 

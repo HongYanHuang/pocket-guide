@@ -6,6 +6,102 @@ import json
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Tuple, List
+import re
+
+
+# ISO 639-1 language codes validation and mapping
+# Common languages - can be extended
+VALID_LANGUAGE_CODES = {
+    'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'ja', 'zh',
+    'ko', 'ar', 'hi', 'tr', 'pl', 'sv', 'no', 'da', 'fi', 'el',
+    'he', 'th', 'vi', 'id', 'ms', 'cs', 'hu', 'ro', 'uk', 'bg'
+}
+
+# Mapping from ISO 639-1 codes to full language names (for AI prompts)
+LANGUAGE_CODE_TO_NAME = {
+    'en': 'English',
+    'fr': 'French',
+    'es': 'Spanish',
+    'de': 'German',
+    'it': 'Italian',
+    'pt': 'Portuguese',
+    'nl': 'Dutch',
+    'ru': 'Russian',
+    'ja': 'Japanese',
+    'zh': 'Chinese',
+    'ko': 'Korean',
+    'ar': 'Arabic',
+    'hi': 'Hindi',
+    'tr': 'Turkish',
+    'pl': 'Polish',
+    'sv': 'Swedish',
+    'no': 'Norwegian',
+    'da': 'Danish',
+    'fi': 'Finnish',
+    'el': 'Greek',
+    'he': 'Hebrew',
+    'th': 'Thai',
+    'vi': 'Vietnamese',
+    'id': 'Indonesian',
+    'ms': 'Malay',
+    'cs': 'Czech',
+    'hu': 'Hungarian',
+    'ro': 'Romanian',
+    'uk': 'Ukrainian',
+    'bg': 'Bulgarian'
+}
+
+
+def validate_language_code(language_code: str) -> bool:
+    """
+    Validate ISO 639-1 language code
+
+    Args:
+        language_code: Two-letter language code (e.g., 'en', 'fr')
+
+    Returns:
+        True if valid, False otherwise
+    """
+    return language_code.lower() in VALID_LANGUAGE_CODES
+
+
+def normalize_language_code(language_code: str) -> str:
+    """
+    Normalize language code to lowercase
+
+    Args:
+        language_code: Language code (may be mixed case)
+
+    Returns:
+        Lowercase language code
+
+    Raises:
+        ValueError: If language code is invalid
+    """
+    normalized = language_code.lower()
+    if not validate_language_code(normalized):
+        raise ValueError(
+            f"Invalid language code: {language_code}. "
+            f"Must be a valid ISO 639-1 code (e.g., 'en', 'fr', 'es')"
+        )
+    return normalized
+
+
+def get_language_name(language_code: str) -> str:
+    """
+    Convert ISO 639-1 language code to full language name
+
+    Args:
+        language_code: Two-letter language code (e.g., 'en', 'fr')
+
+    Returns:
+        Full language name (e.g., 'English', 'French')
+
+    Raises:
+        ValueError: If language code is invalid
+    """
+    normalized = normalize_language_code(language_code)
+    return LANGUAGE_CODE_TO_NAME.get(normalized, 'English')
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
@@ -57,33 +153,93 @@ def load_metadata(poi_path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
-def save_transcript(poi_path: Path, content: str, format: str = "txt"):
-    """Save transcript to file"""
-    if format == "txt":
-        file_path = poi_path / "transcript.txt"
-    elif format == "ssml":
-        file_path = poi_path / "transcript.ssml"
-    else:
+def save_transcript(poi_path: Path, content: str, format: str = "txt", language: str = "en"):
+    """
+    Save transcript to file with language support
+
+    Args:
+        poi_path: POI directory path
+        content: Transcript content
+        format: File format ('txt' or 'ssml')
+        language: ISO 639-1 language code (e.g., 'en', 'fr')
+    """
+    language = normalize_language_code(language)
+
+    if format not in ["txt", "ssml"]:
         raise ValueError(f"Unsupported format: {format}")
 
+    # Save language-specific file
+    file_path = poi_path / f"transcript_{language}.{format}"
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
+    # For backward compatibility, also save as transcript.txt/transcript.ssml if English
+    if language == "en":
+        compat_path = poi_path / f"transcript.{format}"
+        with open(compat_path, 'w', encoding='utf-8') as f:
+            f.write(content)
 
-def load_transcript(poi_path: Path, format: str = "txt") -> str:
-    """Load transcript from file"""
-    if format == "txt":
-        file_path = poi_path / "transcript.txt"
-    elif format == "ssml":
-        file_path = poi_path / "transcript.ssml"
-    else:
+
+def load_transcript(poi_path: Path, format: str = "txt", language: str = "en") -> str:
+    """
+    Load transcript from file with language support
+
+    Args:
+        poi_path: POI directory path
+        format: File format ('txt' or 'ssml')
+        language: ISO 639-1 language code (e.g., 'en', 'fr')
+
+    Returns:
+        Transcript content
+
+    Raises:
+        FileNotFoundError: If transcript file doesn't exist
+    """
+    language = normalize_language_code(language)
+
+    if format not in ["txt", "ssml"]:
         raise ValueError(f"Unsupported format: {format}")
+
+    # Try language-specific file first
+    file_path = poi_path / f"transcript_{language}.{format}"
+
+    # Fallback to backward-compatible filename for English
+    if not file_path.exists() and language == "en":
+        file_path = poi_path / f"transcript.{format}"
 
     if not file_path.exists():
         raise FileNotFoundError(f"Transcript not found: {file_path}")
 
     with open(file_path, 'r', encoding='utf-8') as f:
         return f.read()
+
+
+def list_available_languages(poi_path: Path) -> List[str]:
+    """
+    List all available language codes for transcripts in a POI directory
+
+    Args:
+        poi_path: POI directory path
+
+    Returns:
+        List of ISO 639-1 language codes (e.g., ['en', 'fr', 'es'])
+    """
+    languages = set()
+
+    # Pattern to match transcript files: transcript_XX.txt or transcript_XX.ssml
+    pattern = re.compile(r'^transcript_([a-z]{2})\.(txt|ssml)$')
+
+    for file in poi_path.iterdir():
+        if file.is_file():
+            match = pattern.match(file.name)
+            if match:
+                languages.add(match.group(1))
+
+    # Check for backward-compatible English transcript
+    if (poi_path / "transcript.txt").exists():
+        languages.add("en")
+
+    return sorted(list(languages))
 
 
 def list_cities(content_dir: str) -> list:
@@ -166,27 +322,36 @@ def save_versioned_transcript(
     poi_path: Path,
     content: str,
     version_string: str,
-    format: str = "txt"
+    format: str = "txt",
+    language: str = "en"
 ) -> None:
     """
-    Save transcript with version in filename
-    Also saves copy as current transcript for backward compatibility
+    Save transcript with version-first naming: transcript_v1_2025-01-15_en.txt
 
     Args:
         poi_path: POI directory path
         content: Transcript content
         version_string: e.g. "v1_2025-01-15"
         format: "txt" or "ssml"
+        language: ISO 639-1 language code (e.g., 'en', 'fr')
     """
-    # Save versioned file
-    versioned_path = poi_path / f"transcript_{version_string}.{format}"
+    language = normalize_language_code(language)
+
+    # Save versioned file with version-first naming: transcript_v1_2025-01-15_en.txt
+    versioned_path = poi_path / f"transcript_{version_string}_{language}.{format}"
     with open(versioned_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
-    # Also save as current transcript (backward compat)
-    current_path = poi_path / f"transcript.{format}"
-    with open(current_path, 'w', encoding='utf-8') as f:
+    # Save as current language-specific transcript
+    current_lang_path = poi_path / f"transcript_{language}.{format}"
+    with open(current_lang_path, 'w', encoding='utf-8') as f:
         f.write(content)
+
+    # For backward compatibility, also save as transcript.txt/transcript.ssml if English
+    if language == "en":
+        compat_path = poi_path / f"transcript.{format}"
+        with open(compat_path, 'w', encoding='utf-8') as f:
+            f.write(content)
 
 
 def save_generation_record(

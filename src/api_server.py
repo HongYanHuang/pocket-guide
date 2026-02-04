@@ -24,7 +24,7 @@ from api_models import (
     BackupPOI, RejectedPOI, OptimizationScores
 )
 from poi_metadata_agent import POIMetadataAgent
-from utils import load_config
+from utils import load_config, normalize_language_code, list_available_languages
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -188,10 +188,31 @@ def snake_to_kebab(text: str) -> str:
     return text.replace('_', '-')
 
 
-def get_transcript_path(city: str, poi_id: str) -> Path:
-    """Get path to transcript file"""
+def get_transcript_path(city: str, poi_id: str, language: str = "en") -> Path:
+    """
+    Get path to transcript file with language support
+
+    Args:
+        city: City name
+        poi_id: POI identifier
+        language: ISO 639-1 language code (e.g., 'en', 'fr')
+
+    Returns:
+        Path to language-specific transcript file
+    """
     city_slug = city.lower().replace(' ', '-')
-    return Path("content") / city_slug / poi_id / "transcript.txt"
+    poi_dir = Path("content") / city_slug / poi_id
+
+    # Try language-specific file first
+    lang_path = poi_dir / f"transcript_{language}.txt"
+
+    # Fallback to backward-compatible filename for English
+    if not lang_path.exists() and language == "en":
+        compat_path = poi_dir / "transcript.txt"
+        if compat_path.exists():
+            return compat_path
+
+    return lang_path
 
 
 def get_summary_path(city: str, poi_id: str) -> Path:
@@ -224,15 +245,25 @@ def parse_summary_points(summary_text: str) -> List[str]:
     return points
 
 
-def create_transcript_backup(city: str, poi_id: str) -> str:
-    """Create backup of transcript file before editing"""
-    transcript_path = get_transcript_path(city, poi_id)
+def create_transcript_backup(city: str, poi_id: str, language: str = "en") -> str:
+    """
+    Create backup of transcript file before editing
+
+    Args:
+        city: City name
+        poi_id: POI identifier
+        language: ISO 639-1 language code
+
+    Returns:
+        Backup filename
+    """
+    transcript_path = get_transcript_path(city, poi_id, language)
 
     if not transcript_path.exists():
         return ""
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = transcript_path.parent / f"transcript_backup_{timestamp}.txt"
+    backup_path = transcript_path.parent / f"transcript_backup_{language}_{timestamp}.txt"
 
     try:
         backup_path.write_text(transcript_path.read_text(encoding='utf-8'), encoding='utf-8')
@@ -654,18 +685,37 @@ async def verify_city_metadata(city: str):
 # ==== Transcript Endpoints ====
 
 @app.get("/pois/{city}/{poi_id}/transcript", response_model=TranscriptData)
-async def get_transcript(city: str, poi_id: str):
+async def get_transcript(city: str, poi_id: str, language: str = "en"):
     """
-    Get transcript and summary for a POI.
+    Get transcript and summary for a POI in a specific language.
 
     Args:
         city: City name (e.g., "Athens")
         poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
+        language: ISO 639-1 language code (e.g., 'en', 'fr', 'es') - defaults to 'en'
 
     Returns:
-        TranscriptData with transcript text, summary points, and availability flags
+        TranscriptData with transcript text, summary points, availability flags, and language info
     """
-    transcript_path = get_transcript_path(city, poi_id)
+    # Validate and normalize language code
+    try:
+        language = normalize_language_code(language)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    # Get POI directory path
+    city_slug = city.lower().replace(' ', '-')
+    poi_dir = Path("content") / city_slug / poi_id
+
+    # Get available languages for this POI
+    available_languages = []
+    if poi_dir.exists():
+        available_languages = list_available_languages(poi_dir)
+
+    transcript_path = get_transcript_path(city, poi_id, language)
     summary_path = get_summary_path(city, poi_id)
 
     transcript_text = None
@@ -685,7 +735,9 @@ async def get_transcript(city: str, poi_id: str):
             transcript=transcript_text,
             summary=summary_points,
             has_transcript=has_transcript,
-            has_summary=has_summary
+            has_summary=has_summary,
+            language=language,
+            available_languages=available_languages
         )
 
     except Exception as e:
@@ -699,36 +751,45 @@ async def get_transcript(city: str, poi_id: str):
 @app.put("/pois/{city}/{poi_id}/transcript", response_model=SuccessResponse)
 async def update_transcript(city: str, poi_id: str, update: TranscriptUpdate):
     """
-    Update transcript for a POI (creates backup before saving).
+    Update transcript for a POI in a specific language (creates backup before saving).
 
     Args:
         city: City name (e.g., "Athens")
         poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
-        update: TranscriptUpdate with new transcript text
+        update: TranscriptUpdate with new transcript text and optional language code
 
     Returns:
         SuccessResponse with backup filename
     """
-    transcript_path = get_transcript_path(city, poi_id)
+    # Validate and normalize language code
+    try:
+        language = normalize_language_code(update.language)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    transcript_path = get_transcript_path(city, poi_id, language)
 
     if not transcript_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transcript not found for {city}/{poi_id}"
+            detail=f"Transcript not found for {city}/{poi_id} in language '{language}'"
         )
 
     try:
         # Create backup before editing
-        backup_filename = create_transcript_backup(city, poi_id)
+        backup_filename = create_transcript_backup(city, poi_id, language)
 
         # Write new content
         transcript_path.write_text(update.transcript, encoding='utf-8')
 
-        logger.info(f"Updated transcript for {city}/{poi_id}")
+        logger.info(f"Updated transcript for {city}/{poi_id} (language: {language})")
 
         return SuccessResponse(
-            message="Transcript updated successfully",
-            data={"backup_file": backup_filename}
+            message=f"Transcript updated successfully for language '{language}'",
+            data={"backup_file": backup_filename, "language": language}
         )
 
     except HTTPException:

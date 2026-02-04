@@ -16,7 +16,7 @@ from utils import (
     load_config, ensure_poi_directory, save_metadata, save_transcript,
     list_cities, list_pois, text_to_ssml, load_transcript, get_poi_path,
     load_metadata, get_next_version, save_versioned_transcript,
-    save_generation_record, extract_used_nodes
+    save_generation_record, extract_used_nodes, get_language_code
 )
 from content_generator import ContentGenerator
 from tts_generator import TTSGenerator
@@ -218,12 +218,15 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
         # Save generation record
         save_generation_record(poi_path, version_string, generation_record)
 
-        # Save versioned transcripts
-        save_versioned_transcript(poi_path, transcript, version_string, format='txt')
+        # Get language code for file naming
+        language_code = get_language_code(language)
+
+        # Save versioned transcripts with language
+        save_versioned_transcript(poi_path, transcript, version_string, format='txt', language=language_code)
 
         # Convert to SSML and save
         ssml_content = text_to_ssml(transcript)
-        save_versioned_transcript(poi_path, ssml_content, version_string, format='ssml')
+        save_versioned_transcript(poi_path, ssml_content, version_string, format='ssml', language=language_code)
 
         # Build version history entry
         version_entry = {
@@ -860,14 +863,18 @@ def poi_check_redundancy(ctx, city, provider):
 @click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
 @click.option('--skip-research', is_flag=True, help='Skip research phase for faster generation')
 @click.option('--force', is_flag=True, help='Force regeneration even if content already exists')
+@click.option('--language', default='English', help='Content language')
 @click.pass_context
-def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
+def poi_batch_generate(ctx, input_file, city, provider, skip_research, force, language):
     """Batch generate POI content from input file (one POI name per line)"""
     config = ctx.obj['config']
     content_dir = ctx.obj['content_dir']
 
     if not provider:
         provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
+
+    # Get language code for file naming
+    language_code = get_language_code(language)
 
     # Load POI names from file
     try:
@@ -956,19 +963,25 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
             progress.update(task, description=f"[cyan]Checking: {poi_name}")
 
             try:
-                # Check if POI content already exists (unless --force is set)
+                # Check if POI content already exists for this language (unless --force is set)
                 poi_path = get_poi_path(content_dir, city, poi_name)
-                transcript_file = poi_path / 'transcript.txt'
+                transcript_file_lang = poi_path / f'transcript_{language_code}.txt'
+                # Also check legacy transcript.txt for English
+                transcript_file_legacy = poi_path / 'transcript.txt'
 
-                if transcript_file.exists() and not force:
-                    # Skip POIs that already have generated content
-                    progress.console.print(f"[dim]⊘ {poi_name} (already exists, use --force to regenerate)[/dim]")
+                existing_for_language = transcript_file_lang.exists()
+                if not existing_for_language and language_code == "en":
+                    existing_for_language = transcript_file_legacy.exists()
+
+                if existing_for_language and not force:
+                    # Skip POIs that already have generated content for this language
+                    progress.console.print(f"[dim]⊘ {poi_name} (already exists for {language}, use --force to regenerate)[/dim]")
                     already_exists.append(poi_name)
                     progress.advance(task)
                     continue
 
                 # Generate new content
-                progress.update(task, description=f"[cyan]Generating: {poi_name}")
+                progress.update(task, description=f"[cyan]Generating: {poi_name} ({language})")
 
                 # Call existing generate logic
                 generator = ContentGenerator(config)
@@ -976,6 +989,7 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
                     poi_name=poi_name,
                     city=city,
                     provider=provider,
+                    language=language,
                     skip_research=skip_research
                 )
 
@@ -995,7 +1009,8 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
                 existing_metadata.update(metadata)
 
                 # Save updated metadata
-                save_transcript(poi_path, transcript, format='txt')
+                save_transcript(poi_path, transcript, format='txt', language=language_code)
+                save_versioned_transcript(poi_path, transcript, version_string, format='txt', language=language_code)
                 save_metadata(poi_path, existing_metadata)
 
                 # Save generation record

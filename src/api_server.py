@@ -188,10 +188,25 @@ def snake_to_kebab(text: str) -> str:
     return text.replace('_', '-')
 
 
-def get_transcript_path(city: str, poi_id: str) -> Path:
-    """Get path to transcript file"""
+def get_transcript_path(city: str, poi_id: str, language: str = "en") -> Path:
+    """Get path to transcript file with language support"""
     city_slug = city.lower().replace(' ', '-')
-    return Path("content") / city_slug / poi_id / "transcript.txt"
+    poi_path = Path("content") / city_slug / poi_id
+
+    # Try language-specific file first
+    lang_path = poi_path / f"transcript_{language}.txt"
+    if lang_path.exists():
+        return lang_path
+
+    # Fall back to legacy transcript.txt for English
+    if language == "en":
+        legacy_path = poi_path / "transcript.txt"
+        if legacy_path.exists():
+            return legacy_path
+
+    # Return the language-specific path even if it doesn't exist
+    # (for consistency with save operations)
+    return lang_path
 
 
 def get_summary_path(city: str, poi_id: str) -> Path:
@@ -224,15 +239,15 @@ def parse_summary_points(summary_text: str) -> List[str]:
     return points
 
 
-def create_transcript_backup(city: str, poi_id: str) -> str:
+def create_transcript_backup(city: str, poi_id: str, language: str = "en") -> str:
     """Create backup of transcript file before editing"""
-    transcript_path = get_transcript_path(city, poi_id)
+    transcript_path = get_transcript_path(city, poi_id, language)
 
     if not transcript_path.exists():
         return ""
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = transcript_path.parent / f"transcript_backup_{timestamp}.txt"
+    backup_path = transcript_path.parent / f"transcript_backup_{language}_{timestamp}.txt"
 
     try:
         backup_path.write_text(transcript_path.read_text(encoding='utf-8'), encoding='utf-8')
@@ -654,24 +669,32 @@ async def verify_city_metadata(city: str):
 # ==== Transcript Endpoints ====
 
 @app.get("/pois/{city}/{poi_id}/transcript", response_model=TranscriptData)
-async def get_transcript(city: str, poi_id: str):
+async def get_transcript(city: str, poi_id: str, language: Optional[str] = "en"):
     """
     Get transcript and summary for a POI.
 
     Args:
         city: City name (e.g., "Athens")
         poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
+        language: Language code (e.g., "en", "fr"), defaults to "en"
 
     Returns:
         TranscriptData with transcript text, summary points, and availability flags
     """
-    transcript_path = get_transcript_path(city, poi_id)
+    from utils import list_available_languages, get_poi_path
+
+    # Get POI path to list available languages
+    city_slug = city.lower().replace(' ', '-')
+    poi_path = get_poi_path("content", city, poi_id)
+
+    transcript_path = get_transcript_path(city, poi_id, language)
     summary_path = get_summary_path(city, poi_id)
 
     transcript_text = None
     summary_points = None
     has_transcript = transcript_path.exists()
     has_summary = summary_path.exists()
+    available_languages = list_available_languages(poi_path) if poi_path.exists() else []
 
     try:
         if has_transcript:
@@ -685,7 +708,9 @@ async def get_transcript(city: str, poi_id: str):
             transcript=transcript_text,
             summary=summary_points,
             has_transcript=has_transcript,
-            has_summary=has_summary
+            has_summary=has_summary,
+            language=language,
+            available_languages=available_languages
         )
 
     except Exception as e:
@@ -704,31 +729,32 @@ async def update_transcript(city: str, poi_id: str, update: TranscriptUpdate):
     Args:
         city: City name (e.g., "Athens")
         poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
-        update: TranscriptUpdate with new transcript text
+        update: TranscriptUpdate with new transcript text and optional language
 
     Returns:
         SuccessResponse with backup filename
     """
-    transcript_path = get_transcript_path(city, poi_id)
+    language = update.language or "en"
+    transcript_path = get_transcript_path(city, poi_id, language)
 
     if not transcript_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transcript not found for {city}/{poi_id}"
+            detail=f"Transcript not found for {city}/{poi_id} (language: {language})"
         )
 
     try:
         # Create backup before editing
-        backup_filename = create_transcript_backup(city, poi_id)
+        backup_filename = create_transcript_backup(city, poi_id, language)
 
         # Write new content
         transcript_path.write_text(update.transcript, encoding='utf-8')
 
-        logger.info(f"Updated transcript for {city}/{poi_id}")
+        logger.info(f"Updated transcript for {city}/{poi_id} (language: {language})")
 
         return SuccessResponse(
             message="Transcript updated successfully",
-            data={"backup_file": backup_filename}
+            data={"backup_file": backup_filename, "language": language}
         )
 
     except HTTPException:

@@ -5,7 +5,7 @@ import os
 import json
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
@@ -18,6 +18,46 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
 
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
+
+
+# ==== Language Code Mapping ====
+
+LANGUAGE_CODE_MAP = {
+    "english": "en",
+    "french": "fr",
+    "spanish": "es",
+    "german": "de",
+    "japanese": "ja",
+    "chinese": "zh",
+    "korean": "ko",
+    "italian": "it",
+    "portuguese": "pt",
+    "russian": "ru",
+    "arabic": "ar",
+    "hindi": "hi",
+    "dutch": "nl",
+    "swedish": "sv",
+    "norwegian": "no",
+    "danish": "da",
+    "finnish": "fi",
+    "greek": "el",
+    "turkish": "tr",
+    "polish": "pl",
+}
+
+
+def get_language_code(language: str) -> str:
+    """
+    Convert language name to ISO 639-1 code
+
+    Args:
+        language: Language name (e.g., "English", "French")
+
+    Returns:
+        ISO 639-1 language code (e.g., "en", "fr")
+    """
+    language_lower = language.lower().strip()
+    return LANGUAGE_CODE_MAP.get(language_lower, "en")
 
 
 def get_city_path(content_dir: str, city: str) -> Path:
@@ -57,33 +97,60 @@ def load_metadata(poi_path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
-def save_transcript(poi_path: Path, content: str, format: str = "txt"):
-    """Save transcript to file"""
-    if format == "txt":
-        file_path = poi_path / "transcript.txt"
-    elif format == "ssml":
-        file_path = poi_path / "transcript.ssml"
-    else:
+def save_transcript(poi_path: Path, content: str, format: str = "txt", language: str = "en"):
+    """
+    Save transcript to file with language support
+
+    Args:
+        poi_path: POI directory path
+        content: Transcript content
+        format: "txt" or "ssml"
+        language: Language code (e.g., "en", "fr")
+    """
+    if format not in ["txt", "ssml"]:
         raise ValueError(f"Unsupported format: {format}")
 
-    with open(file_path, 'w', encoding='utf-8') as f:
+    # Save language-specific file
+    lang_file_path = poi_path / f"transcript_{language}.{format}"
+    with open(lang_file_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
+    # For backward compatibility: also save as transcript.txt if English
+    if language == "en":
+        compat_file_path = poi_path / f"transcript.{format}"
+        with open(compat_file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
 
-def load_transcript(poi_path: Path, format: str = "txt") -> str:
-    """Load transcript from file"""
-    if format == "txt":
-        file_path = poi_path / "transcript.txt"
-    elif format == "ssml":
-        file_path = poi_path / "transcript.ssml"
-    else:
+
+def load_transcript(poi_path: Path, format: str = "txt", language: str = "en") -> str:
+    """
+    Load transcript from file with language support
+
+    Args:
+        poi_path: POI directory path
+        format: "txt" or "ssml"
+        language: Language code (e.g., "en", "fr")
+
+    Returns:
+        Transcript content
+    """
+    if format not in ["txt", "ssml"]:
         raise ValueError(f"Unsupported format: {format}")
 
-    if not file_path.exists():
-        raise FileNotFoundError(f"Transcript not found: {file_path}")
+    # Try language-specific file first
+    lang_file_path = poi_path / f"transcript_{language}.{format}"
+    if lang_file_path.exists():
+        with open(lang_file_path, 'r', encoding='utf-8') as f:
+            return f.read()
 
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return f.read()
+    # Fall back to legacy transcript.txt for English
+    if language == "en":
+        legacy_path = poi_path / f"transcript.{format}"
+        if legacy_path.exists():
+            with open(legacy_path, 'r', encoding='utf-8') as f:
+                return f.read()
+
+    raise FileNotFoundError(f"Transcript not found: {lang_file_path}")
 
 
 def list_cities(content_dir: str) -> list:
@@ -123,6 +190,35 @@ def list_pois(content_dir: str, city: str) -> list:
                 'metadata': metadata
             })
     return pois
+
+
+def list_available_languages(poi_path: Path, format: str = "txt") -> List[str]:
+    """
+    List all available languages for a POI's transcripts
+
+    Args:
+        poi_path: POI directory path
+        format: "txt" or "ssml"
+
+    Returns:
+        List of language codes (e.g., ["en", "fr", "es"])
+    """
+    import re
+    pattern = re.compile(rf"^transcript_([a-z]{{2}})\.{format}$")
+    languages = []
+
+    for file in poi_path.iterdir():
+        if file.is_file():
+            match = pattern.match(file.name)
+            if match:
+                languages.append(match.group(1))
+
+    # Check for legacy transcript.txt (treat as English)
+    if format == "txt" and (poi_path / "transcript.txt").exists():
+        if "en" not in languages:
+            languages.append("en")
+
+    return sorted(languages)
 
 
 def text_to_ssml(text: str, language: str = "en-US") -> str:
@@ -166,27 +262,35 @@ def save_versioned_transcript(
     poi_path: Path,
     content: str,
     version_string: str,
-    format: str = "txt"
+    format: str = "txt",
+    language: str = "en"
 ) -> None:
     """
-    Save transcript with version in filename
-    Also saves copy as current transcript for backward compatibility
+    Save transcript with version-first naming and language support
+    Format: transcript_{version}_{language}.{format}
 
     Args:
         poi_path: POI directory path
         content: Transcript content
         version_string: e.g. "v1_2025-01-15"
         format: "txt" or "ssml"
+        language: Language code (e.g., "en", "fr")
     """
-    # Save versioned file
-    versioned_path = poi_path / f"transcript_{version_string}.{format}"
+    # Save versioned file with language: transcript_v1_2025-01-15_en.txt
+    versioned_path = poi_path / f"transcript_{version_string}_{language}.{format}"
     with open(versioned_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
-    # Also save as current transcript (backward compat)
-    current_path = poi_path / f"transcript.{format}"
-    with open(current_path, 'w', encoding='utf-8') as f:
+    # Also save as current language-specific transcript
+    current_lang_path = poi_path / f"transcript_{language}.{format}"
+    with open(current_lang_path, 'w', encoding='utf-8') as f:
         f.write(content)
+
+    # For backward compatibility: save as transcript.txt if English
+    if language == "en":
+        current_path = poi_path / f"transcript.{format}"
+        with open(current_path, 'w', encoding='utf-8') as f:
+            f.write(content)
 
 
 def save_generation_record(

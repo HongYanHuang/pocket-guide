@@ -16,7 +16,8 @@ from utils import (
     load_config, ensure_poi_directory, save_metadata, save_transcript,
     list_cities, list_pois, text_to_ssml, load_transcript, get_poi_path,
     load_metadata, get_next_version, save_versioned_transcript,
-    save_generation_record, extract_used_nodes
+    save_generation_record, extract_used_nodes, normalize_language_code,
+    list_available_languages, get_language_name
 )
 from content_generator import ContentGenerator
 from tts_generator import TTSGenerator
@@ -95,7 +96,7 @@ def pois(ctx, city):
 @click.option('--description', help='Description of the POI')
 @click.option('--interests', help='Comma-separated interests (e.g., history,architecture)')
 @click.option('--custom-prompt', help='Custom prompt for content generation')
-@click.option('--language', default='English', help='Content language')
+@click.option('--language', default='en', help='Content language (ISO 639-1 code, e.g., en, fr, es)')
 @click.option('--skip-research', is_flag=True, help='Skip research phase (use description only)')
 @click.option('--force-research', is_flag=True, help='Force new research even if cached')
 @click.pass_context
@@ -105,6 +106,13 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
     content_dir = ctx.obj['content_dir']
 
     try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(language)
+        except ValueError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            sys.exit(1)
+
         console.print(f"[dim]Step 1: Creating directory structure...[/dim]")
         # Create POI directory
         poi_path = ensure_poi_directory(content_dir, city, poi)
@@ -148,6 +156,9 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
         console.print(f"[dim]Step 3: Calling {provider} API to generate content...[/dim]")
         console.print(f"[dim]   (This usually takes 10-30 seconds)[/dim]")
 
+        # Convert language code to full name for AI prompt
+        language_name = get_language_name(language)
+
         transcript, summary_points, generation_metadata = generator.generate(
             poi_name=poi,
             provider=provider,
@@ -155,7 +166,7 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
             description=description or None,
             interests=[i.strip() for i in interests_list] if interests_list else None,
             custom_prompt=custom_prompt,
-            language=language,
+            language=language_name,
             skip_research=skip_research,
             force_research=force_research
         )
@@ -218,12 +229,12 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
         # Save generation record
         save_generation_record(poi_path, version_string, generation_record)
 
-        # Save versioned transcripts
-        save_versioned_transcript(poi_path, transcript, version_string, format='txt')
+        # Save versioned transcripts with language support
+        save_versioned_transcript(poi_path, transcript, version_string, format='txt', language=language)
 
         # Convert to SSML and save
-        ssml_content = text_to_ssml(transcript)
-        save_versioned_transcript(poi_path, ssml_content, version_string, format='ssml')
+        ssml_content = text_to_ssml(transcript, language=f"{language}-US" if language == "en" else language)
+        save_versioned_transcript(poi_path, ssml_content, version_string, format='ssml', language=language)
 
         # Build version history entry
         version_entry = {
@@ -858,13 +869,21 @@ def poi_check_redundancy(ctx, city, provider):
 @click.argument('input_file', type=click.Path(exists=True))
 @click.option('--city', help='City name (required if not in research_candidates.json)')
 @click.option('--provider', type=click.Choice(['openai', 'anthropic', 'google']), help='AI provider')
+@click.option('--language', default='en', help='Content language (ISO 639-1 code, e.g., en, fr, es)')
 @click.option('--skip-research', is_flag=True, help='Skip research phase for faster generation')
 @click.option('--force', is_flag=True, help='Force regeneration even if content already exists')
 @click.pass_context
-def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
+def poi_batch_generate(ctx, input_file, city, provider, language, skip_research, force):
     """Batch generate POI content from input file (one POI name per line)"""
     config = ctx.obj['config']
     content_dir = ctx.obj['content_dir']
+
+    # Validate and normalize language code
+    try:
+        language = normalize_language_code(language)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
 
     if not provider:
         provider = config.get('defaults', {}).get('ai_provider', 'anthropic')
@@ -956,13 +975,18 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
             progress.update(task, description=f"[cyan]Checking: {poi_name}")
 
             try:
-                # Check if POI content already exists (unless --force is set)
+                # Check if POI content already exists for this language (unless --force is set)
                 poi_path = get_poi_path(content_dir, city, poi_name)
-                transcript_file = poi_path / 'transcript.txt'
+
+                # Check for language-specific transcript
+                transcript_file = poi_path / f'transcript_{language}.txt'
+                # Fallback to backward-compatible filename for English
+                if not transcript_file.exists() and language == "en":
+                    transcript_file = poi_path / 'transcript.txt'
 
                 if transcript_file.exists() and not force:
-                    # Skip POIs that already have generated content
-                    progress.console.print(f"[dim]⊘ {poi_name} (already exists, use --force to regenerate)[/dim]")
+                    # Skip POIs that already have generated content for this language
+                    progress.console.print(f"[dim]⊘ {poi_name} (already exists for {language}, use --force to regenerate)[/dim]")
                     already_exists.append(poi_name)
                     progress.advance(task)
                     continue
@@ -970,12 +994,16 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
                 # Generate new content
                 progress.update(task, description=f"[cyan]Generating: {poi_name}")
 
+                # Convert language code to full name for AI prompt
+                language_name = get_language_name(language)
+
                 # Call existing generate logic
                 generator = ContentGenerator(config)
                 transcript, summary_points, metadata = generator.generate(
                     poi_name=poi_name,
                     city=city,
                     provider=provider,
+                    language=language_name,
                     skip_research=skip_research
                 )
 
@@ -995,7 +1023,7 @@ def poi_batch_generate(ctx, input_file, city, provider, skip_research, force):
                 existing_metadata.update(metadata)
 
                 # Save updated metadata
-                save_transcript(poi_path, transcript, format='txt')
+                save_transcript(poi_path, transcript, format='txt', language=language)
                 save_metadata(poi_path, existing_metadata)
 
                 # Save generation record

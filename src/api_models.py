@@ -181,11 +181,14 @@ class TranscriptData(BaseModel):
     summary: Optional[List[str]] = Field(None, description="List of summary points")
     has_transcript: bool = Field(..., description="Whether transcript file exists")
     has_summary: bool = Field(..., description="Whether summary file exists")
+    language: Optional[str] = Field(None, description="ISO 639-1 language code of returned transcript (e.g., 'en', 'fr')")
+    available_languages: Optional[List[str]] = Field(None, description="List of available language codes for this POI")
 
 
 class TranscriptUpdate(BaseModel):
     """Model for updating transcript content"""
     transcript: str = Field(..., min_length=1, description="Updated transcript text")
+    language: Optional[str] = Field("en", description="ISO 639-1 language code (e.g., 'en', 'fr', 'es')")
 
 
 # ==== Research Models ====

@@ -81,6 +81,9 @@
             <el-descriptions-item label="Walking Tolerance">
               {{ tour.input_parameters.preferences.walking_tolerance }}
             </el-descriptions-item>
+            <el-descriptions-item label="Language" v-if="tour.input_parameters.language">
+              {{ tour.input_parameters.language }}
+            </el-descriptions-item>
           </el-descriptions>
 
           <!-- Constraint Violations -->
@@ -336,7 +339,12 @@ const loadTranscript = async (poiName) => {
     const city = tour.value.metadata.city
     const poiId = poiName.toLowerCase().replace(/ /g, '-').replace(/[()]/g, '')
 
-    const response = await axios.get(`http://localhost:8000/pois/${city}/${poiId}/transcript`)
+    // Use the tour's language if specified, otherwise default to 'en'
+    const language = tour.value.input_parameters?.language || 'en'
+
+    const response = await axios.get(`http://localhost:8000/pois/${city}/${poiId}/transcript`, {
+      params: { language }
+    })
     transcripts.value[poiName] = response.data.transcript
 
   } catch (err) {

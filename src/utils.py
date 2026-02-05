@@ -5,7 +5,7 @@ import os
 import json
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 import re
 
 
@@ -613,3 +613,27 @@ def create_tour_id(city: str, user_id: str = None) -> str:
 
     tour_id = f"{city_slug}-tour-{timestamp}-{hash_suffix}"
     return tour_id
+
+
+def get_tour_filename(base: str, language: str, version: Optional[str] = None) -> str:
+    """
+    Generate tour filename with language suffix
+
+    Args:
+        base: Base filename ('tour', 'generation_record')
+        language: Language code (e.g., 'en', 'zh-tw')
+        version: Optional version string (e.g., 'v1_2026-02-04')
+
+    Returns:
+        Filename like 'tour_zh-tw.json' or 'tour_v1_2026-02-04_zh-tw.json'
+
+    Examples:
+        >>> get_tour_filename('tour', 'en')
+        'tour_en.json'
+        >>> get_tour_filename('tour', 'zh-tw', 'v1_2026-02-04')
+        'tour_v1_2026-02-04_zh-tw.json'
+    """
+    language = normalize_language_code(language)
+    if version:
+        return f"{base}_{version}_{language}.json"
+    return f"{base}_{language}.json"

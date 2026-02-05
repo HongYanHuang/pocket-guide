@@ -304,8 +304,14 @@ class TourMetadata(BaseModel):
     city: str = Field(..., description="City name")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
-    current_version: int = Field(..., description="Current version number")
-    version_history: List[Dict[str, Any]] = Field(default_factory=list)
+    languages: List[str] = Field(default_factory=lambda: ["en"], description="Available language codes")
+
+    # Legacy fields (for backward compatibility with old tours)
+    current_version: Optional[int] = Field(None, description="Current version number (legacy)")
+    version_history: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Version history (legacy)")
+
+    class Config:
+        extra = "allow"  # Allow extra fields like current_version_en, version_history_zh-tw, etc.
 
 
 class TourSummary(BaseModel):

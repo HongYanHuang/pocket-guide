@@ -42,7 +42,8 @@ class POISelectorAgent:
         interests: List[str] = None,
         preferences: Dict[str, Any] = None,
         must_see: List[str] = None,
-        avoid: List[str] = None
+        avoid: List[str] = None,
+        language: str = 'en'
     ) -> Dict[str, Any]:
         """
         Select Starting POIs and Back-up POIs using AI.
@@ -57,6 +58,8 @@ class POISelectorAgent:
                 - pace: 'relaxed', 'normal', 'packed'
             must_see: POIs that must be included
             avoid: Constraints to avoid (e.g., ['crowded_places'])
+            language: Target language for tour descriptions (ISO 639-1 code)
+                      Research data will remain in English
 
         Returns:
             Dictionary with:
@@ -89,7 +92,8 @@ class POISelectorAgent:
             preferences=preferences,
             must_see=must_see,
             avoid=avoid,
-            available_pois=available_pois
+            available_pois=available_pois,
+            language=language
         )
 
         # Calculate dynamic max_tokens based on POI count
@@ -201,10 +205,14 @@ class POISelectorAgent:
         preferences: Dict[str, Any],
         must_see: List[str],
         avoid: List[str],
-        available_pois: List[Dict[str, Any]]
+        available_pois: List[Dict[str, Any]],
+        language: str = 'en'
     ) -> str:
         """
-        Build the AI prompt for POI selection.
+        Build the AI prompt for POI selection with language support.
+
+        Args:
+            language: Target language for AI-generated descriptions
 
         Returns:
             Formatted prompt string
@@ -243,7 +251,35 @@ class POISelectorAgent:
 
         constraints_str = "\n".join(constraints) if constraints else "No specific constraints"
 
+        # Get language name for instructions
+        from utils import get_language_name
+        language_name = get_language_name(language)
+
+        # Build language instruction block
+        language_instruction = ""
+        if language != 'en':
+            language_instruction = f"""
+{'=' * 60}
+CRITICAL INSTRUCTION - LANGUAGE
+{'=' * 60}
+
+You will receive POI research data in English.
+However, you must write ALL your responses in {language_name}.
+
+Write the following fields in {language_name}:
+- POI selection reasoning ('reason' field)
+- Backup POI similarity explanations
+- Rejection reasons for excluded POIs
+- Overall reasoning summary
+
+The audience speaks {language_name} as their primary language.
+
+{'=' * 60}
+
+"""
+
         prompt = f"""You are an expert travel planner for {city}.
+{language_instruction}
 
 AVAILABLE POIs IN {city.upper()}:
 {pois_formatted}

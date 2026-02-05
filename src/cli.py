@@ -1108,6 +1108,101 @@ def trip():
     pass
 
 
+def ensure_poi_transcripts(
+    pois: list,
+    city: str,
+    language: str,
+    content_dir: str,
+    config: dict,
+    provider: str
+) -> dict:
+    """
+    Ensure all POI transcripts exist in the target language.
+    Generate missing transcripts automatically.
+
+    Args:
+        pois: List of POI names
+        city: City name
+        language: Target language code (e.g., 'zh-tw')
+        content_dir: Content directory path
+        config: Application config
+        provider: AI provider for generation
+
+    Returns:
+        Dict mapping POI name to generation status (True if generated, False if existed)
+    """
+    generator = ContentGenerator(config)
+    generation_status = {}
+
+    console.print(f"\n[cyan]Checking POI transcripts for language: {language}[/cyan]")
+
+    for poi in pois:
+        poi_path = get_poi_path(content_dir, city, poi)
+
+        # Check if transcript exists
+        available_langs = []
+        if poi_path.exists():
+            available_langs = list_available_languages(poi_path)
+
+        if language in available_langs:
+            console.print(f"  ✓ {poi} - transcript exists")
+            generation_status[poi] = False
+            continue
+
+        # Generate missing transcript
+        console.print(f"  ⚡ {poi} - generating transcript in {language}...")
+
+        try:
+            # Ensure POI directory exists
+            poi_path = ensure_poi_directory(content_dir, city, poi)
+
+            # Load existing metadata for versioning
+            existing_metadata = load_metadata(poi_path)
+
+            # Generate transcript
+            transcript, summary_points, gen_metadata = generator.generate(
+                poi_name=poi,
+                city=city,
+                provider=provider,
+                language=language,
+                skip_research=False  # Use research for quality
+            )
+
+            # Calculate version
+            version_num, version_string = get_next_version(existing_metadata)
+
+            # Save transcript (both txt and ssml)
+            save_versioned_transcript(poi_path, transcript, version_string, 'txt', language)
+
+            # Convert to SSML if needed (simple wrapper)
+            ssml_content = text_to_ssml(transcript, language)
+            save_versioned_transcript(poi_path, ssml_content, version_string, 'ssml', language)
+
+            # Update metadata with new version
+            existing_metadata['current_version'] = version_num
+            if 'version_history' not in existing_metadata:
+                existing_metadata['version_history'] = []
+
+            version_entry = {
+                'version': version_num,
+                'version_string': version_string,
+                'timestamp': datetime.now().isoformat(),
+                'language': language,
+                'provider': provider
+            }
+            existing_metadata['version_history'].append(version_entry)
+            save_metadata(poi_path, existing_metadata)
+
+            console.print(f"    ✓ Generated successfully")
+            generation_status[poi] = True
+
+        except Exception as e:
+            console.print(f"    ✗ Failed: {e}")
+            raise Exception(f"Could not generate transcript for {poi}: {e}")
+
+    return generation_status
+
+
 @trip.command('plan')
 @click.option('--city', required=True, help='City name (e.g., Rome, Athens)')
 @click.option('--days', type=int, required=True, help='Number of days for the trip')
@@ -1116,9 +1211,10 @@ def trip():
 @click.option('--must-see', multiple=True, help='POIs that must be included (can specify multiple)')
 @click.option('--pace', type=click.Choice(['relaxed', 'normal', 'packed']), default='normal', help='Trip pace')
 @click.option('--walking', type=click.Choice(['low', 'moderate', 'high']), default='moderate', help='Walking tolerance')
+@click.option('--language', default='en', help='Tour language (ISO 639-1 code, e.g., en, zh-tw, pt-br)')
 @click.option('--save', is_flag=True, help='Save the generated tour')
 @click.pass_context
-def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, save):
+def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, language, save):
     """
     Generate an optimized trip itinerary for a city.
 
@@ -1128,6 +1224,10 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, sav
     config = ctx.obj['config']
 
     try:
+        # Validate and normalize language
+        language = normalize_language_code(language)
+        language_name = get_language_name(language)
+
         console.print(f"\n[cyan]Planning {days}-day trip to {city}...[/cyan]\n")
 
         # Convert interests tuple to list
@@ -1142,7 +1242,7 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, sav
         }
 
         console.print(f"[dim]Interests: {', '.join(interests_list) if interests_list else 'General tourism'}[/dim]")
-        console.print(f"[dim]Pace: {pace} | Walking: {walking}[/dim]")
+        console.print(f"[dim]Pace: {pace} | Walking: {walking} | Language: {language_name}[/dim]")
         if must_see_list:
             console.print(f"[dim]Must-see: {', '.join(must_see_list)}[/dim]")
         console.print()
@@ -1157,7 +1257,8 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, sav
             interests=interests_list,
             preferences=preferences,
             must_see=must_see_list,
-            avoid=[]
+            avoid=[],
+            language=language
         )
 
         starting_pois = selection_result.get('starting_pois', [])
@@ -1222,9 +1323,37 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, sav
 
             console.print()
 
-        # Step 3: Save tour (optional)
+        # Step 3: Ensure POI transcripts exist (if saving)
         if save:
-            console.print("[bold cyan]Step 3: Saving tour...[/bold cyan]")
+            console.print("[bold cyan]Step 3: Checking POI transcripts...[/bold cyan]")
+
+            # Extract all POI names from itinerary
+            all_pois = []
+            for day in itinerary:
+                for poi_obj in day['pois']:
+                    all_pois.append(poi_obj['poi'])
+
+            # Generate missing transcripts
+            content_dir = ctx.obj['content_dir']
+            transcript_status = ensure_poi_transcripts(
+                pois=all_pois,
+                city=city,
+                language=language,
+                content_dir=content_dir,
+                config=config,
+                provider=provider
+            )
+
+            # Count how many were generated
+            generated_count = sum(1 for status in transcript_status.values() if status)
+            if generated_count > 0:
+                console.print(f"\n[green]✓ Generated {generated_count} new transcripts in {language_name}[/green]\n")
+            else:
+                console.print(f"\n[green]✓ All transcripts already exist[/green]\n")
+
+        # Step 4: Save tour (optional)
+        if save:
+            console.print("[bold cyan]Step 4: Saving tour...[/bold cyan]")
             tour_manager = TourManager(config)
 
             input_parameters = {
@@ -1233,14 +1362,16 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, sav
                 'interests': interests_list,
                 'preferences': preferences,
                 'must_see': must_see_list,
-                'provider': provider
+                'provider': provider,
+                'language': language
             }
 
             save_result = tour_manager.save_tour(
                 tour_data=optimized_result,
                 city=city,
                 input_parameters=input_parameters,
-                selection_result=selection_result
+                selection_result=selection_result,
+                language=language
             )
 
             console.print(f"[green]✓ Tour saved with ID: {save_result['tour_id']}[/green]")
@@ -1277,7 +1408,7 @@ def trip_list(ctx, city):
         table.add_column("Tour ID", style="cyan")
         table.add_column("City", style="green")
         table.add_column("Days", style="yellow")
-        table.add_column("Version", style="magenta")
+        table.add_column("Languages", style="magenta")
         table.add_column("Score", style="blue")
         table.add_column("Updated", style="dim")
 
@@ -1285,14 +1416,24 @@ def trip_list(ctx, city):
             tour_id = tour.get('tour_id', 'N/A')
             tour_city = tour.get('city', 'N/A')
 
-            # Get latest version info
+            # Get available languages
+            languages = tour.get('languages', ['en'])
+            languages_str = ', '.join(languages)
+
+            # Get latest version info (from any language)
             version_history = tour.get('version_history', [])
+            if not version_history:
+                # Try language-specific version history
+                for lang in languages:
+                    version_history_key = f'version_history_{lang}'
+                    if version_history_key in tour:
+                        version_history = tour[version_history_key]
+                        break
+
             if version_history:
                 latest = version_history[-1]
-                version = latest.get('version', 1)
                 score = latest.get('optimization_score', 0)
             else:
-                version = 1
                 score = 0
 
             # Calculate days from version history or metadata
@@ -1304,7 +1445,7 @@ def trip_list(ctx, city):
                 tour_id,
                 tour_city,
                 str(days),
-                f"v{version}",
+                languages_str,
                 f"{score:.2f}",
                 updated
             )
@@ -1321,17 +1462,22 @@ def trip_list(ctx, city):
 @click.argument('tour_id')
 @click.option('--city', required=True, help='City name')
 @click.option('--version', type=int, help='Version number (defaults to latest)')
+@click.option('--language', default='en', help='Tour language (ISO 639-1 code, e.g., en, zh-tw)')
 @click.pass_context
-def trip_show(ctx, tour_id, city, version):
+def trip_show(ctx, tour_id, city, version, language):
     """Show details of a saved tour"""
     config = ctx.obj['config']
 
     try:
+        # Normalize language
+        language = normalize_language_code(language)
+        language_name = get_language_name(language)
+
         tour_manager = TourManager(config)
-        tour_data = tour_manager.load_tour(city, tour_id, version)
+        tour_data = tour_manager.load_tour(city, tour_id, version, language)
 
         console.print(f"\n[bold cyan]Tour: {tour_id}[/bold cyan]")
-        console.print(f"[dim]City: {city}{f' | Version: v{version}' if version else ' | Latest version'}[/dim]\n")
+        console.print(f"[dim]City: {city} | Language: {language_name}{f' | Version: v{version}' if version else ' | Latest version'}[/dim]\n")
 
         # Show optimization scores
         scores = tour_data.get('optimization_scores', {})

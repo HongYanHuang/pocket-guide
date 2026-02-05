@@ -72,7 +72,8 @@ class TourManager:
         input_parameters: Dict[str, Any],
         user_info: Dict[str, Any] = None,
         tour_id: str = None,
-        selection_result: Dict[str, Any] = None
+        selection_result: Dict[str, Any] = None,
+        language: str = 'en'
     ) -> Dict[str, Any]:
         """
         Save tour with full versioning and metadata tracking.
@@ -84,10 +85,15 @@ class TourManager:
             user_info: Optional user information
             tour_id: Optional tour ID (creates new if None)
             selection_result: Optional POI selection result (with backup_pois and rejected_pois)
+            language: Target language for tour (ISO 639-1 code)
 
         Returns:
             Dictionary with tour_id, version, and paths
         """
+        # Normalize language
+        from utils import normalize_language_code, get_tour_filename
+        language = normalize_language_code(language)
+
         # Generate tour ID if not provided
         if not tour_id:
             user_id = user_info.get('user_id') if user_info else None
@@ -99,8 +105,17 @@ class TourManager:
         # Load existing metadata or create new
         metadata = load_tour_metadata(tour_path)
 
-        # Calculate next version
-        version_num, version_string = get_next_tour_version(metadata)
+        # Track languages in metadata
+        if 'languages' not in metadata:
+            metadata['languages'] = []
+        if language not in metadata['languages']:
+            metadata['languages'].append(language)
+
+        # Calculate next version for this language
+        version_key = f'current_version_{language}'
+        version_num = metadata.get(version_key, 0) + 1
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        version_string = f"v{version_num}_{date_str}"
 
         # Prepare generation record
         timestamp = datetime.now().isoformat()
@@ -108,6 +123,7 @@ class TourManager:
             'version': version_num,
             'version_string': version_string,
             'timestamp': timestamp,
+            'language': language,
             'user_info': user_info or {'user_id': 'anonymous'},
             'input_parameters': input_parameters,
             'optimization_scores': tour_data.get('optimization_scores', {}),
@@ -126,29 +142,40 @@ class TourManager:
                 'total_rejected_pois': len(selection_result.get('rejected_pois', []))
             }
 
-        # Save versioned tour
-        save_versioned_tour(tour_path, tour_data, version_string)
+        # Save versioned tour with language suffix
+        versioned_tour_file = tour_path / get_tour_filename('tour', language, version_string)
+        with open(versioned_tour_file, 'w', encoding='utf-8') as f:
+            json.dump(tour_data, f, indent=2, ensure_ascii=False)
 
-        # Save generation record
-        save_tour_generation_record(tour_path, version_string, generation_record)
+        # Save current tour file with language suffix
+        current_tour_file = tour_path / get_tour_filename('tour', language)
+        with open(current_tour_file, 'w', encoding='utf-8') as f:
+            json.dump(tour_data, f, indent=2, ensure_ascii=False)
 
-        # Update metadata
-        if 'version_history' not in metadata:
-            metadata['version_history'] = []
+        # Save generation record with language suffix
+        gen_record_file = tour_path / get_tour_filename('generation_record', language, version_string)
+        with open(gen_record_file, 'w', encoding='utf-8') as f:
+            json.dump(generation_record, f, indent=2, ensure_ascii=False)
 
-        # Add to version history
+        # Update metadata with language-specific version tracking
+        version_history_key = f'version_history_{language}'
+        if version_history_key not in metadata:
+            metadata[version_history_key] = []
+
+        # Add to version history for this language
         version_entry = {
             'version': version_num,
             'version_string': version_string,
             'timestamp': timestamp,
+            'language': language,
             'user_id': user_info.get('user_id', 'anonymous') if user_info else 'anonymous',
             'input_hash': self._hash_inputs(input_parameters),
             'optimization_score': tour_data.get('optimization_scores', {}).get('overall_score', 0),
             'constraints_violated': len(tour_data.get('constraints_violated', []))
         }
 
-        metadata['version_history'].append(version_entry)
-        metadata['current_version'] = version_num
+        metadata[version_history_key].append(version_entry)
+        metadata[version_key] = version_num
         metadata['tour_id'] = tour_id
         metadata['city'] = city
         metadata['created_at'] = metadata.get('created_at', timestamp)
@@ -165,11 +192,12 @@ class TourManager:
             'tour_id': tour_id,
             'version': version_num,
             'version_string': version_string,
+            'language': language,
             'tour_path': str(tour_path),
             'files': {
-                'tour': str(tour_path / "tour.json"),
-                'tour_versioned': str(tour_path / f"tour_{version_string}.json"),
-                'generation_record': str(tour_path / f"generation_record_{version_string}.json"),
+                'tour': str(current_tour_file),
+                'tour_versioned': str(versioned_tour_file),
+                'generation_record': str(gen_record_file),
                 'metadata': str(tour_path / "metadata.json")
             }
         }
@@ -178,7 +206,8 @@ class TourManager:
         self,
         city: str,
         tour_id: str,
-        version: Optional[int] = None
+        version: Optional[int] = None,
+        language: str = 'en'
     ) -> Dict[str, Any]:
         """
         Load a tour by ID and optional version.
@@ -187,24 +216,36 @@ class TourManager:
             city: City name
             tour_id: Tour identifier
             version: Optional version number (loads latest if None)
+            language: Language version to load (default: 'en')
 
         Returns:
             Tour data dictionary
         """
-        from src.utils import get_tour_directory
+        from utils import get_tour_directory, get_tour_filename, normalize_language_code
 
+        language = normalize_language_code(language)
         tour_path = get_tour_directory(self.tours_dir, city, tour_id)
 
         if not tour_path.exists():
             raise FileNotFoundError(f"Tour not found: {tour_id}")
 
+        # Load metadata to check available languages
+        metadata = load_tour_metadata(tour_path)
+        available_languages = metadata.get('languages', ['en'])
+
+        if language not in available_languages:
+            raise FileNotFoundError(
+                f"Tour not found for language '{language}'. "
+                f"Available languages: {available_languages}"
+            )
+
         if version is None:
-            # Load latest version
-            tour_file = tour_path / "tour.json"
+            # Load latest version for this language
+            tour_file = tour_path / get_tour_filename('tour', language)
         else:
-            # Load specific version
-            metadata = load_tour_metadata(tour_path)
-            version_history = metadata.get('version_history', [])
+            # Load specific version for this language
+            version_history_key = f'version_history_{language}'
+            version_history = metadata.get(version_history_key, [])
 
             # Find version string for requested version
             version_entry = next(
@@ -213,9 +254,9 @@ class TourManager:
             )
 
             if not version_entry:
-                raise ValueError(f"Version {version} not found for tour {tour_id}")
+                raise ValueError(f"Version {version} not found for language '{language}' in tour {tour_id}")
 
-            tour_file = tour_path / f"tour_{version_entry['version_string']}.json"
+            tour_file = tour_path / get_tour_filename('tour', language, version_entry['version_string'])
 
         if not tour_file.exists():
             raise FileNotFoundError(f"Tour file not found: {tour_file}")

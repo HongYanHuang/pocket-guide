@@ -24,7 +24,7 @@ from api_models import (
     BackupPOI, RejectedPOI, OptimizationScores
 )
 from poi_metadata_agent import POIMetadataAgent
-from utils import load_config, normalize_language_code, list_available_languages
+from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -959,8 +959,19 @@ def list_tours():
                     with open(metadata_file, 'r', encoding='utf-8') as f:
                         metadata = json.load(f)
 
-                    # Load generation record for details
-                    gen_record_files = list(tour_dir.glob("generation_record_*.json"))
+                    # Get available languages
+                    available_languages = metadata.get('languages', ['en'])
+                    # Use first available language for loading details
+                    language = available_languages[0] if available_languages else 'en'
+
+                    # Load generation record for details (with language-specific pattern)
+                    gen_record_pattern = f"generation_record_*_{language}.json"
+                    gen_record_files = list(tour_dir.glob(gen_record_pattern))
+
+                    # Fallback to old naming if new pattern not found (backward compatibility)
+                    if not gen_record_files:
+                        gen_record_files = list(tour_dir.glob("generation_record_*.json"))
+
                     interests = []
                     duration_days = 0
                     total_pois = 0
@@ -1006,12 +1017,13 @@ def list_tours():
 
 
 @app.get("/tours/{tour_id}", response_model=TourDetail)
-def get_tour(tour_id: str):
+def get_tour(tour_id: str, language: str = "en"):
     """
     Get complete tour details including itinerary, backup POIs, and selection transparency.
 
     Args:
         tour_id: Tour identifier (e.g., "rome-tour-20260129-111100-aa7baf")
+        language: ISO 639-1 language code (e.g., 'en', 'zh-tw') - defaults to 'en'
 
     Returns:
         Complete tour details with all metadata
@@ -1019,6 +1031,15 @@ def get_tour(tour_id: str):
     import json
 
     try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(language)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
         # Find tour directory
         tours_dir = Path("tours")
         tour_path = None
@@ -1042,17 +1063,37 @@ def get_tour(tour_id: str):
         with open(metadata_file, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
 
-        # Load tour itinerary
-        tour_file = tour_path / "tour.json"
+        # Check if requested language is available
+        available_languages = metadata.get('languages', ['en'])
+        if language not in available_languages:
+            # Fallback to first available language
+            if available_languages:
+                logger.info(f"Language '{language}' not available. Using '{available_languages[0]}' instead.")
+                language = available_languages[0]
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Tour not found for language '{language}'. Available languages: {available_languages}"
+                )
+
+        # Load tour itinerary with language-specific filename
+        tour_file = tour_path / get_tour_filename('tour', language)
+        if not tour_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour file not found for language '{language}'"
+            )
+
         with open(tour_file, 'r', encoding='utf-8') as f:
             tour_data = json.load(f)
 
-        # Load generation record
-        gen_record_files = list(tour_path.glob("generation_record_*.json"))
+        # Load generation record with language-specific pattern
+        gen_record_pattern = f"generation_record_*_{language}.json"
+        gen_record_files = list(tour_path.glob(gen_record_pattern))
         if not gen_record_files:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Generation record not found for tour"
+                detail=f"Generation record not found for tour in language '{language}'"
             )
 
         with open(gen_record_files[0], 'r', encoding='utf-8') as f:

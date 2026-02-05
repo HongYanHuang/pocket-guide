@@ -236,15 +236,21 @@ Generate tour guide content for one POI with full research.
 - `--city`: City name (optional but recommended)
 - `--provider`: AI provider (`anthropic`, `openai`, `google`)
 - `--description`: Brief POI description
-- `--language`: Target language (default: English)
+- `--language`: Target language (ISO 639-1 code, e.g., `en`, `zh-tw`, `pt-br`, default: `en`)
 - `--skip-research`: Skip research phase (faster but less rich)
 - `--force-research`: Force re-research even if cached
 
 **Output:**
-- `content/<city>/<poi-id>/transcript.txt` - Tour narration
+- `content/<city>/<poi-id>/transcript_{language}.txt` - Tour narration (e.g., `transcript_zh-tw.txt`)
 - `content/<city>/<poi-id>/summary.txt` - Key points
 - `content/<city>/<poi-id>/metadata.json` - Version history
-- `poi_research/<City>/<poi_name>.yaml` - Research data (unless skipped)
+- `poi_research/<City>/<poi_name>.yaml` - Research data (always in English)
+
+**Language Support:**
+- Supports 40+ languages via ISO 639-1 codes
+- Research data always in English (unchanged)
+- Generated transcript in target language
+- Examples: `en`, `zh-tw`, `zh-cn`, `es-mx`, `pt-br`, `fr`, `de`, `ja`, `ko`, etc.
 
 ---
 
@@ -323,6 +329,11 @@ Generate an optimized trip itinerary by selecting POIs and creating a day-by-day
 ./pocket-guide trip plan --city Rome --days 3 --interests history --interests architecture
 ./pocket-guide trip plan --city Athens --days 2 --interests mythology --pace relaxed --save
 ./pocket-guide trip plan --city Paris --days 5 --must-see "Eiffel Tower" --walking high --save
+
+# Multilanguage tour generation (automatically generates POI transcripts in target language):
+./pocket-guide trip plan --city Rome --days 2 --interests history --language zh-tw --save
+./pocket-guide trip plan --city Athens --days 3 --interests mythology --language es-mx --save
+./pocket-guide trip plan --city Paris --days 4 --interests art --language pt-br --save
 ```
 
 **Required Options:**
@@ -335,14 +346,15 @@ Generate an optimized trip itinerary by selecting POIs and creating a day-by-day
 - `--must-see`: POIs that must be included (can specify multiple)
 - `--pace`: Trip pace (`relaxed`, `normal`, `packed`, default: normal)
 - `--walking`: Walking tolerance (`low`, `moderate`, `high`, default: moderate)
+- `--language`: Tour language (ISO 639-1 code, e.g., `en`, `zh-tw`, `pt-br`, default: `en`)
 - `--save`: Save the generated tour for later
 
 **What it does:**
 
 **Step 1: POI Selection (AI-powered)**
-- Loads all available POIs for the city from `poi_research/`
+- Loads all available POIs for the city from `poi_research/` (always in English)
 - Sends POI list + user preferences to Claude
-- AI selects 8-12 starting POIs that match your interests
+- AI selects 8-12 starting POIs that match your interests (in target language)
 - AI provides 2-3 backup POIs for each selected POI (alternatives if closed/crowded)
 - AI lists rejected POIs with reasons why they weren't selected
 - Dynamic token calculation: `poi_count × 150 + 1000` tokens
@@ -353,6 +365,18 @@ Generate an optimized trip itinerary by selecting POIs and creating a day-by-day
 - Maximizes thematic coherence (similar POIs on same day)
 - Respects time constraints (8 hours per day)
 - Calculates walking times and distances
+
+**Step 3: Transcript Generation (Automatic - NEW)**
+- Checks if POI transcripts exist in target language
+- Automatically generates missing transcripts (uses English research data)
+- Smart caching: existing transcripts are reused, not regenerated
+- Each transcript generation takes ~5-10 minutes with full research
+- Progress displayed: "✓ exists" vs "⚡ generating"
+
+**Step 4: Tour Saving**
+- Creates language-specific tour files (e.g., `tour_zh-tw.json`)
+- Independent version tracking per language
+- Preserves full generation transparency and metadata
 
 **Output:**
 - Day-by-day itinerary with POI order, visit duration, walking times
@@ -379,9 +403,28 @@ Day 2 (8.0h total, 4.1km walking)
 **Saved Tour Structure:**
 ```
 tours/rome/rome-tour-20260129-111100-aa7baf/
-├── tour_v1_2026-01-29.json              # Day-by-day itinerary
-├── generation_record_v1_2026-01-29.json # Selection transparency
-└── metadata.json                         # Tour version history
+├── metadata.json                                # Tour metadata (tracks all languages)
+├── tour_en.json                                 # English tour (latest)
+├── tour_v1_2026-01-29_en.json                  # English tour v1
+├── tour_zh-tw.json                              # Chinese Traditional tour (latest)
+├── tour_v1_2026-02-05_zh-tw.json               # Chinese Traditional tour v1
+├── generation_record_v1_2026-01-29_en.json     # English generation record
+└── generation_record_v1_2026-02-05_zh-tw.json  # Chinese generation record
+```
+
+**Metadata Structure (language tracking):**
+```json
+{
+  "tour_id": "rome-tour-20260129-111100-aa7baf",
+  "city": "Rome",
+  "languages": ["en", "zh-tw"],
+  "current_version_en": 1,
+  "current_version_zh-tw": 1,
+  "version_history_en": [...],
+  "version_history_zh-tw": [...],
+  "created_at": "2026-01-29T11:11:00.000000",
+  "updated_at": "2026-02-05T12:12:50.288785"
+}
 ```
 
 **Generation Record Contains:**
@@ -434,23 +477,32 @@ View all saved tours for a city.
 
 **Output:**
 - Tour ID, creation date, duration, interests
-- Latest version for each tour
+- **Available languages** for each tour (e.g., `en, zh-tw, pt-br`)
+- Latest version for each language
 
 ### Show Tour Details
 
 Display full itinerary for a saved tour.
 
 ```bash
-./pocket-guide trip show --tour-id <tour-id>
+./pocket-guide trip show <tour-id> --city <city> [OPTIONS]
 
 # Examples:
-./pocket-guide trip show --tour-id rome-tour-20260129-111100-aa7baf
+./pocket-guide trip show rome-tour-20260129-111100-aa7baf --city Rome
+./pocket-guide trip show rome-tour-20260129-111100-aa7baf --city Rome --language zh-tw
+./pocket-guide trip show athens-tour-20260130-140000-xyz789 --city Athens --language es-mx
 ```
 
+**Options:**
+- `--city`: City name (required)
+- `--version`: Specific version number (optional, defaults to latest)
+- `--language`: Language version to load (default: `en`)
+
 **Output:**
-- Complete day-by-day itinerary
+- Complete day-by-day itinerary in specified language
 - POI details, walking times, daily totals
 - User preferences and constraints
+- Language information
 
 **Features:**
 - ✅ **Full transparency** - See which POIs were selected, which are backups, which were rejected and why
@@ -459,6 +511,10 @@ Display full itinerary for a saved tour.
 - ✅ **Optimization** - Minimizes walking distance while maximizing thematic coherence
 - ✅ **Versioning** - Each tour can have multiple versions with full history
 - ✅ **Dynamic scaling** - Token allocation scales with POI count (efficient for small cities, handles large cities)
+- ✅ **Multilanguage support** - Generate tours in any language (40+ languages supported)
+- ✅ **Automatic transcript generation** - Generates missing POI transcripts in target language
+- ✅ **Smart caching** - Existing transcripts reused, not regenerated
+- ✅ **Research stays English** - POI research data unchanged, only tour descriptions translated
 
 **⚠️ Requirements:**
 - City must have POIs in `poi_research/<City>/` directory
@@ -675,7 +731,7 @@ python3 generate_missing_research.py
 
 # Output: poi_research/Rome/research_candidates.json with 50 POIs
 
-# 2. Plan a trip with your preferences
+# 2. Plan a trip with your preferences (English)
 ./pocket-guide trip plan \
   --city Rome \
   --days 3 \
@@ -685,39 +741,63 @@ python3 generate_missing_research.py
   --walking moderate \
   --save
 
+# 2b. Plan a multilanguage trip (automatically generates transcripts!)
+./pocket-guide trip plan \
+  --city Rome \
+  --days 2 \
+  --interests history \
+  --language zh-tw \
+  --save
+
 # AI will:
-# - Select 8-12 POIs matching your interests
+# - Select 8-12 POIs matching your interests (in target language)
 # - Provide 25+ backup POIs (alternatives, NOT in tour)
 # - List rejected POIs with reasons
 # - Optimize daily schedule to minimize walking
 # - Group similar POIs on same day
+# - [NEW] Check if POI transcripts exist in target language
+# - [NEW] Automatically generate missing transcripts
 
-# Output example:
+# Output example (multilanguage):
+# Checking POI transcripts for language: zh-tw
+#   ⚡ Colosseum - generating transcript in zh-tw...
+#     ✓ Generated successfully
+#   ⚡ Roman Forum - generating transcript in zh-tw...
+#     ✓ Generated successfully
+#   ✓ Pantheon - transcript exists
+#
+# ✓ Generated 2 new transcripts in Chinese (Traditional)
+#
 # ✓ Selected 10 POIs for itinerary
 #   + 25 backup POIs available
 #   + 15 POIs rejected
 #
 # Day 1 (7.5h total, 3.2km walking)
-#   1. Colosseum (2.5h)
-#   2. Roman Forum (2.0h) ← 10min walk
-#   3. Palatine Hill (1.5h) ← 5min walk
+#   1. 羅馬競技場 (2.5h)  # Colosseum
+#   2. 羅馬廣場 (2.0h) ← 10min walk  # Roman Forum
+#   3. 帕拉蒂尼山 (1.5h) ← 5min walk  # Palatine Hill
 
-# 3. View saved tours
+# 3. View saved tours (shows available languages)
 ./pocket-guide trip list --city Rome
 
-# Output: List of all tours with IDs and dates
+# Output: List of all tours with IDs, dates, and languages (e.g., "en, zh-tw")
 
-# 4. Show tour details
-./pocket-guide trip show --tour-id rome-tour-20260129-111100-aa7baf
+# 4. Show tour details in specific language
+./pocket-guide trip show rome-tour-20260205-121250-11edf4 --city Rome --language zh-tw
 
 # 5. Review selection transparency (why POIs were chosen/rejected)
-cat tours/rome/rome-tour-20260129-111100-aa7baf/generation_record_v1_2026-01-29.json | python3 -m json.tool
+cat tours/rome/rome-tour-20260205-121250-11edf4/generation_record_v1_2026-02-05_zh-tw.json | python3 -m json.tool
 
 # Shows:
-# - Input parameters (interests, preferences)
-# - Backup POIs with similarity scores and reasons
-# - Rejected POIs with rejection reasons
+# - Input parameters (interests, preferences, language)
+# - Backup POIs with similarity scores and reasons (in target language)
+# - Rejected POIs with rejection reasons (in target language)
 # - Optimization scores
+
+# 6. View in backstage UI (auto-detects language)
+./start-dev.sh
+open http://localhost:5173/tours/rome-tour-20260205-121250-11edf4
+# Frontend will display tour in zh-tw with correct transcripts
 ```
 
 ---

@@ -191,6 +191,24 @@ class TranscriptUpdate(BaseModel):
     language: Optional[str] = Field("en", description="ISO 639-1 language code (e.g., 'en', 'fr', 'es')")
 
 
+class TranscriptLink(BaseModel):
+    """Link from tour to transcript file"""
+    poi: str = Field(..., description="POI name")
+    poi_id: str = Field(..., description="POI identifier (kebab-case)")
+    transcript_path: str = Field(..., description="Relative path to transcript file")
+    transcript_version: str = Field(..., description="Transcript version (e.g., 'v1')")
+    transcript_type: str = Field(..., description="Type: 'standard' or 'custom'")
+    linked_at: str = Field(..., description="ISO timestamp when link was created")
+
+
+class TranscriptLinks(BaseModel):
+    """Collection of transcript links for a tour"""
+    tour_id: str = Field(..., description="Tour identifier")
+    language: str = Field(..., description="Language code")
+    created_at: str = Field(..., description="ISO timestamp when links were created")
+    links: List[TranscriptLink] = Field(..., description="List of transcript links")
+
+
 # ==== Research Models ====
 
 class ResearchBasicInfo(BaseModel):

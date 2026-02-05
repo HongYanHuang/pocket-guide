@@ -17,7 +17,8 @@ from api_models import (
     City, POISummary, POIDetail, POIMetadata, POIMetadataUpdate,
     DistanceMatrix, CollectionResult, VerificationReport,
     ErrorResponse, SuccessResponse,
-    TranscriptData, TranscriptUpdate, ResearchData,
+    TranscriptData, TranscriptUpdate, TranscriptLink, TranscriptLinks,
+    ResearchData,
     ResearchBasicInfo, ResearchPerson, ResearchEvent,
     ResearchLocation, ResearchConcept,
     TourSummary, TourDetail, TourMetadata, TourDay, TourPOI,
@@ -685,18 +686,29 @@ async def verify_city_metadata(city: str):
 # ==== Transcript Endpoints ====
 
 @app.get("/pois/{city}/{poi_id}/transcript", response_model=TranscriptData)
-async def get_transcript(city: str, poi_id: str, language: str = "en"):
+async def get_transcript(
+    city: str,
+    poi_id: str,
+    language: str = "en",
+    tour_id: Optional[str] = None
+):
     """
     Get transcript and summary for a POI in a specific language.
+
+    If tour_id is provided, will try to use the tour's linked transcript.
+    Falls back to standard POI transcript if tour link doesn't exist.
 
     Args:
         city: City name (e.g., "Athens")
         poi_id: POI identifier in kebab-case (e.g., "acropolis-parthenon")
         language: ISO 639-1 language code (e.g., 'en', 'fr', 'es') - defaults to 'en'
+        tour_id: Optional tour ID to load tour-specific transcript link
 
     Returns:
         TranscriptData with transcript text, summary points, availability flags, and language info
     """
+    import json
+
     # Validate and normalize language code
     try:
         language = normalize_language_code(language)
@@ -715,7 +727,46 @@ async def get_transcript(city: str, poi_id: str, language: str = "en"):
     if poi_dir.exists():
         available_languages = list_available_languages(poi_dir)
 
-    transcript_path = get_transcript_path(city, poi_id, language)
+    # Try to get transcript path from tour links if tour_id provided
+    transcript_path = None
+    used_tour_link = False
+
+    if tour_id:
+        try:
+            # Find tour directory
+            tours_dir = Path("tours")
+            tour_path = None
+
+            for city_dir in tours_dir.iterdir():
+                if not city_dir.is_dir():
+                    continue
+                potential_path = city_dir / tour_id
+                if potential_path.exists():
+                    tour_path = potential_path
+                    break
+
+            if tour_path:
+                # Load transcript links
+                links_file = tour_path / f"transcript_links_{language}.json"
+                if links_file.exists():
+                    with open(links_file, 'r', encoding='utf-8') as f:
+                        links_data = json.load(f)
+
+                    # Find link for this POI
+                    for link in links_data.get('links', []):
+                        if link['poi_id'] == poi_id:
+                            transcript_path = Path(link['transcript_path'])
+                            used_tour_link = True
+                            break
+        except Exception as e:
+            logger.warning(f"Could not load tour transcript link: {e}")
+            # Fall through to standard path
+
+    # Fallback to standard transcript path
+    if not transcript_path or not transcript_path.exists():
+        transcript_path = get_transcript_path(city, poi_id, language)
+        used_tour_link = False
+
     summary_path = get_summary_path(city, poi_id)
 
     transcript_text = None
@@ -1150,6 +1201,74 @@ def get_tour(tour_id: str, language: str = "en"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error loading tour: {str(e)}"
+        )
+
+
+@app.get("/tours/{tour_id}/transcript-links", response_model=TranscriptLinks)
+def get_tour_transcript_links(tour_id: str, language: str = "en"):
+    """
+    Get transcript links for a tour.
+
+    Returns which transcripts are linked to this specific tour.
+    This allows the tour to reference specific transcript versions.
+
+    Args:
+        tour_id: Tour identifier (e.g., "rome-tour-20260205-121250-11edf4")
+        language: Language code (e.g., 'en', 'zh-tw')
+
+    Returns:
+        TranscriptLinks with all POI transcript mappings for this tour
+    """
+    import json
+
+    try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(language)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # Find tour directory
+        tours_dir = Path("tours")
+        tour_path = None
+
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir():
+                continue
+            potential_path = city_dir / tour_id
+            if potential_path.exists():
+                tour_path = potential_path
+                break
+
+        if not tour_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour not found: {tour_id}"
+            )
+
+        # Load transcript links
+        links_file = tour_path / f"transcript_links_{language}.json"
+        if not links_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Transcript links not found for tour '{tour_id}' in language '{language}'"
+            )
+
+        with open(links_file, 'r', encoding='utf-8') as f:
+            links_data = json.load(f)
+
+        return links_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading transcript links for tour {tour_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error loading transcript links: {str(e)}"
         )
 
 

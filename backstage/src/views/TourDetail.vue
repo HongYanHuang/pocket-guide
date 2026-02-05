@@ -343,7 +343,10 @@ const loadTranscript = async (poiName) => {
     const language = tour.value.input_parameters?.language || 'en'
 
     const response = await axios.get(`http://localhost:8000/pois/${city}/${poiId}/transcript`, {
-      params: { language }
+      params: {
+        language,
+        tour_id: tour.value.metadata.tour_id  // Include tour context for linked transcripts
+      }
     })
     transcripts.value[poiName] = response.data.transcript
 

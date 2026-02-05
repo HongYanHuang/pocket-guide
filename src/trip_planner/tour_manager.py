@@ -157,6 +157,17 @@ class TourManager:
         with open(gen_record_file, 'w', encoding='utf-8') as f:
             json.dump(generation_record, f, indent=2, ensure_ascii=False)
 
+        # Create and save transcript links
+        transcript_links = self._create_transcript_links(
+            tour_data['itinerary'],
+            city,
+            language,
+            tour_id
+        )
+        links_file = tour_path / f"transcript_links_{language}.json"
+        with open(links_file, 'w', encoding='utf-8') as f:
+            json.dump(transcript_links, f, indent=2, ensure_ascii=False)
+
         # Update metadata with language-specific version tracking
         version_history_key = f'version_history_{language}'
         if version_history_key not in metadata:
@@ -380,6 +391,75 @@ class TourManager:
         # Serialize inputs to JSON string
         inputs_str = json.dumps(input_parameters, sort_keys=True)
         return hashlib.md5(inputs_str.encode()).hexdigest()
+
+    def _create_transcript_links(
+        self,
+        itinerary: List[Dict[str, Any]],
+        city: str,
+        language: str,
+        tour_id: str
+    ) -> Dict[str, Any]:
+        """
+        Create links from tour to transcripts.
+
+        This creates a record of which transcript files this tour should use.
+        Links can point to standard transcripts or custom transcripts.
+
+        Args:
+            itinerary: Tour itinerary with POI list
+            city: City name
+            language: Language code
+            tour_id: Tour identifier
+
+        Returns:
+            Dictionary with transcript links
+        """
+        from utils import get_poi_path, load_metadata
+
+        links = {
+            'tour_id': tour_id,
+            'language': language,
+            'created_at': datetime.now().isoformat(),
+            'links': []
+        }
+
+        for day in itinerary:
+            for poi_obj in day['pois']:
+                poi_name = poi_obj['poi']
+                poi_id = poi_name.lower().replace(' ', '-').replace('(', '').replace(')', '')
+
+                # Get transcript path and version
+                poi_path = get_poi_path(self.content_dir, city, poi_id)
+
+                # Check if POI directory exists
+                if not poi_path.exists():
+                    # POI doesn't exist yet, skip linking
+                    continue
+
+                transcript_path = poi_path / f"transcript_{language}.txt"
+
+                # Check if transcript exists
+                if not transcript_path.exists():
+                    # Transcript doesn't exist, skip linking
+                    continue
+
+                # Load metadata to get version
+                poi_metadata = load_metadata(poi_path)
+                version = f"v{poi_metadata.get('current_version', 1)}"
+
+                # Create relative path from project root
+                relative_path = transcript_path.relative_to(Path.cwd())
+
+                links['links'].append({
+                    'poi': poi_name,
+                    'poi_id': poi_id,
+                    'transcript_path': str(relative_path),
+                    'transcript_version': version,
+                    'transcript_type': 'standard',
+                    'linked_at': datetime.now().isoformat()
+                })
+
+        return links
 
     def _compare_pois(self, tour1: Dict, tour2: Dict) -> Dict[str, Any]:
         """

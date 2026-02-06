@@ -967,7 +967,7 @@ class ContentGenerator:
         client = anthropic.Anthropic(api_key=api_key, timeout=180.0)  # Increased to 3 minutes for large prompts
 
         # Retry logic for overloaded and timeout errors
-        max_retries = 3
+        max_retries = 2  # 1 initial attempt + 1 retry
         for attempt in range(max_retries):
             try:
                 if attempt > 0:

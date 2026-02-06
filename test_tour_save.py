@@ -34,11 +34,25 @@ mock_tour_data = {
     }
 }
 
-# Mock selection result
+# Mock selection result (matching POI selector structure)
 mock_selection_result = {
-    'selected_pois': ['Colosseum', 'Roman Forum', 'Palatine Hill'],
-    'backup_pois': ['Trevi Fountain', 'Spanish Steps'],
-    'rejected_pois': ['Other POI 1', 'Other POI 2']
+    'starting_pois': [
+        {'poi': 'Colosseum', 'reason': 'Iconic'},
+        {'poi': 'Roman Forum', 'reason': 'Historical'},
+        {'poi': 'Palatine Hill', 'reason': 'Archaeological'}
+    ],
+    'backup_pois': {
+        'Colosseum': [
+            {'poi': 'Trevi Fountain', 'reason': 'Nearby alternative'}
+        ],
+        'Roman Forum': [
+            {'poi': 'Spanish Steps', 'reason': 'Alternative site'}
+        ]
+    },
+    'rejected_pois': [
+        {'poi': 'Other POI 1', 'reason': 'Too far'},
+        {'poi': 'Other POI 2', 'reason': 'Not relevant'}
+    ]
 }
 
 # Input parameters
@@ -83,7 +97,7 @@ def test_tour_save():
         print(f"\n  Tour ID: {result['tour_id']}")
         print(f"  Version: v{result['version']}")
         print(f"  Language: {result['language']}")
-        print(f"  Tour file: {result['tour_file']}")
+        print(f"  Tour file: {result['files']['tour']}")
 
         # Check transcript links
         if 'transcript_links_file' in result:

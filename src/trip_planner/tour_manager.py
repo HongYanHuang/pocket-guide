@@ -221,11 +221,13 @@ class TourManager:
             'version_string': version_string,
             'language': language,
             'tour_path': str(tour_path),
+            'transcript_links_file': str(links_file),
             'files': {
                 'tour': str(current_tour_file),
                 'tour_versioned': str(versioned_tour_file),
                 'generation_record': str(gen_record_file),
-                'metadata': str(tour_path / "metadata.json")
+                'metadata': str(tour_path / "metadata.json"),
+                'transcript_links': str(links_file)
             }
         }
 

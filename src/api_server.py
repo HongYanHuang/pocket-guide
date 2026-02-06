@@ -1841,7 +1841,7 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
             {
                 "original": item.original_poi,
                 "replacement": item.replacement_poi,
-                "day": item.day
+                "day": str(item.day)
             }
             for item in request.replacements
         ]

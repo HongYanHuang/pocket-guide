@@ -217,17 +217,31 @@
                                 :key="backup.poi"
                                 style="padding: 10px; background: #f0f9ff; border-radius: 4px; margin-bottom: 8px"
                               >
-                                <div style="font-weight: 600; margin-bottom: 4px">
-                                  {{ backup.poi }}
-                                  <el-tag size="small" style="margin-left: 8px">
-                                    {{ (backup.similarity_score * 100).toFixed(0) }}% similar
-                                  </el-tag>
-                                </div>
-                                <div style="font-size: 12px; color: #606266; margin-bottom: 4px">
-                                  {{ backup.reason }}
-                                </div>
-                                <div style="font-size: 11px; color: #909399; font-style: italic">
-                                  {{ backup.substitute_scenario }}
+                                <div style="display: flex; justify-content: space-between; align-items: start">
+                                  <div style="flex: 1">
+                                    <div style="font-weight: 600; margin-bottom: 4px">
+                                      {{ backup.poi }}
+                                      <el-tag size="small" style="margin-left: 8px">
+                                        {{ (backup.similarity_score * 100).toFixed(0) }}% similar
+                                      </el-tag>
+                                    </div>
+                                    <div style="font-size: 12px; color: #606266; margin-bottom: 4px">
+                                      {{ backup.reason }}
+                                    </div>
+                                    <div style="font-size: 11px; color: #909399; font-style: italic">
+                                      {{ backup.substitute_scenario }}
+                                    </div>
+                                  </div>
+
+                                  <!-- Replace Button -->
+                                  <el-button
+                                    type="primary"
+                                    size="small"
+                                    @click="showReplacementDialog(poi.poi, backup, day.day)"
+                                    :loading="replacingPOI"
+                                  >
+                                    Replace
+                                  </el-button>
                                 </div>
                               </div>
                             </el-collapse-item>
@@ -274,6 +288,70 @@
         </el-card>
       </div>
     </div>
+
+    <!-- Replacement Confirmation Dialog -->
+    <el-dialog
+      v-model="replacementDialogVisible"
+      title="Replace POI"
+      width="500px"
+    >
+      <div v-if="pendingReplacement">
+        <el-alert
+          type="info"
+          :closable="false"
+          style="margin-bottom: 20px"
+        >
+          <p><strong>Original:</strong> {{ pendingReplacement.original }}</p>
+          <p><strong>Replace with:</strong> {{ pendingReplacement.replacement }}</p>
+          <p><strong>Day:</strong> {{ pendingReplacement.day }}</p>
+        </el-alert>
+
+        <el-form label-position="top">
+          <el-form-item label="Save Mode">
+            <el-radio-group v-model="replacementMode">
+              <el-radio label="simple" style="display: block; margin-bottom: 10px">
+                <div>
+                  <strong>Simple Save</strong>
+                  <div style="font-size: 12px; color: #909399">
+                    Replace POI and keep current order/timing
+                  </div>
+                </div>
+              </el-radio>
+              <el-radio label="reoptimize">
+                <div>
+                  <strong>Save & Re-optimize</strong>
+                  <div style="font-size: 12px; color: #909399">
+                    Replace POI and re-calculate optimal route
+                  </div>
+                </div>
+              </el-radio>
+            </el-radio-group>
+          </el-form-item>
+        </el-form>
+
+        <el-alert
+          v-if="replacementMode === 'reoptimize'"
+          type="warning"
+          :closable="false"
+          style="margin-top: 10px"
+        >
+          Re-optimization may change POI order and timing for the entire day.
+        </el-alert>
+      </div>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="replacementDialogVisible = false">Cancel</el-button>
+          <el-button
+            type="primary"
+            @click="confirmReplacement"
+            :loading="replacingPOI"
+          >
+            Confirm Replacement
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -281,6 +359,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading, ArrowDown } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
 const route = useRoute()
@@ -290,6 +369,12 @@ const tour = ref(null)
 const expandedTranscripts = ref({})
 const transcripts = ref({})
 const transcriptLoading = ref({})
+
+// POI Replacement state
+const replacementDialogVisible = ref(false)
+const replacingPOI = ref(false)
+const replacementMode = ref('simple')
+const pendingReplacement = ref(null)
 
 // Computed total POIs
 const totalPOIs = computed(() => {
@@ -380,6 +465,62 @@ const getPriorityType = (priority) => {
   if (priority === 'high') return 'danger'
   if (priority === 'medium') return 'warning'
   return 'info'
+}
+
+// Show replacement dialog
+const showReplacementDialog = (originalPoi, backupPoi, dayNum) => {
+  pendingReplacement.value = {
+    original: originalPoi,
+    replacement: backupPoi.poi,
+    day: dayNum
+  }
+  replacementMode.value = 'simple'
+  replacementDialogVisible.value = true
+}
+
+// Confirm replacement
+const confirmReplacement = async () => {
+  if (!pendingReplacement.value) return
+
+  try {
+    replacingPOI.value = true
+
+    const tourId = route.params.tourId
+    const language = tour.value.input_parameters?.language || 'en'
+
+    const response = await axios.post(
+      `http://localhost:8000/tours/${tourId}/replace-poi`,
+      {
+        original_poi: pendingReplacement.value.original,
+        replacement_poi: pendingReplacement.value.replacement,
+        mode: replacementMode.value,
+        language: language,
+        day: pendingReplacement.value.day
+      }
+    )
+
+    // Success - show message and reload tour
+    ElMessage.success({
+      message: response.data.message || 'POI replaced successfully',
+      duration: 3000
+    })
+
+    // Close dialog
+    replacementDialogVisible.value = false
+    pendingReplacement.value = null
+
+    // Reload tour to show updated data
+    await loadTour()
+
+  } catch (err) {
+    console.error('Error replacing POI:', err)
+    ElMessage.error({
+      message: err.response?.data?.detail || 'Failed to replace POI',
+      duration: 5000
+    })
+  } finally {
+    replacingPOI.value = false
+  }
 }
 
 onMounted(() => {

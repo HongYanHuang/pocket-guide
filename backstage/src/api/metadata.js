@@ -82,5 +82,32 @@ export default {
 
   recalculateDistances(city) {
     return apiClient.post(`/distances/${city}/recalculate`)
+  },
+
+  // Tours
+  getTours() {
+    return apiClient.get('/tours')
+  },
+
+  getTour(tourId, language = 'en') {
+    return apiClient.get(`/tours/${tourId}`, {
+      params: { language }
+    })
+  },
+
+  getTourTranscriptLinks(tourId, language = 'en') {
+    return apiClient.get(`/tours/${tourId}/transcript-links`, {
+      params: { language }
+    })
+  },
+
+  replacePOIInTour(tourId, originalPoi, replacementPoi, mode, language, day) {
+    return apiClient.post(`/tours/${tourId}/replace-poi`, {
+      original_poi: originalPoi,
+      replacement_poi: replacementPoi,
+      mode: mode,
+      language: language,
+      day: day
+    })
   }
 }

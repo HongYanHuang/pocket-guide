@@ -454,7 +454,11 @@ class TourManager:
                 version = f"v{poi_metadata.get('current_version', 1)}"
 
                 # Create relative path from project root
-                relative_path = transcript_path.relative_to(Path.cwd())
+                # If path is already relative, use it; if absolute, make it relative
+                if transcript_path.is_absolute():
+                    relative_path = transcript_path.relative_to(Path.cwd())
+                else:
+                    relative_path = transcript_path
 
                 links['links'].append({
                     'poi': poi_name,

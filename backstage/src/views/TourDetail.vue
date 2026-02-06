@@ -445,44 +445,65 @@ const currentSelectedPOIs = computed(() => {
 })
 
 // Get effective backup POIs for a POI (includes reverse replacement relationship)
-// If the POI has a pending replacement, returns backups for the REPLACEMENT POI
+// Shows BOTH original POI's backups AND replacement POI's backups
 const getEffectiveBackupPOIs = (originalPoiName) => {
   if (!tour.value) return []
 
-  // Determine which POI we should show backups for
-  let targetPoi = originalPoiName
+  const effectiveBackups = []
+  const seenPOIs = new Set()
 
-  // If this POI has a pending replacement, show backups for the REPLACEMENT POI
-  if (pendingReplacements.value[originalPoiName]) {
-    targetPoi = pendingReplacements.value[originalPoiName].replacement_poi
+  // Always include the original POI's backup options
+  const originalBackups = tour.value.backup_pois[originalPoiName] || []
+  for (const backup of originalBackups) {
+    if (!seenPOIs.has(backup.poi)) {
+      effectiveBackups.push(backup)
+      seenPOIs.add(backup.poi)
+    }
   }
 
-  // Get backup POIs for the target POI
-  const backups = tour.value.backup_pois[targetPoi] || []
-  const effectiveBackups = [...backups]
+  // If this POI has a pending replacement, also add:
+  // 1. The original POI itself as a "swap back" option
+  // 2. The replacement POI's backup options
+  if (pendingReplacements.value[originalPoiName]) {
+    const replacementPoi = pendingReplacements.value[originalPoiName].replacement_poi
 
-  // If we're showing backups for a replacement POI, add the original POI as a "swap back" option
-  if (targetPoi !== originalPoiName) {
+    // Add original POI as "swap back" option (at the beginning)
     effectiveBackups.unshift({
       poi: originalPoiName,
       similarity_score: 1.0,
       reason: 'Can swap back to original POI',
       substitute_scenario: 'Reverse the current replacement'
     })
+    seenPOIs.add(originalPoiName)
+
+    // Add replacement POI's backup options
+    const replacementBackups = tour.value.backup_pois[replacementPoi] || []
+    for (const backup of replacementBackups) {
+      if (!seenPOIs.has(backup.poi)) {
+        effectiveBackups.push({
+          ...backup,
+          reason: `${backup.reason} (from ${replacementPoi})`
+        })
+        seenPOIs.add(backup.poi)
+      }
+    }
   }
 
-  // Also check if the target POI is being used as a replacement for OTHER POIs
-  // (This handles chained replacements)
+  // Also check if the original POI is being used as a replacement for OTHER POIs
+  // (This handles bidirectional swaps from other POIs)
   for (const [otherOriginalPoi, replacement] of Object.entries(pendingReplacements.value)) {
-    if (replacement.replacement_poi === targetPoi && otherOriginalPoi !== originalPoiName) {
-      // The target POI is replacing some other POI as well
+    if (replacement.replacement_poi === originalPoiName && otherOriginalPoi !== originalPoiName) {
+      // The original POI is replacing some other POI
       // Add that as a swap option
-      effectiveBackups.push({
-        poi: otherOriginalPoi,
-        similarity_score: 1.0,
-        reason: 'Can swap with this queued replacement',
-        substitute_scenario: 'Exchange with another pending replacement'
-      })
+      if (!seenPOIs.has(otherOriginalPoi)) {
+        effectiveBackups.push({
+          poi: otherOriginalPoi,
+          similarity_score: 1.0,
+          reason: 'Can swap with this queued replacement',
+          substitute_scenario: 'Exchange with another pending replacement'
+        })
+        seenPOIs.add(otherOriginalPoi)
+      }
     }
   }
 

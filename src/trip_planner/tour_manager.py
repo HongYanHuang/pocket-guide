@@ -19,7 +19,10 @@ try:
         save_tour_generation_record,
         create_tour_id,
         get_poi_path,
-        load_metadata
+        load_metadata,
+        normalize_language_code,
+        get_tour_filename,
+        get_tour_directory
     )
 except ImportError:
     try:
@@ -32,7 +35,10 @@ except ImportError:
             save_tour_generation_record,
             create_tour_id,
             get_poi_path,
-            load_metadata
+            load_metadata,
+            normalize_language_code,
+            get_tour_filename,
+            get_tour_directory
         )
     except ImportError:
         from utils import (
@@ -44,7 +50,10 @@ except ImportError:
             save_tour_generation_record,
             create_tour_id,
             get_poi_path,
-            load_metadata
+            load_metadata,
+            normalize_language_code,
+            get_tour_filename,
+            get_tour_directory
         )
 
 
@@ -99,7 +108,6 @@ class TourManager:
             Dictionary with tour_id, version, and paths
         """
         # Normalize language
-        from utils import normalize_language_code, get_tour_filename
         language = normalize_language_code(language)
 
         # Generate tour ID if not provided
@@ -240,8 +248,6 @@ class TourManager:
         Returns:
             Tour data dictionary
         """
-        from utils import get_tour_directory, get_tour_filename, normalize_language_code
-
         language = normalize_language_code(language)
         tour_path = get_tour_directory(self.tours_dir, city, tour_id)
 
@@ -294,8 +300,6 @@ class TourManager:
         Returns:
             Metadata dictionary with version_history
         """
-        from src.utils import get_tour_directory
-
         tour_path = get_tour_directory(self.tours_dir, city, tour_id)
         return load_tour_metadata(tour_path)
 

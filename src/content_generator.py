@@ -224,7 +224,8 @@ class ContentGenerator:
         custom_prompt: str = None,
         language: str = "en",
         skip_research: bool = False,
-        force_research: bool = False
+        force_research: bool = False,
+        verify: bool = False
     ) -> Tuple[str, List[str], Dict[str, Any]]:
         """
         Generate tour guide content for a POI
@@ -239,6 +240,7 @@ class ContentGenerator:
             language: Target language code (ISO 639-1, e.g., 'en', 'zh-tw', 'pt-br')
             skip_research: Skip research phase even if enabled in config
             force_research: Force research even if cached data exists
+            verify: Enable transcript verification (default: False to reduce costs)
 
         Returns:
             Tuple of (transcript, summary_points, generation_metadata)
@@ -303,15 +305,15 @@ class ContentGenerator:
         transcript = result[0]
         summary_points = result[1]
 
-        # Verification and refinement loop (if enabled and we have research data)
+        # Verification and refinement loop (if enabled by parameter and we have research data)
         verification_metadata = {}
-        if self.verification_enabled and use_research and research_data:
+        if verify and use_research and research_data:
             # Core features are nested under 'poi'
             core_features = research_data.get('poi', {}).get('core_features', [])
             if core_features:
                 print(f"  [VERIFICATION] Checking core features coverage...", flush=True)
 
-                # Use smart verification if enabled, otherwise use legacy version
+                # Use smart verification if enabled in config, otherwise use legacy version
                 if self.smart_mode:
                     transcript, verification_metadata = self._verify_and_refine_smart(
                         transcript=transcript,

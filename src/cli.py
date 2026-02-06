@@ -99,8 +99,9 @@ def pois(ctx, city):
 @click.option('--language', default='en', help='Content language (ISO 639-1 code with optional region, e.g., en, zh-tw, pt-br)')
 @click.option('--skip-research', is_flag=True, help='Skip research phase (use description only)')
 @click.option('--force-research', is_flag=True, help='Force new research even if cached')
+@click.option('--verify', is_flag=True, help='Enable transcript verification (increases cost, default: disabled)')
 @click.pass_context
-def generate(ctx, city, poi, provider, description, interests, custom_prompt, language, skip_research, force_research):
+def generate(ctx, city, poi, provider, description, interests, custom_prompt, language, skip_research, force_research, verify):
     """Generate content for a POI"""
     config = ctx.obj['config']
     content_dir = ctx.obj['content_dir']
@@ -166,7 +167,8 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
             custom_prompt=custom_prompt,
             language=language,
             skip_research=skip_research,
-            force_research=force_research
+            force_research=force_research,
+            verify=verify
         )
 
         console.print(f"[dim]✓ Content received from API[/dim]")
@@ -870,8 +872,9 @@ def poi_check_redundancy(ctx, city, provider):
 @click.option('--language', default='en', help='Content language (ISO 639-1 code with optional region, e.g., en, zh-tw, pt-br)')
 @click.option('--skip-research', is_flag=True, help='Skip research phase for faster generation')
 @click.option('--force', is_flag=True, help='Force regeneration even if content already exists')
+@click.option('--verify', is_flag=True, help='Enable transcript verification (increases cost, default: disabled)')
 @click.pass_context
-def poi_batch_generate(ctx, input_file, city, provider, language, skip_research, force):
+def poi_batch_generate(ctx, input_file, city, provider, language, skip_research, force, verify):
     """Batch generate POI content from input file (one POI name per line)"""
     config = ctx.obj['config']
     content_dir = ctx.obj['content_dir']
@@ -1000,7 +1003,8 @@ def poi_batch_generate(ctx, input_file, city, provider, language, skip_research,
                     city=city,
                     provider=provider,
                     language=language,
-                    skip_research=skip_research
+                    skip_research=skip_research,
+                    verify=verify
                 )
 
                 # Save files
@@ -1165,7 +1169,8 @@ def ensure_poi_transcripts(
                 city=city,
                 provider=provider,
                 language=language,
-                skip_research=False  # Use research for quality
+                skip_research=False,  # Use research for quality
+                verify=False  # Skip verification to reduce cost during tour generation
             )
 
             # Calculate version

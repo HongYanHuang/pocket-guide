@@ -154,9 +154,19 @@
                           ">
                             {{ index + 1 }}
                           </span>
-                          <span style="font-weight: 600; font-size: 15px">{{ poi.poi }}</span>
+                          <span style="font-weight: 600; font-size: 15px">
+                            <span :style="{ textDecoration: hasPendingReplacement(poi.poi) ? 'line-through' : 'none', opacity: hasPendingReplacement(poi.poi) ? 0.5 : 1 }">
+                              {{ poi.poi }}
+                            </span>
+                            <span v-if="hasPendingReplacement(poi.poi)" style="color: #67C23A; font-weight: 600">
+                              → {{ getPendingReplacement(poi.poi).replacement_poi }}
+                            </span>
+                          </span>
                           <el-tag size="small" :type="getPriorityType(poi.priority)">
                             {{ poi.priority }}
+                          </el-tag>
+                          <el-tag v-if="hasPendingReplacement(poi.poi)" size="small" type="success">
+                            Pending
                           </el-tag>
                         </div>
 
@@ -210,12 +220,33 @@
                           v-if="tour.backup_pois[poi.poi] && tour.backup_pois[poi.poi].length > 0"
                           style="margin-top: 12px; padding-left: 34px"
                         >
+                          <!-- Pending Replacement Notice -->
+                          <el-alert
+                            v-if="hasPendingReplacement(poi.poi)"
+                            type="success"
+                            :closable="false"
+                            style="margin-bottom: 10px"
+                          >
+                            <div style="display: flex; justify-content: space-between; align-items: center">
+                              <span>
+                                Queued: {{ poi.poi }} → {{ getPendingReplacement(poi.poi).replacement_poi }}
+                              </span>
+                              <el-button
+                                size="small"
+                                @click="removePendingReplacement(poi.poi)"
+                              >
+                                Undo
+                              </el-button>
+                            </div>
+                          </el-alert>
+
                           <el-collapse>
                             <el-collapse-item title="View Backup Options" name="1">
                               <div
                                 v-for="backup in tour.backup_pois[poi.poi]"
                                 :key="backup.poi"
                                 style="padding: 10px; background: #f0f9ff; border-radius: 4px; margin-bottom: 8px"
+                                :style="{ opacity: isBackupPOIAvailable(backup.poi) ? 1 : 0.5 }"
                               >
                                 <div style="display: flex; justify-content: space-between; align-items: start">
                                   <div style="flex: 1">
@@ -223,6 +254,14 @@
                                       {{ backup.poi }}
                                       <el-tag size="small" style="margin-left: 8px">
                                         {{ (backup.similarity_score * 100).toFixed(0) }}% similar
+                                      </el-tag>
+                                      <el-tag
+                                        v-if="!isBackupPOIAvailable(backup.poi)"
+                                        size="small"
+                                        type="info"
+                                        style="margin-left: 8px"
+                                      >
+                                        Already selected
                                       </el-tag>
                                     </div>
                                     <div style="font-size: 12px; color: #606266; margin-bottom: 4px">
@@ -237,8 +276,8 @@
                                   <el-button
                                     type="primary"
                                     size="small"
-                                    @click="showReplacementDialog(poi.poi, backup, day.day)"
-                                    :loading="replacingPOI"
+                                    @click="addPendingReplacement(poi.poi, backup, day.day)"
+                                    :disabled="!isBackupPOIAvailable(backup.poi)"
                                   >
                                     Replace
                                   </el-button>
@@ -289,69 +328,63 @@
       </div>
     </div>
 
-    <!-- Replacement Confirmation Dialog -->
-    <el-dialog
-      v-model="replacementDialogVisible"
-      title="Replace POI"
-      width="500px"
-    >
-      <div v-if="pendingReplacement">
-        <el-alert
-          type="info"
-          :closable="false"
-          style="margin-bottom: 20px"
-        >
-          <p><strong>Original:</strong> {{ pendingReplacement.original }}</p>
-          <p><strong>Replace with:</strong> {{ pendingReplacement.replacement }}</p>
-          <p><strong>Day:</strong> {{ pendingReplacement.day }}</p>
-        </el-alert>
+    <!-- Floating Action Bar for Pending Replacements -->
+    <transition name="el-fade-in">
+      <div
+        v-if="pendingReplacementsCount > 0"
+        style="
+          position: fixed;
+          bottom: 30px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: white;
+          padding: 20px 30px;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          z-index: 1000;
+          min-width: 600px;
+        "
+      >
+        <div style="display: flex; align-items: center; gap: 20px">
+          <!-- Count -->
+          <div style="display: flex; align-items: center; gap: 10px">
+            <el-tag type="warning" size="large">
+              {{ pendingReplacementsCount }} Pending Replacement{{ pendingReplacementsCount > 1 ? 's' : '' }}
+            </el-tag>
+          </div>
 
-        <el-form label-position="top">
-          <el-form-item label="Save Mode">
-            <el-radio-group v-model="replacementMode">
-              <el-radio label="simple" style="display: block; margin-bottom: 10px">
-                <div>
-                  <strong>Simple Save</strong>
-                  <div style="font-size: 12px; color: #909399">
-                    Replace POI and keep current order/timing
-                  </div>
-                </div>
-              </el-radio>
-              <el-radio label="reoptimize">
-                <div>
-                  <strong>Save & Re-optimize</strong>
-                  <div style="font-size: 12px; color: #909399">
-                    Replace POI and re-calculate optimal route
-                  </div>
-                </div>
-              </el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </el-form>
+          <!-- Mode Selection -->
+          <el-radio-group v-model="replacementMode" size="small">
+            <el-radio label="simple">Simple Save</el-radio>
+            <el-radio label="reoptimize">Re-optimize</el-radio>
+          </el-radio-group>
 
-        <el-alert
-          v-if="replacementMode === 'reoptimize'"
-          type="warning"
-          :closable="false"
-          style="margin-top: 10px"
-        >
-          Re-optimization may change POI order and timing for the entire day.
-        </el-alert>
+          <!-- Actions -->
+          <div style="display: flex; gap: 10px; margin-left: auto">
+            <el-button @click="discardAllReplacements" :disabled="savingReplacements">
+              Discard All
+            </el-button>
+            <el-button
+              type="primary"
+              @click="saveAllReplacements"
+              :loading="savingReplacements"
+            >
+              Save Changes
+            </el-button>
+          </div>
+        </div>
+
+        <!-- Mode Description -->
+        <div style="margin-top: 10px; font-size: 12px; color: #909399">
+          <span v-if="replacementMode === 'simple'">
+            Keep current order and timing
+          </span>
+          <span v-else style="color: #E6A23C">
+            ⚠️ Re-optimization may change POI order and timing
+          </span>
+        </div>
       </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="replacementDialogVisible = false">Cancel</el-button>
-          <el-button
-            type="primary"
-            @click="confirmReplacement"
-            :loading="replacingPOI"
-          >
-            Confirm Replacement
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
+    </transition>
   </div>
 </template>
 
@@ -371,15 +404,56 @@ const transcripts = ref({})
 const transcriptLoading = ref({})
 
 // POI Replacement state
-const replacementDialogVisible = ref(false)
-const replacingPOI = ref(false)
+const pendingReplacements = ref({}) // Map: original_poi -> { replacement_poi, day }
 const replacementMode = ref('simple')
-const pendingReplacement = ref(null)
+const savingReplacements = ref(false)
 
 // Computed total POIs
 const totalPOIs = computed(() => {
   if (!tour.value) return 0
   return tour.value.itinerary.reduce((sum, day) => sum + day.pois.length, 0)
+})
+
+// Get all currently selected POIs (including pending replacements)
+const currentSelectedPOIs = computed(() => {
+  if (!tour.value) return new Set()
+
+  const pois = new Set()
+
+  for (const day of tour.value.itinerary) {
+    for (const poi of day.pois) {
+      const originalPoi = poi.poi
+
+      // If this POI has a pending replacement, use the replacement instead
+      if (pendingReplacements.value[originalPoi]) {
+        pois.add(pendingReplacements.value[originalPoi].replacement_poi)
+      } else {
+        pois.add(originalPoi)
+      }
+    }
+  }
+
+  return pois
+})
+
+// Check if a backup POI is available (not already selected)
+const isBackupPOIAvailable = (backupPoiName) => {
+  return !currentSelectedPOIs.value.has(backupPoiName)
+}
+
+// Check if a POI has pending replacement
+const hasPendingReplacement = (poiName) => {
+  return !!pendingReplacements.value[poiName]
+}
+
+// Get pending replacement for a POI
+const getPendingReplacement = (poiName) => {
+  return pendingReplacements.value[poiName]
+}
+
+// Count of pending replacements
+const pendingReplacementsCount = computed(() => {
+  return Object.keys(pendingReplacements.value).length
 })
 
 // Load tour details
@@ -467,59 +541,91 @@ const getPriorityType = (priority) => {
   return 'info'
 }
 
-// Show replacement dialog
-const showReplacementDialog = (originalPoi, backupPoi, dayNum) => {
-  pendingReplacement.value = {
-    original: originalPoi,
-    replacement: backupPoi.poi,
+// Add a pending replacement
+const addPendingReplacement = (originalPoi, backupPoi, dayNum) => {
+  pendingReplacements.value[originalPoi] = {
+    replacement_poi: backupPoi.poi,
     day: dayNum
   }
-  replacementMode.value = 'simple'
-  replacementDialogVisible.value = true
+
+  ElMessage.info({
+    message: `Queued replacement: ${originalPoi} → ${backupPoi.poi}`,
+    duration: 2000
+  })
 }
 
-// Confirm replacement
-const confirmReplacement = async () => {
-  if (!pendingReplacement.value) return
+// Remove a pending replacement
+const removePendingReplacement = (originalPoi) => {
+  delete pendingReplacements.value[originalPoi]
+  ElMessage.info({
+    message: 'Replacement removed from queue',
+    duration: 2000
+  })
+}
+
+// Discard all pending replacements
+const discardAllReplacements = () => {
+  pendingReplacements.value = {}
+  ElMessage.info({
+    message: 'All pending replacements discarded',
+    duration: 2000
+  })
+}
+
+// Save all pending replacements
+const saveAllReplacements = async () => {
+  const replacementsList = Object.keys(pendingReplacements.value)
+
+  if (replacementsList.length === 0) {
+    ElMessage.warning({
+      message: 'No pending replacements to save',
+      duration: 2000
+    })
+    return
+  }
 
   try {
-    replacingPOI.value = true
+    savingReplacements.value = true
 
     const tourId = route.params.tourId
     const language = tour.value.input_parameters?.language || 'en'
 
+    // Build replacements array for API
+    const replacements = replacementsList.map(originalPoi => ({
+      original_poi: originalPoi,
+      replacement_poi: pendingReplacements.value[originalPoi].replacement_poi,
+      day: pendingReplacements.value[originalPoi].day
+    }))
+
     const response = await axios.post(
-      `http://localhost:8000/tours/${tourId}/replace-poi`,
+      `http://localhost:8000/tours/${tourId}/replace-pois-batch`,
       {
-        original_poi: pendingReplacement.value.original,
-        replacement_poi: pendingReplacement.value.replacement,
+        replacements: replacements,
         mode: replacementMode.value,
-        language: language,
-        day: pendingReplacement.value.day
+        language: language
       }
     )
 
     // Success - show message and reload tour
     ElMessage.success({
-      message: response.data.message || 'POI replaced successfully',
+      message: response.data.message || `Successfully replaced ${replacementsList.length} POI(s)`,
       duration: 3000
     })
 
-    // Close dialog
-    replacementDialogVisible.value = false
-    pendingReplacement.value = null
+    // Clear pending replacements
+    pendingReplacements.value = {}
 
     // Reload tour to show updated data
     await loadTour()
 
   } catch (err) {
-    console.error('Error replacing POI:', err)
+    console.error('Error replacing POIs:', err)
     ElMessage.error({
-      message: err.response?.data?.detail || 'Failed to replace POI',
+      message: err.response?.data?.detail || 'Failed to replace POIs',
       duration: 5000
     })
   } finally {
-    replacingPOI.value = false
+    savingReplacements.value = false
   }
 }
 

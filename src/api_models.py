@@ -356,8 +356,36 @@ class TourDetail(BaseModel):
 
 # ==== POI Replacement Models ====
 
+class POIReplacementItem(BaseModel):
+    """Single POI replacement item"""
+    original_poi: str = Field(..., description="POI name to replace")
+    replacement_poi: str = Field(..., description="Backup POI name to use as replacement")
+    day: int = Field(..., ge=1, description="Day number where POI is located")
+
+
+class BatchPOIReplacementRequest(BaseModel):
+    """Request to replace multiple POIs in a tour"""
+    replacements: List[POIReplacementItem] = Field(..., min_items=1, description="List of POI replacements to apply")
+    mode: str = Field(..., pattern="^(simple|reoptimize)$", description="Save mode: 'simple' or 'reoptimize'")
+    language: str = Field("en", description="Tour language code (ISO 639-1, e.g., 'en', 'zh-cn')")
+
+
+class BatchPOIReplacementResponse(BaseModel):
+    """Response after batch POI replacement"""
+    success: bool = Field(..., description="Whether replacement was successful")
+    tour_id: str = Field(..., description="Tour identifier")
+    new_version: int = Field(..., description="New version number")
+    new_version_string: str = Field(..., description="New version string (e.g., 'v2_2026-02-06')")
+    replacements_applied: int = Field(..., description="Number of replacements applied")
+    replacements: List[Dict[str, str]] = Field(..., description="List of applied replacements")
+    mode_used: str = Field(..., description="Save mode that was used")
+    optimization_scores: Optional[OptimizationScores] = Field(None, description="New optimization scores (if reoptimized)")
+    message: str = Field(..., description="Success message")
+
+
+# Legacy single replacement models (kept for backward compatibility)
 class POIReplacementRequest(BaseModel):
-    """Request to replace a POI in a tour"""
+    """Request to replace a POI in a tour (deprecated - use BatchPOIReplacementRequest)"""
     original_poi: str = Field(..., description="POI name to replace")
     replacement_poi: str = Field(..., description="Backup POI name to use as replacement")
     mode: str = Field(..., pattern="^(simple|reoptimize)$", description="Save mode: 'simple' or 'reoptimize'")
@@ -366,7 +394,7 @@ class POIReplacementRequest(BaseModel):
 
 
 class POIReplacementResponse(BaseModel):
-    """Response after POI replacement"""
+    """Response after POI replacement (deprecated - use BatchPOIReplacementResponse)"""
     success: bool = Field(..., description="Whether replacement was successful")
     tour_id: str = Field(..., description="Tour identifier")
     new_version: int = Field(..., description="New version number")

@@ -109,5 +109,13 @@ export default {
       language: language,
       day: day
     })
+  },
+
+  batchReplacePOIsInTour(tourId, replacements, mode, language) {
+    return apiClient.post(`/tours/${tourId}/replace-pois-batch`, {
+      replacements: replacements,
+      mode: mode,
+      language: language
+    })
   }
 }

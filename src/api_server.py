@@ -23,7 +23,8 @@ from api_models import (
     ResearchLocation, ResearchConcept,
     TourSummary, TourDetail, TourMetadata, TourDay, TourPOI,
     BackupPOI, RejectedPOI, OptimizationScores,
-    POIReplacementRequest, POIReplacementResponse
+    POIReplacementRequest, POIReplacementResponse,
+    BatchPOIReplacementRequest, BatchPOIReplacementResponse, POIReplacementItem
 )
 from poi_metadata_agent import POIMetadataAgent
 from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
@@ -1656,6 +1657,216 @@ def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error replacing POI: {str(e)}"
+        )
+
+
+@app.post("/tours/{tour_id}/replace-pois-batch", response_model=BatchPOIReplacementResponse)
+def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest):
+    """
+    Replace multiple POIs in a tour with backup POIs in a single operation.
+
+    Supports two modes:
+    - simple: Replace POIs and keep current order/timing
+    - reoptimize: Replace POIs and re-run itinerary optimizer
+
+    Args:
+        tour_id: Tour identifier
+        request: Batch POI replacement request with mode, list of replacements, and language
+
+    Returns:
+        Batch POI replacement response with success status and new version info
+    """
+    import json
+    from trip_planner.tour_manager import TourManager
+
+    try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(request.language)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # Find tour directory
+        tours_dir = Path("tours")
+        tour_path = None
+        city = None
+
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir():
+                continue
+            potential_path = city_dir / tour_id
+            if potential_path.exists():
+                tour_path = potential_path
+                city = city_dir.name
+                break
+
+        if not tour_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour not found: {tour_id}"
+            )
+
+        # Load tour data
+        tour_file = tour_path / get_tour_filename('tour', language)
+        if not tour_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour file not found for language '{language}'"
+            )
+
+        with open(tour_file, 'r', encoding='utf-8') as f:
+            tour_data = json.load(f)
+
+        # Load generation record
+        gen_record_pattern = f"generation_record_*_{language}.json"
+        gen_record_files = list(tour_path.glob(gen_record_pattern))
+        if not gen_record_files:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Generation record not found for tour in language '{language}'"
+            )
+
+        with open(gen_record_files[0], 'r', encoding='utf-8') as f:
+            gen_record = json.load(f)
+
+        # Get backup POIs list for validation
+        backup_pois = gen_record.get('poi_selection', {}).get('backup_pois', {})
+
+        # Validate all replacements before processing any
+        for replacement_item in request.replacements:
+            # Validate: Original POI should be in tour
+            poi_in_tour = False
+            for day in tour_data['itinerary']:
+                for poi_obj in day['pois']:
+                    if poi_obj['poi'] == replacement_item.original_poi:
+                        poi_in_tour = True
+                        break
+                if poi_in_tour:
+                    break
+
+            if not poi_in_tour:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Original POI '{replacement_item.original_poi}' not found in tour"
+                )
+
+            # Validate: Replacement POI should be in backup list for original POI
+            if replacement_item.original_poi not in backup_pois:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"No backup POIs available for '{replacement_item.original_poi}'"
+                )
+
+            backup_list = backup_pois[replacement_item.original_poi]
+            backup_poi_obj = next(
+                (b for b in backup_list if b['poi'] == replacement_item.replacement_poi),
+                None
+            )
+
+            if not backup_poi_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"'{replacement_item.replacement_poi}' is not in backup list for '{replacement_item.original_poi}'"
+                )
+
+        # Process replacements based on mode
+        if request.mode == 'simple':
+            # Apply simple replacements sequentially
+            updated_tour = tour_data
+            for replacement_item in request.replacements:
+                updated_tour = simple_poi_replacement(
+                    updated_tour,
+                    replacement_item.original_poi,
+                    replacement_item.replacement_poi,
+                    replacement_item.day,
+                    city
+                )
+        else:  # mode == 'reoptimize'
+            # For reoptimize mode, collect all replacements and apply them to the POI list
+            # Then run optimizer once with the new POI set
+            updated_tour = tour_data
+
+            # Build a mapping of original -> replacement
+            replacement_map = {
+                item.original_poi: item.replacement_poi
+                for item in request.replacements
+            }
+
+            # Apply all replacements to get the new POI list
+            for original_poi, replacement_poi in replacement_map.items():
+                # Get all POIs from current tour
+                all_pois = []
+                for day in updated_tour['itinerary']:
+                    for poi_obj in day['pois']:
+                        all_pois.append(poi_obj['poi'])
+
+                # Replace this POI in the list
+                updated_pois = [replacement_poi if p == original_poi else p for p in all_pois]
+
+                # Re-run optimizer with updated POI list
+                updated_tour = reoptimize_with_replacement(
+                    updated_tour,
+                    gen_record,
+                    original_poi,
+                    replacement_poi,
+                    city
+                )
+
+        # Update transcript links for all replacements
+        for replacement_item in request.replacements:
+            update_transcript_links_for_replacement(
+                tour_path,
+                replacement_item.original_poi,
+                replacement_item.replacement_poi,
+                language,
+                city
+            )
+
+        # Save new tour version
+        tour_manager = TourManager(config, content_dir="content")
+        result = tour_manager.save_tour(
+            tour_data=updated_tour,
+            city=city,
+            input_parameters=gen_record.get('input_parameters', {}),
+            tour_id=tour_id,
+            selection_result=gen_record.get('poi_selection', {}),
+            language=language
+        )
+
+        # Build replacement list for response
+        replacements_list = [
+            {
+                "original": item.original_poi,
+                "replacement": item.replacement_poi,
+                "day": item.day
+            }
+            for item in request.replacements
+        ]
+
+        return BatchPOIReplacementResponse(
+            success=True,
+            tour_id=tour_id,
+            new_version=result['version'],
+            new_version_string=result['version_string'],
+            replacements_applied=len(request.replacements),
+            replacements=replacements_list,
+            mode_used=request.mode,
+            optimization_scores=updated_tour.get('optimization_scores'),
+            message=f"Successfully replaced {len(request.replacements)} POI(s) using {request.mode} mode"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error batch replacing POIs in tour {tour_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error batch replacing POIs: {str(e)}"
         )
 
 

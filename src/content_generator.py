@@ -934,7 +934,7 @@ class ContentGenerator:
         print(f"  [DEBUG] Prompt length: {len(prompt)} chars, System prompt: {len(system_prompt)} chars")
         print(f"  [DEBUG] Creating OpenAI client and sending request...")
 
-        client = openai.OpenAI(api_key=api_key, timeout=60.0)
+        client = openai.OpenAI(api_key=api_key, timeout=180.0)  # Increased to 3 minutes for large prompts
 
         response = client.chat.completions.create(
             model=model,
@@ -964,9 +964,9 @@ class ContentGenerator:
             "You are an expert tour guide creating engaging audio scripts for tourists.")
 
         print(f"  [DEBUG] Creating Anthropic client and sending request...")
-        client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
+        client = anthropic.Anthropic(api_key=api_key, timeout=180.0)  # Increased to 3 minutes for large prompts
 
-        # Retry logic for overloaded errors
+        # Retry logic for overloaded and timeout errors
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -989,11 +989,26 @@ class ContentGenerator:
                 return message.content[0].text.strip()
 
             except Exception as e:
-                # Check if it's an overload error (529)
                 error_str = str(e)
-                if "529" in error_str or "overloaded" in error_str.lower():
+
+                # Check if it's a timeout error
+                if "timeout" in error_str.lower() or "timed out" in error_str.lower():
+                    if attempt < max_retries - 1:
+                        print(f"  [WARNING] Request timed out, retrying...")
+                        continue
+                    else:
+                        print(f"  [ERROR] Request still timing out after {max_retries} attempts")
+                        raise Exception(
+                            f"Anthropic API request timed out after {max_retries} attempts. "
+                            f"This may be due to network issues or large prompt size. "
+                            f"Try again later or use a different provider."
+                        ) from e
+
+                # Check if it's an overload error (529)
+                elif "529" in error_str or "overloaded" in error_str.lower():
                     if attempt < max_retries - 1:
                         print(f"  [WARNING] Anthropic API overloaded, retrying...")
+                        continue
                     else:
                         print(f"  [ERROR] Anthropic API still overloaded after {max_retries} attempts")
                         raise Exception(

@@ -17,7 +17,9 @@ try:
         get_next_tour_version,
         save_versioned_tour,
         save_tour_generation_record,
-        create_tour_id
+        create_tour_id,
+        get_poi_path,
+        load_metadata
     )
 except ImportError:
     try:
@@ -28,7 +30,9 @@ except ImportError:
             get_next_tour_version,
             save_versioned_tour,
             save_tour_generation_record,
-            create_tour_id
+            create_tour_id,
+            get_poi_path,
+            load_metadata
         )
     except ImportError:
         from utils import (
@@ -38,7 +42,9 @@ except ImportError:
             get_next_tour_version,
             save_versioned_tour,
             save_tour_generation_record,
-            create_tour_id
+            create_tour_id,
+            get_poi_path,
+            load_metadata
         )
 
 
@@ -54,16 +60,18 @@ class TourManager:
     - Generation history
     """
 
-    def __init__(self, config: Dict[str, Any], tours_dir: str = "tours"):
+    def __init__(self, config: Dict[str, Any], tours_dir: str = "tours", content_dir: str = "content"):
         """
         Initialize Tour Manager.
 
         Args:
             config: Application configuration
             tours_dir: Base directory for tours (default: "tours")
+            content_dir: Base directory for content/POIs (default: "content")
         """
         self.config = config
         self.tours_dir = tours_dir
+        self.content_dir = content_dir
 
     def save_tour(
         self,
@@ -414,8 +422,6 @@ class TourManager:
         Returns:
             Dictionary with transcript links
         """
-        from utils import get_poi_path, load_metadata
-
         links = {
             'tour_id': tour_id,
             'language': language,

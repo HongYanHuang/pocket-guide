@@ -1359,7 +1359,7 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
         # Step 4: Save tour (optional)
         if save:
             console.print("[bold cyan]Step 4: Saving tour...[/bold cyan]")
-            tour_manager = TourManager(config)
+            tour_manager = TourManager(config, content_dir=content_dir)
 
             input_parameters = {
                 'city': city,
@@ -1400,9 +1400,10 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
 def trip_list(ctx, city):
     """List saved tours"""
     config = ctx.obj['config']
+    content_dir = ctx.obj['content_dir']
 
     try:
-        tour_manager = TourManager(config)
+        tour_manager = TourManager(config, content_dir=content_dir)
         tours = tour_manager.list_tours(city=city)
 
         if not tours:
@@ -1472,13 +1473,14 @@ def trip_list(ctx, city):
 def trip_show(ctx, tour_id, city, version, language):
     """Show details of a saved tour"""
     config = ctx.obj['config']
+    content_dir = ctx.obj['content_dir']
 
     try:
         # Normalize language
         language = normalize_language_code(language)
         language_name = get_language_name(language)
 
-        tour_manager = TourManager(config)
+        tour_manager = TourManager(config, content_dir=content_dir)
         tour_data = tour_manager.load_tour(city, tour_id, version, language)
 
         console.print(f"\n[bold cyan]Tour: {tour_id}[/bold cyan]")

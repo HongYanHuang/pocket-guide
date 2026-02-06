@@ -352,3 +352,27 @@ class TourDetail(BaseModel):
     rejected_pois: List[RejectedPOI] = Field(default_factory=list, description="POIs that were rejected")
     optimization_scores: OptimizationScores = Field(..., description="Optimization metrics")
     constraints_violated: List[str] = Field(default_factory=list, description="List of constraint violations")
+
+
+# ==== POI Replacement Models ====
+
+class POIReplacementRequest(BaseModel):
+    """Request to replace a POI in a tour"""
+    original_poi: str = Field(..., description="POI name to replace")
+    replacement_poi: str = Field(..., description="Backup POI name to use as replacement")
+    mode: str = Field(..., pattern="^(simple|reoptimize)$", description="Save mode: 'simple' or 'reoptimize'")
+    language: str = Field("en", description="Tour language code (ISO 639-1, e.g., 'en', 'zh-cn')")
+    day: int = Field(..., ge=1, description="Day number where POI is located")
+
+
+class POIReplacementResponse(BaseModel):
+    """Response after POI replacement"""
+    success: bool = Field(..., description="Whether replacement was successful")
+    tour_id: str = Field(..., description="Tour identifier")
+    new_version: int = Field(..., description="New version number")
+    new_version_string: str = Field(..., description="New version string (e.g., 'v2_2026-02-06')")
+    replaced_poi: str = Field(..., description="Original POI that was replaced")
+    with_poi: str = Field(..., description="New POI that replaced the original")
+    mode_used: str = Field(..., description="Save mode that was used")
+    optimization_scores: Optional[OptimizationScores] = Field(None, description="New optimization scores (if reoptimized)")
+    message: str = Field(..., description="Success message")

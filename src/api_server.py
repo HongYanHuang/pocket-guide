@@ -22,7 +22,8 @@ from api_models import (
     ResearchBasicInfo, ResearchPerson, ResearchEvent,
     ResearchLocation, ResearchConcept,
     TourSummary, TourDetail, TourMetadata, TourDay, TourPOI,
-    BackupPOI, RejectedPOI, OptimizationScores
+    BackupPOI, RejectedPOI, OptimizationScores,
+    POIReplacementRequest, POIReplacementResponse
 )
 from poi_metadata_agent import POIMetadataAgent
 from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
@@ -1269,6 +1270,294 @@ def get_tour_transcript_links(tour_id: str, language: str = "en"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error loading transcript links: {str(e)}"
+        )
+
+
+# ==== POI Replacement Helper Functions ====
+
+def poi_name_to_id(poi_name: str) -> str:
+    """Convert POI name to identifier (kebab-case)"""
+    return poi_name.lower().replace(' ', '-').replace('(', '').replace(')', '').replace("'", '')
+
+
+def simple_poi_replacement(tour_data: dict, original_poi: str, replacement_poi: str, day_num: int, city: str) -> dict:
+    """
+    Simple POI swap - maintains order and timing.
+    Only updates POI name and metadata.
+
+    Args:
+        tour_data: Tour data dictionary
+        original_poi: POI name to replace
+        replacement_poi: New POI name
+        day_num: Day number where POI is located
+        city: City name
+
+    Returns:
+        Updated tour data dictionary
+    """
+    replacement_poi_id = poi_name_to_id(replacement_poi)
+
+    # Load replacement POI metadata
+    try:
+        replacement_data = load_poi_from_content(city, replacement_poi_id)
+        replacement_metadata = replacement_data.get('poi', {}).get('metadata', {})
+    except Exception as e:
+        logger.warning(f"Could not load metadata for replacement POI {replacement_poi}: {e}")
+        replacement_metadata = {}
+
+    # Find and replace POI in itinerary
+    for day in tour_data['itinerary']:
+        if day['day'] == day_num:
+            for i, poi_obj in enumerate(day['pois']):
+                if poi_obj['poi'] == original_poi:
+                    # Update POI while preserving tour-specific fields
+                    day['pois'][i] = {
+                        'poi': replacement_poi,
+                        'reason': poi_obj.get('reason', 'Selected POI'),
+                        'suggested_day': poi_obj.get('suggested_day', day_num),
+                        'estimated_hours': replacement_metadata.get('estimated_hours', poi_obj.get('estimated_hours', 2.0)),
+                        'priority': poi_obj.get('priority', 'medium'),
+                        'coordinates': replacement_metadata.get('coordinates', {}),
+                        'operation_hours': replacement_metadata.get('operation_hours', {}),
+                        'visit_info': replacement_metadata.get('visit_info', {}),
+                        'period': replacement_metadata.get('period'),
+                        'date_built': replacement_metadata.get('date_built'),
+                        'walking_time_to_next': poi_obj.get('walking_time_to_next'),
+                        'distance_to_next_km': poi_obj.get('distance_to_next_km')
+                    }
+                    logger.info(f"Replaced {original_poi} with {replacement_poi} in day {day_num}")
+                    break
+            break
+
+    return tour_data
+
+
+def update_transcript_links_for_replacement(tour_path: Path, original_poi: str, replacement_poi: str, language: str, city: str):
+    """
+    Update transcript links file to point to replacement POI.
+
+    Args:
+        tour_path: Path to tour directory
+        original_poi: Original POI name
+        replacement_poi: Replacement POI name
+        language: Language code
+        city: City name
+    """
+    import json
+
+    links_file = tour_path / f"transcript_links_{language}.json"
+
+    if not links_file.exists():
+        logger.warning(f"Transcript links file not found: {links_file}")
+        return
+
+    # Load transcript links
+    with open(links_file, 'r', encoding='utf-8') as f:
+        links_data = json.load(f)
+
+    # Find and update link
+    original_poi_id = poi_name_to_id(original_poi)
+    replacement_poi_id = poi_name_to_id(replacement_poi)
+
+    for link in links_data['links']:
+        if link['poi_id'] == original_poi_id:
+            # Update to point to replacement POI
+            city_slug = city.lower().replace(' ', '-')
+            replacement_transcript_path = Path(f"content/{city_slug}/{replacement_poi_id}/transcript_{language}.txt")
+
+            # Load replacement POI metadata for version
+            try:
+                poi_metadata_path = Path(f"content/{city_slug}/{replacement_poi_id}/metadata.json")
+                if poi_metadata_path.exists():
+                    with open(poi_metadata_path, 'r', encoding='utf-8') as f:
+                        poi_metadata = json.load(f)
+                        current_version = poi_metadata.get('current_version', 1)
+                else:
+                    current_version = 1
+            except Exception as e:
+                logger.warning(f"Could not load version for {replacement_poi}: {e}")
+                current_version = 1
+
+            link['poi'] = replacement_poi
+            link['poi_id'] = replacement_poi_id
+            link['transcript_path'] = str(replacement_transcript_path)
+            link['transcript_version'] = f"v{current_version}"
+            link['linked_at'] = datetime.now().isoformat()
+
+            logger.info(f"Updated transcript link from {original_poi} to {replacement_poi}")
+            break
+
+    # Save updated links
+    with open(links_file, 'w', encoding='utf-8') as f:
+        json.dump(links_data, f, indent=2, ensure_ascii=False)
+
+
+@app.post("/tours/{tour_id}/replace-poi", response_model=POIReplacementResponse)
+def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
+    """
+    Replace a POI in a tour with a backup POI.
+
+    Supports two modes:
+    - simple: Replace POI and keep current order/timing
+    - reoptimize: Replace POI and re-run itinerary optimizer (NOT YET IMPLEMENTED)
+
+    Args:
+        tour_id: Tour identifier
+        request: POI replacement request with mode, POI names, language, and day
+
+    Returns:
+        POI replacement response with success status and new version info
+    """
+    import json
+    from trip_planner.tour_manager import TourManager
+
+    try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(request.language)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # Find tour directory
+        tours_dir = Path("tours")
+        tour_path = None
+        city = None
+
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir():
+                continue
+            potential_path = city_dir / tour_id
+            if potential_path.exists():
+                tour_path = potential_path
+                city = city_dir.name
+                break
+
+        if not tour_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour not found: {tour_id}"
+            )
+
+        # Load tour data
+        tour_file = tour_path / get_tour_filename('tour', language)
+        if not tour_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour file not found for language '{language}'"
+            )
+
+        with open(tour_file, 'r', encoding='utf-8') as f:
+            tour_data = json.load(f)
+
+        # Load generation record
+        gen_record_pattern = f"generation_record_*_{language}.json"
+        gen_record_files = list(tour_path.glob(gen_record_pattern))
+        if not gen_record_files:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Generation record not found for tour in language '{language}'"
+            )
+
+        with open(gen_record_files[0], 'r', encoding='utf-8') as f:
+            gen_record = json.load(f)
+
+        # Validate: Original POI should be in tour
+        poi_in_tour = False
+        for day in tour_data['itinerary']:
+            for poi_obj in day['pois']:
+                if poi_obj['poi'] == request.original_poi:
+                    poi_in_tour = True
+                    break
+            if poi_in_tour:
+                break
+
+        if not poi_in_tour:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Original POI '{request.original_poi}' not found in tour"
+            )
+
+        # Validate: Replacement POI should be in backup list for original POI
+        backup_pois = gen_record.get('poi_selection', {}).get('backup_pois', {})
+        if request.original_poi not in backup_pois:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No backup POIs available for '{request.original_poi}'"
+            )
+
+        backup_list = backup_pois[request.original_poi]
+        backup_poi_obj = next(
+            (b for b in backup_list if b['poi'] == request.replacement_poi),
+            None
+        )
+
+        if not backup_poi_obj:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"'{request.replacement_poi}' is not in backup list for '{request.original_poi}'"
+            )
+
+        # Perform replacement based on mode
+        if request.mode == 'simple':
+            # Simple swap - keep order and timing
+            updated_tour = simple_poi_replacement(
+                tour_data,
+                request.original_poi,
+                request.replacement_poi,
+                request.day,
+                city
+            )
+        else:  # mode == 'reoptimize'
+            # TODO: Implement re-optimization mode in Phase 2
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Re-optimization mode not yet implemented. Use 'simple' mode for now."
+            )
+
+        # Update transcript links
+        update_transcript_links_for_replacement(
+            tour_path,
+            request.original_poi,
+            request.replacement_poi,
+            language,
+            city
+        )
+
+        # Save new tour version
+        tour_manager = TourManager(config, content_dir="content")
+        result = tour_manager.save_tour(
+            tour_data=updated_tour,
+            city=city,
+            input_parameters=gen_record.get('input_parameters', {}),
+            tour_id=tour_id,
+            selection_result=gen_record.get('poi_selection', {}),
+            language=language
+        )
+
+        return POIReplacementResponse(
+            success=True,
+            tour_id=tour_id,
+            new_version=result['version'],
+            new_version_string=result['version_string'],
+            replaced_poi=request.original_poi,
+            with_poi=request.replacement_poi,
+            mode_used=request.mode,
+            optimization_scores=updated_tour.get('optimization_scores'),
+            message=f"Successfully replaced '{request.original_poi}' with '{request.replacement_poi}' using {request.mode} mode"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error replacing POI in tour {tour_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error replacing POI: {str(e)}"
         )
 
 

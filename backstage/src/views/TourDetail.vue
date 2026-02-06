@@ -217,7 +217,7 @@
 
                         <!-- Backup POIs -->
                         <div
-                          v-if="tour.backup_pois[poi.poi] && tour.backup_pois[poi.poi].length > 0"
+                          v-if="getEffectiveBackupPOIs(poi.poi).length > 0"
                           style="margin-top: 12px; padding-left: 34px"
                         >
                           <!-- Pending Replacement Notice -->
@@ -243,7 +243,7 @@
                           <el-collapse>
                             <el-collapse-item title="View Backup Options" name="1">
                               <div
-                                v-for="backup in tour.backup_pois[poi.poi]"
+                                v-for="backup in getEffectiveBackupPOIs(poi.poi)"
                                 :key="backup.poi"
                                 style="padding: 10px; background: #f0f9ff; border-radius: 4px; margin-bottom: 8px"
                                 :style="{ opacity: isBackupPOIAvailable(backup.poi) ? 1 : 0.5 }"
@@ -252,7 +252,15 @@
                                   <div style="flex: 1">
                                     <div style="font-weight: 600; margin-bottom: 4px">
                                       {{ backup.poi }}
-                                      <el-tag size="small" style="margin-left: 8px">
+                                      <el-tag
+                                        v-if="backup.similarity_score === 1.0 && backup.reason === 'Can swap back to original POI'"
+                                        size="small"
+                                        type="warning"
+                                        style="margin-left: 8px"
+                                      >
+                                        Swap Back
+                                      </el-tag>
+                                      <el-tag v-else size="small" style="margin-left: 8px">
                                         {{ (backup.similarity_score * 100).toFixed(0) }}% similar
                                       </el-tag>
                                       <el-tag
@@ -435,6 +443,32 @@ const currentSelectedPOIs = computed(() => {
 
   return pois
 })
+
+// Get effective backup POIs for a POI (includes reverse replacement relationship)
+const getEffectiveBackupPOIs = (poiName) => {
+  if (!tour.value) return []
+
+  // Start with original backup POIs
+  const originalBackups = tour.value.backup_pois[poiName] || []
+  const effectiveBackups = [...originalBackups]
+
+  // Check if this POI is being used as a replacement for another POI
+  // If so, add that original POI as a backup option (bidirectional swap)
+  for (const [originalPoi, replacement] of Object.entries(pendingReplacements.value)) {
+    if (replacement.replacement_poi === poiName) {
+      // This POI (poiName) is replacing originalPoi
+      // So originalPoi should become a backup for this POI
+      effectiveBackups.push({
+        poi: originalPoi,
+        similarity_score: 1.0,
+        reason: 'Can swap back to original POI',
+        substitute_scenario: 'Reverse the current replacement'
+      })
+    }
+  }
+
+  return effectiveBackups
+}
 
 // Check if a backup POI is available (not already selected)
 const isBackupPOIAvailable = (backupPoiName) => {

@@ -1392,6 +1392,101 @@ def update_transcript_links_for_replacement(tour_path: Path, original_poi: str, 
         json.dump(links_data, f, indent=2, ensure_ascii=False)
 
 
+def reoptimize_with_replacement(tour_data: dict, gen_record: dict, original_poi: str, replacement_poi: str, city: str) -> dict:
+    """
+    Re-run itinerary optimizer with replacement POI.
+    Recalculates distances, timing, and order.
+
+    Args:
+        tour_data: Tour data dictionary
+        gen_record: Generation record with input parameters
+        original_poi: POI name to replace
+        replacement_poi: New POI name
+        city: City name
+
+    Returns:
+        Updated tour data dictionary with re-optimized itinerary
+    """
+    from trip_planner import ItineraryOptimizerAgent
+
+    # 1. Extract all POIs from tour
+    all_pois = []
+    for day in tour_data['itinerary']:
+        all_pois.extend(day['pois'])
+
+    # 2. Replace the POI in the list
+    replacement_poi_id = poi_name_to_id(replacement_poi)
+
+    # Load replacement POI full data
+    try:
+        replacement_data = load_poi_from_content(city, replacement_poi_id)
+        replacement_metadata = replacement_data.get('poi', {}).get('metadata', {})
+
+        # Create replacement POI object with metadata
+        replacement_poi_obj = {
+            'poi': replacement_poi,
+            'reason': f'Replacement for {original_poi}',
+            'suggested_day': 1,
+            'estimated_hours': replacement_metadata.get('estimated_hours', 2.0),
+            'priority': 'medium',
+            'coordinates': replacement_metadata.get('coordinates', {}),
+            'operation_hours': replacement_metadata.get('operation_hours', {}),
+            'visit_info': replacement_metadata.get('visit_info', {}),
+            'period': replacement_metadata.get('period'),
+            'date_built': replacement_metadata.get('date_built')
+        }
+    except Exception as e:
+        logger.warning(f"Could not load full data for replacement POI {replacement_poi}: {e}")
+        # Create minimal replacement object
+        replacement_poi_obj = {
+            'poi': replacement_poi,
+            'reason': f'Replacement for {original_poi}',
+            'suggested_day': 1,
+            'estimated_hours': 2.0,
+            'priority': 'medium',
+            'coordinates': {},
+            'operation_hours': {},
+            'visit_info': {}
+        }
+
+    # Find and replace the POI
+    for i, poi_obj in enumerate(all_pois):
+        if poi_obj['poi'] == original_poi:
+            all_pois[i] = replacement_poi_obj
+            logger.info(f"Replaced {original_poi} with {replacement_poi} in POI list for re-optimization")
+            break
+
+    # 3. Re-run optimizer
+    optimizer = ItineraryOptimizerAgent(config)
+
+    # Extract parameters from generation record
+    input_params = gen_record.get('input_parameters', {})
+    preferences = input_params.get('preferences', {})
+    duration_days = input_params.get('duration_days', len(tour_data['itinerary']))
+
+    # Get start time from first day
+    start_time = tour_data['itinerary'][0].get('start_time', '09:00') if tour_data['itinerary'] else '09:00'
+
+    logger.info(f"Re-optimizing tour with {len(all_pois)} POIs for {duration_days} days")
+
+    optimized_result = optimizer.optimize_itinerary(
+        selected_pois=all_pois,
+        city=city,
+        duration_days=duration_days,
+        start_time=start_time,
+        preferences=preferences
+    )
+
+    # 4. Update tour data with new optimization
+    tour_data['itinerary'] = optimized_result.get('itinerary', [])
+    tour_data['optimization_scores'] = optimized_result.get('optimization_scores', {})
+    tour_data['constraints_violated'] = optimized_result.get('constraints_violated', [])
+
+    logger.info(f"Re-optimization complete. New score: {tour_data['optimization_scores'].get('overall_score', 0):.2f}")
+
+    return tour_data
+
+
 @app.post("/tours/{tour_id}/replace-poi", response_model=POIReplacementResponse)
 def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
     """
@@ -1511,10 +1606,13 @@ def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
                 city
             )
         else:  # mode == 'reoptimize'
-            # TODO: Implement re-optimization mode in Phase 2
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="Re-optimization mode not yet implemented. Use 'simple' mode for now."
+            # Re-run optimizer with replacement POI
+            updated_tour = reoptimize_with_replacement(
+                tour_data,
+                gen_record,
+                request.original_poi,
+                request.replacement_poi,
+                city
             )
 
         # Update transcript links

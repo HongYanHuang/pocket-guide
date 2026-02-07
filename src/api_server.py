@@ -1281,6 +1281,66 @@ def poi_name_to_id(poi_name: str) -> str:
     return poi_name.lower().replace(' ', '-').replace('(', '').replace(')', '').replace("'", '')
 
 
+def update_backup_pois_for_replacement(tour_data: dict, gen_record: dict, original_poi: str, replacement_poi: str):
+    """
+    Update backup_pois structure when a POI is replaced.
+
+    When POI-A is replaced with POI-B:
+    1. Copy POI-A's backup list to POI-B
+    2. Add POI-A as a backup option for POI-B (bidirectional swap)
+    3. Load POI-B's original backups from generation record and merge
+
+    Args:
+        tour_data: Tour data dictionary
+        gen_record: Generation record with original backup POIs
+        original_poi: Original POI name that was replaced
+        replacement_poi: New POI name
+    """
+    if 'backup_pois' not in tour_data:
+        tour_data['backup_pois'] = {}
+
+    # Get original POI's backup list (if exists)
+    original_backups = tour_data['backup_pois'].get(original_poi, [])
+
+    # Get replacement POI's original backup list from generation record
+    gen_backup_pois = gen_record.get('poi_selection', {}).get('backup_pois', {})
+    replacement_backups = gen_backup_pois.get(replacement_poi, [])
+
+    # Build new backup list for replacement POI
+    new_backups = []
+    seen_pois = set()
+
+    # 1. Add original POI as first backup (bidirectional swap)
+    new_backups.append({
+        'poi': original_poi,
+        'similarity_score': 1.0,
+        'reason': 'Can swap back to original POI',
+        'substitute_scenario': 'Reverse the replacement'
+    })
+    seen_pois.add(original_poi)
+
+    # 2. Add original POI's backups
+    for backup in original_backups:
+        if backup['poi'] not in seen_pois:
+            new_backups.append(backup)
+            seen_pois.add(backup['poi'])
+
+    # 3. Add replacement POI's original backups from generation record
+    for backup in replacement_backups:
+        if backup['poi'] not in seen_pois:
+            new_backups.append(backup)
+            seen_pois.add(backup['poi'])
+
+    # Update backup_pois structure
+    tour_data['backup_pois'][replacement_poi] = new_backups
+
+    # Remove original POI's entry (it's no longer in the tour)
+    if original_poi in tour_data['backup_pois']:
+        del tour_data['backup_pois'][original_poi]
+
+    logger.info(f"Updated backup_pois: {replacement_poi} now has {len(new_backups)} backup options")
+
+
 def simple_poi_replacement(tour_data: dict, original_poi: str, replacement_poi: str, day_num: int, city: str) -> dict:
     """
     Simple POI swap - maintains order and timing.
@@ -1616,6 +1676,14 @@ def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
                 city
             )
 
+        # Update backup_pois structure
+        update_backup_pois_for_replacement(
+            updated_tour,
+            gen_record,
+            request.original_poi,
+            request.replacement_poi
+        )
+
         # Update transcript links
         update_transcript_links_for_replacement(
             tour_path,
@@ -1814,6 +1882,15 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
                     replacement_poi,
                     city
                 )
+
+        # Update backup_pois structure for all replacements
+        for replacement_item in request.replacements:
+            update_backup_pois_for_replacement(
+                updated_tour,
+                gen_record,
+                replacement_item.original_poi,
+                replacement_item.replacement_poi
+            )
 
         # Update transcript links for all replacements
         for replacement_item in request.replacements:

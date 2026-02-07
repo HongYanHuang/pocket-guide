@@ -454,6 +454,7 @@ const getEffectiveBackupPOIs = (originalPoiName) => {
 
   // Always include the original POI's backup options
   const originalBackups = tour.value.backup_pois[originalPoiName] || []
+
   for (const backup of originalBackups) {
     if (!seenPOIs.has(backup.poi)) {
       effectiveBackups.push(backup)
@@ -478,6 +479,7 @@ const getEffectiveBackupPOIs = (originalPoiName) => {
 
     // Add replacement POI's backup options
     const replacementBackups = tour.value.backup_pois[replacementPoi] || []
+
     for (const backup of replacementBackups) {
       if (!seenPOIs.has(backup.poi)) {
         effectiveBackups.push({

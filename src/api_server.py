@@ -1285,69 +1285,61 @@ def poi_name_to_id(poi_name: str) -> str:
 
 def update_backup_pois_for_replacement(tour_data: dict, gen_record: dict, original_poi: str, replacement_poi: str):
     """
-    Update backup_pois structure when a POI is replaced.
+    Simple swap in backup_pois structure.
 
-    When POI-A is replaced with POI-B:
-    1. Copy POI-A's backup list to POI-B
-    2. Add POI-A as a backup option for POI-B (bidirectional swap)
-    3. Load POI-B's original backups from generation record and merge
-    4. Filter out POIs that are already in the tour
+    Concept: Each itinerary position has a GROUP of POIs (1 selected + N backups).
+    When replacing, just swap which POI is selected vs backup in that group.
+
+    Example:
+        Before: Selected: Colosseum, Backups: [Theater of Marcellus, Circus Maximus]
+        Replace Colosseum → Theater of Marcellus
+        After:  Selected: Theater of Marcellus, Backups: [Colosseum, Circus Maximus]
 
     Args:
         tour_data: Tour data dictionary
-        gen_record: Generation record with original backup POIs
-        original_poi: Original POI name that was replaced
-        replacement_poi: New POI name
+        gen_record: Generation record (not used in simple mode, kept for compatibility)
+        original_poi: POI being replaced (currently selected)
+        replacement_poi: POI to select (currently in backups)
     """
     if 'backup_pois' not in tour_data:
         tour_data['backup_pois'] = {}
 
-    # Get all currently selected POIs in the tour (to filter them out from backups)
-    selected_pois = set()
-    for day in tour_data.get('itinerary', []):
-        for poi_obj in day.get('pois', []):
-            selected_pois.add(poi_obj['poi'])
-
-    # Get original POI's backup list (if exists)
+    # Get original POI's backup list
     original_backups = tour_data['backup_pois'].get(original_poi, [])
 
-    # Get replacement POI's original backup list from generation record
-    gen_backup_pois = gen_record.get('poi_selection', {}).get('backup_pois', {})
-    replacement_backups = gen_backup_pois.get(replacement_poi, [])
+    # Find and remove replacement_poi from the backup list
+    remaining_backups = [b for b in original_backups if b['poi'] != replacement_poi]
 
-    # Build new backup list for replacement POI
+    # Add original_poi to the remaining backups (it's now a backup option)
+    # Get the replacement_poi's metadata from the backup list
+    replacement_poi_metadata = None
+    for backup in original_backups:
+        if backup['poi'] == replacement_poi:
+            replacement_poi_metadata = backup
+            break
+
+    # Build new backup list for replacement_poi
     new_backups = []
-    seen_pois = set()
 
-    # 1. Add original POI as first backup (bidirectional swap)
+    # Add original POI as first backup
     new_backups.append({
         'poi': original_poi,
-        'similarity_score': 1.0,
-        'reason': 'Can swap back to original POI',
-        'substitute_scenario': 'Reverse the replacement'
+        'similarity_score': replacement_poi_metadata.get('similarity_score', 1.0) if replacement_poi_metadata else 1.0,
+        'reason': replacement_poi_metadata.get('reason', 'Alternative option') if replacement_poi_metadata else 'Original POI',
+        'substitute_scenario': replacement_poi_metadata.get('substitute_scenario', 'Swap back') if replacement_poi_metadata else 'Reverse replacement'
     })
-    seen_pois.add(original_poi)
 
-    # 2. Add original POI's backups (filter out already selected POIs)
-    for backup in original_backups:
-        if backup['poi'] not in seen_pois and backup['poi'] not in selected_pois:
-            new_backups.append(backup)
-            seen_pois.add(backup['poi'])
-
-    # 3. Add replacement POI's original backups from generation record (filter out selected)
-    for backup in replacement_backups:
-        if backup['poi'] not in seen_pois and backup['poi'] not in selected_pois:
-            new_backups.append(backup)
-            seen_pois.add(backup['poi'])
+    # Add all other backups (except the replacement_poi which is now selected)
+    new_backups.extend(remaining_backups)
 
     # Update backup_pois structure
     tour_data['backup_pois'][replacement_poi] = new_backups
 
-    # Remove original POI's entry (it's no longer in the tour)
+    # Remove original POI's entry (it's no longer selected)
     if original_poi in tour_data['backup_pois']:
         del tour_data['backup_pois'][original_poi]
 
-    logger.info(f"Updated backup_pois: {replacement_poi} now has {len(new_backups)} backup options (filtered from selected POIs)")
+    logger.info(f"Swapped POIs: {original_poi} → {replacement_poi}. New backup count: {len(new_backups)}")
 
 
 def simple_poi_replacement(tour_data: dict, original_poi: str, replacement_poi: str, day_num: int, city: str) -> dict:

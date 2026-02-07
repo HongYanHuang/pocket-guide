@@ -1291,6 +1291,7 @@ def update_backup_pois_for_replacement(tour_data: dict, gen_record: dict, origin
     1. Copy POI-A's backup list to POI-B
     2. Add POI-A as a backup option for POI-B (bidirectional swap)
     3. Load POI-B's original backups from generation record and merge
+    4. Filter out POIs that are already in the tour
 
     Args:
         tour_data: Tour data dictionary
@@ -1300,6 +1301,12 @@ def update_backup_pois_for_replacement(tour_data: dict, gen_record: dict, origin
     """
     if 'backup_pois' not in tour_data:
         tour_data['backup_pois'] = {}
+
+    # Get all currently selected POIs in the tour (to filter them out from backups)
+    selected_pois = set()
+    for day in tour_data.get('itinerary', []):
+        for poi_obj in day.get('pois', []):
+            selected_pois.add(poi_obj['poi'])
 
     # Get original POI's backup list (if exists)
     original_backups = tour_data['backup_pois'].get(original_poi, [])
@@ -1321,15 +1328,15 @@ def update_backup_pois_for_replacement(tour_data: dict, gen_record: dict, origin
     })
     seen_pois.add(original_poi)
 
-    # 2. Add original POI's backups
+    # 2. Add original POI's backups (filter out already selected POIs)
     for backup in original_backups:
-        if backup['poi'] not in seen_pois:
+        if backup['poi'] not in seen_pois and backup['poi'] not in selected_pois:
             new_backups.append(backup)
             seen_pois.add(backup['poi'])
 
-    # 3. Add replacement POI's original backups from generation record
+    # 3. Add replacement POI's original backups from generation record (filter out selected)
     for backup in replacement_backups:
-        if backup['poi'] not in seen_pois:
+        if backup['poi'] not in seen_pois and backup['poi'] not in selected_pois:
             new_backups.append(backup)
             seen_pois.add(backup['poi'])
 
@@ -1340,7 +1347,7 @@ def update_backup_pois_for_replacement(tour_data: dict, gen_record: dict, origin
     if original_poi in tour_data['backup_pois']:
         del tour_data['backup_pois'][original_poi]
 
-    logger.info(f"Updated backup_pois: {replacement_poi} now has {len(new_backups)} backup options")
+    logger.info(f"Updated backup_pois: {replacement_poi} now has {len(new_backups)} backup options (filtered from selected POIs)")
 
 
 def simple_poi_replacement(tour_data: dict, original_poi: str, replacement_poi: str, day_num: int, city: str) -> dict:

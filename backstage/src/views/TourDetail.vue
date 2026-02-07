@@ -246,7 +246,7 @@
                                 v-for="backup in getEffectiveBackupPOIs(poi.poi)"
                                 :key="backup.poi"
                                 style="padding: 10px; background: #f0f9ff; border-radius: 4px; margin-bottom: 8px"
-                                :style="{ opacity: isBackupPOIAvailable(backup.poi) ? 1 : 0.5 }"
+                                :style="{ opacity: isBackupPOIAvailable(backup.poi, poi.poi) ? 1 : 0.5 }"
                               >
                                 <div style="display: flex; justify-content: space-between; align-items: start">
                                   <div style="flex: 1">
@@ -264,7 +264,7 @@
                                         {{ (backup.similarity_score * 100).toFixed(0) }}% similar
                                       </el-tag>
                                       <el-tag
-                                        v-if="!isBackupPOIAvailable(backup.poi)"
+                                        v-if="!isBackupPOIAvailable(backup.poi, poi.poi)"
                                         size="small"
                                         type="info"
                                         style="margin-left: 8px"
@@ -285,7 +285,7 @@
                                     type="primary"
                                     size="small"
                                     @click="addPendingReplacement(poi.poi, backup, day.day)"
-                                    :disabled="!isBackupPOIAvailable(backup.poi)"
+                                    :disabled="!isBackupPOIAvailable(backup.poi, poi.poi)"
                                   >
                                     Replace
                                   </el-button>
@@ -513,8 +513,25 @@ const getEffectiveBackupPOIs = (originalPoiName) => {
 }
 
 // Check if a backup POI is available (not already selected)
-const isBackupPOIAvailable = (backupPoiName) => {
-  return !currentSelectedPOIs.value.has(backupPoiName)
+// Special case: Allow selecting a POI that's the target of a pending replacement (to reverse it)
+const isBackupPOIAvailable = (backupPoiName, originalPoiName) => {
+  // Check if this backup POI is already in the tour (including pending replacements)
+  if (!currentSelectedPOIs.value.has(backupPoiName)) {
+    return true // Not selected, available
+  }
+
+  // It's "selected" - but check if selecting it would REVERSE a pending replacement
+  // If there's a pending replacement X → backupPoiName, and we're looking at backupPoiName's backups,
+  // then we should allow clicking on X to reverse the replacement
+  for (const [origPoi, replacement] of Object.entries(pendingReplacements.value)) {
+    if (replacement.replacement_poi === originalPoiName && origPoi === backupPoiName) {
+      // This backup POI (backupPoiName) is being replaced by originalPoiName in pending
+      // Clicking it would cancel that replacement
+      return true
+    }
+  }
+
+  return false // Already selected and not a reversal
 }
 
 // Check if a POI has pending replacement

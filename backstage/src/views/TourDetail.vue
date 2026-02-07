@@ -17,7 +17,7 @@
       <!-- Loading State -->
       <div v-if="loading" style="text-align: center; padding: 40px">
         <el-icon class="is-loading" :size="30">
-          <loading />
+          <Loading />
         </el-icon>
         <p style="margin-top: 10px">Loading tour...</p>
       </div>
@@ -304,7 +304,7 @@
                     style="text-align: center; margin-bottom: 15px"
                   >
                     <el-icon :size="16" color="#909399">
-                      <arrow-down />
+                      <ArrowDown />
                     </el-icon>
                     <div style="color: #909399; font-size: 12px">
                       {{ poi.walking_time_to_next || 'Walking to next POI' }}

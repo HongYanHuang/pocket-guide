@@ -1638,14 +1638,22 @@ def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
             )
 
         # Validate: Replacement POI should be in backup list for original POI
-        backup_pois = gen_record.get('poi_selection', {}).get('backup_pois', {})
-        if request.original_poi not in backup_pois:
+        # Check tour_data.backup_pois (which includes replacement POIs)
+        # Fallback to gen_record for original POIs
+        backup_pois_from_tour = tour_data.get('backup_pois', {})
+        backup_pois_from_gen = gen_record.get('poi_selection', {}).get('backup_pois', {})
+
+        # Try tour_data first (has updates from replacements), fallback to gen_record
+        if request.original_poi in backup_pois_from_tour:
+            backup_list = backup_pois_from_tour[request.original_poi]
+        elif request.original_poi in backup_pois_from_gen:
+            backup_list = backup_pois_from_gen[request.original_poi]
+        else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"No backup POIs available for '{request.original_poi}'"
             )
 
-        backup_list = backup_pois[request.original_poi]
         backup_poi_obj = next(
             (b for b in backup_list if b['poi'] == request.replacement_poi),
             None
@@ -1802,7 +1810,9 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
             gen_record = json.load(f)
 
         # Get backup POIs list for validation
-        backup_pois = gen_record.get('poi_selection', {}).get('backup_pois', {})
+        # Check tour_data first (has updates from replacements), fallback to gen_record
+        backup_pois_from_tour = tour_data.get('backup_pois', {})
+        backup_pois_from_gen = gen_record.get('poi_selection', {}).get('backup_pois', {})
 
         # Validate all replacements before processing any
         for replacement_item in request.replacements:
@@ -1823,13 +1833,17 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
                 )
 
             # Validate: Replacement POI should be in backup list for original POI
-            if replacement_item.original_poi not in backup_pois:
+            # Try tour_data first, fallback to gen_record
+            if replacement_item.original_poi in backup_pois_from_tour:
+                backup_list = backup_pois_from_tour[replacement_item.original_poi]
+            elif replacement_item.original_poi in backup_pois_from_gen:
+                backup_list = backup_pois_from_gen[replacement_item.original_poi]
+            else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"No backup POIs available for '{replacement_item.original_poi}'"
                 )
 
-            backup_list = backup_pois[replacement_item.original_poi]
             backup_poi_obj = next(
                 (b for b in backup_list if b['poi'] == replacement_item.replacement_poi),
                 None

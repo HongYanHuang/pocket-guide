@@ -353,11 +353,10 @@
             </el-tag>
           </div>
 
-          <!-- Mode Selection -->
-          <el-radio-group v-model="replacementMode" size="small">
-            <el-radio label="simple">Simple Save</el-radio>
-            <el-radio label="reoptimize">Re-optimize</el-radio>
-          </el-radio-group>
+          <!-- Info -->
+          <div style="font-size: 12px; color: #909399">
+            Keep current order and timing
+          </div>
 
           <!-- Actions -->
           <div style="display: flex; gap: 10px; margin-left: auto">
@@ -372,16 +371,6 @@
               Save Changes
             </el-button>
           </div>
-        </div>
-
-        <!-- Mode Description -->
-        <div style="margin-top: 10px; font-size: 12px; color: #909399">
-          <span v-if="replacementMode === 'simple'">
-            Keep current order and timing
-          </span>
-          <span v-else style="color: #E6A23C">
-            ⚠️ Re-optimization may change POI order and timing
-          </span>
         </div>
       </div>
     </transition>
@@ -405,7 +394,6 @@ const transcriptLoading = ref({})
 
 // POI Replacement state
 const pendingReplacements = ref({}) // Map: original_poi -> { replacement_poi, day }
-const replacementMode = ref('simple')
 const savingReplacements = ref(false)
 
 // Computed total POIs
@@ -610,7 +598,7 @@ const saveAllReplacements = async () => {
       `http://localhost:8000/tours/${tourId}/replace-pois-batch`,
       {
         replacements: replacements,
-        mode: replacementMode.value,
+        mode: 'simple',
         language: language
       }
     )

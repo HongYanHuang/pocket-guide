@@ -1168,8 +1168,10 @@ def get_tour(tour_id: str, language: str = "en"):
             ))
 
         # Parse backup POIs
+        # Load from tour_data (which includes updates from replacements)
+        # Fallback to gen_record if not present in tour_data (for old tours)
         backup_pois = {}
-        raw_backup = gen_record.get('poi_selection', {}).get('backup_pois', {})
+        raw_backup = tour_data.get('backup_pois', {}) or gen_record.get('poi_selection', {}).get('backup_pois', {})
         for poi_name, backups in raw_backup.items():
             backup_pois[poi_name] = [BackupPOI(**b) for b in backups]
 

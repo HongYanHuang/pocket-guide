@@ -84,15 +84,37 @@ Discover top attractions using AI.
   --poi-name "Eiffel Tower" \
   --city "Paris" \
   --language en
+
+# Skip research (faster, basic content)
+./pocket-guide generate \
+  --poi-name "Eiffel Tower" \
+  --city "Paris" \
+  --skip-research
+
+# Force re-research (update existing research data)
+./pocket-guide generate \
+  --poi-name "Eiffel Tower" \
+  --city "Paris" \
+  --force-research
 ```
+
+**Options:**
+- `--skip-research`: Skip research phase (fast, basic content)
+- `--force-research`: Re-do research even if cached
 
 #### Batch Generation (Recommended)
 ```bash
 ./pocket-guide poi batch-generate <file> --city <city>
 
-# Example
+# Examples
 ./pocket-guide poi batch-generate pois.txt --city Rome
+./pocket-guide poi batch-generate pois.txt --city Rome --skip-research  # Faster
+./pocket-guide poi batch-generate pois.txt --city Rome --force  # Regenerate all
 ```
+
+**Options:**
+- `--skip-research`: Skip research phase (faster, less rich)
+- `--force`: Force regeneration even if content exists
 
 **Features:**
 - ✅ Auto-resumes from failures
@@ -337,10 +359,10 @@ pocket-guide/
 poi research <city> [--count N] [--provider NAME]
 
 # Generate single
-generate --poi-name "NAME" --city "CITY" [--language LANG]
+generate --poi-name "NAME" --city "CITY" [--language LANG] [--skip-research] [--force-research]
 
 # Generate batch
-poi batch-generate <file> --city <city> [--force]
+poi batch-generate <file> --city <city> [--skip-research] [--force]
 
 # Check duplicates
 poi check-redundancy <city>
@@ -388,6 +410,7 @@ python3 generate_missing_research.py
 ### Speed vs Quality
 - **With research** (default): Rich content, ~10 min/POI
 - **Without research** (`--skip-research`): Fast, ~2 min/POI, basic content
+- **Re-research** (`--force-research`): Update existing research data
 
 ### Provider Comparison
 - **Anthropic (Claude)**: Best storytelling, most dramatic

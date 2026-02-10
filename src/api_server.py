@@ -1454,10 +1454,14 @@ def update_transcript_links_for_replacement(tour_path: Path, original_poi: str, 
         json.dump(links_data, f, indent=2, ensure_ascii=False)
 
 
-def reoptimize_with_replacement(tour_data: dict, gen_record: dict, original_poi: str, replacement_poi: str, city: str) -> dict:
+def reoptimize_with_replacement(tour_data: dict, gen_record: dict, original_poi: str, replacement_poi: str, city: str, day: int) -> dict:
     """
-    Re-run itinerary optimizer with replacement POI.
-    Recalculates distances, timing, and order.
+    Re-run itinerary optimizer with replacement POI using smart 3-tier strategy.
+
+    Uses ItineraryReoptimizer which selects optimal strategy:
+    - Tier 1: Local swap for single POI on small day
+    - Tier 2: Day-level optimization for few affected days
+    - Tier 3: Full tour re-optimization for many affected days
 
     Args:
         tour_data: Tour data dictionary
@@ -1465,86 +1469,54 @@ def reoptimize_with_replacement(tour_data: dict, gen_record: dict, original_poi:
         original_poi: POI name to replace
         replacement_poi: New POI name
         city: City name
+        day: Day number where replacement occurs
 
     Returns:
         Updated tour data dictionary with re-optimized itinerary
     """
-    from trip_planner import ItineraryOptimizerAgent
+    from trip_planner.itinerary_reoptimizer import ItineraryReoptimizer
 
-    # 1. Extract all POIs from tour
-    all_pois = []
-    for day in tour_data['itinerary']:
-        all_pois.extend(day['pois'])
+    # Create reoptimizer instance
+    reoptimizer = ItineraryReoptimizer(config)
 
-    # 2. Replace the POI in the list
-    replacement_poi_id = poi_name_to_id(replacement_poi)
+    # Prepare replacement list
+    replacements = [{
+        'original_poi': original_poi,
+        'replacement_poi': replacement_poi,
+        'day': day
+    }]
 
-    # Load replacement POI full data
-    try:
-        replacement_data = load_poi_from_content(city, replacement_poi_id)
-        replacement_metadata = replacement_data.get('poi', {}).get('metadata', {})
-
-        # Create replacement POI object with metadata
-        replacement_poi_obj = {
-            'poi': replacement_poi,
-            'reason': f'Replacement for {original_poi}',
-            'suggested_day': 1,
-            'estimated_hours': replacement_metadata.get('estimated_hours', 2.0),
-            'priority': 'medium',
-            'coordinates': replacement_metadata.get('coordinates', {}),
-            'operation_hours': replacement_metadata.get('operation_hours', {}),
-            'visit_info': replacement_metadata.get('visit_info', {}),
-            'period': replacement_metadata.get('period'),
-            'date_built': replacement_metadata.get('date_built')
-        }
-    except Exception as e:
-        logger.warning(f"Could not load full data for replacement POI {replacement_poi}: {e}")
-        # Create minimal replacement object
-        replacement_poi_obj = {
-            'poi': replacement_poi,
-            'reason': f'Replacement for {original_poi}',
-            'suggested_day': 1,
-            'estimated_hours': 2.0,
-            'priority': 'medium',
-            'coordinates': {},
-            'operation_hours': {},
-            'visit_info': {}
-        }
-
-    # Find and replace the POI
-    for i, poi_obj in enumerate(all_pois):
-        if poi_obj['poi'] == original_poi:
-            all_pois[i] = replacement_poi_obj
-            logger.info(f"Replaced {original_poi} with {replacement_poi} in POI list for re-optimization")
-            break
-
-    # 3. Re-run optimizer
-    optimizer = ItineraryOptimizerAgent(config)
-
-    # Extract parameters from generation record
+    # Extract preferences from generation record
     input_params = gen_record.get('input_parameters', {})
     preferences = input_params.get('preferences', {})
-    duration_days = input_params.get('duration_days', len(tour_data['itinerary']))
 
-    # Get start time from first day
-    start_time = tour_data['itinerary'][0].get('start_time', '09:00') if tour_data['itinerary'] else '09:00'
+    logger.info(f"Re-optimizing tour: replacing {original_poi} with {replacement_poi} on day {day}")
 
-    logger.info(f"Re-optimizing tour with {len(all_pois)} POIs for {duration_days} days")
-
-    optimized_result = optimizer.optimize_itinerary(
-        selected_pois=all_pois,
+    # Run smart re-optimization
+    result = reoptimizer.reoptimize(
+        tour_data=tour_data,
+        replacements=replacements,
         city=city,
-        duration_days=duration_days,
-        start_time=start_time,
         preferences=preferences
     )
 
-    # 4. Update tour data with new optimization
-    tour_data['itinerary'] = optimized_result.get('itinerary', [])
-    tour_data['optimization_scores'] = optimized_result.get('optimization_scores', {})
-    tour_data['constraints_violated'] = optimized_result.get('constraints_violated', [])
+    # Update tour data with re-optimized itinerary
+    tour_data['itinerary'] = result['itinerary']
+    tour_data['optimization_scores'] = result['optimization_scores']
+    tour_data['distance_cache'] = result['distance_cache']
 
-    logger.info(f"Re-optimization complete. New score: {tour_data['optimization_scores'].get('overall_score', 0):.2f}")
+    # Add metadata about re-optimization
+    if 'reoptimization_history' not in tour_data:
+        tour_data['reoptimization_history'] = []
+
+    tour_data['reoptimization_history'].append({
+        'timestamp': datetime.now().isoformat(),
+        'strategy_used': result['strategy_used'],
+        'replacements': replacements,
+        'scores': result['optimization_scores']
+    })
+
+    logger.info(f"Re-optimization complete using {result['strategy_used']} strategy. New score: {result['optimization_scores'].get('overall_score', 0):.2f}")
 
     return tour_data
 
@@ -1682,7 +1654,8 @@ def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
                 gen_record,
                 request.original_poi,
                 request.replacement_poi,
-                city
+                city,
+                request.day
             )
 
         # Update backup_pois structure
@@ -1868,35 +1841,54 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
                     city
                 )
         else:  # mode == 'reoptimize'
-            # For reoptimize mode, collect all replacements and apply them to the POI list
-            # Then run optimizer once with the new POI set
-            updated_tour = tour_data
+            # Use smart re-optimization with 3-tier strategy
+            from trip_planner.itinerary_reoptimizer import ItineraryReoptimizer
 
-            # Build a mapping of original -> replacement
-            replacement_map = {
-                item.original_poi: item.replacement_poi
+            # Create reoptimizer instance
+            reoptimizer = ItineraryReoptimizer(config)
+
+            # Prepare replacement list
+            replacements_list = [
+                {
+                    'original_poi': item.original_poi,
+                    'replacement_poi': item.replacement_poi,
+                    'day': item.day
+                }
                 for item in request.replacements
-            }
+            ]
 
-            # Apply all replacements to get the new POI list
-            for original_poi, replacement_poi in replacement_map.items():
-                # Get all POIs from current tour
-                all_pois = []
-                for day in updated_tour['itinerary']:
-                    for poi_obj in day['pois']:
-                        all_pois.append(poi_obj['poi'])
+            # Extract preferences from generation record
+            input_params = gen_record.get('input_parameters', {})
+            preferences = input_params.get('preferences', {})
 
-                # Replace this POI in the list
-                updated_pois = [replacement_poi if p == original_poi else p for p in all_pois]
+            logger.info(f"Re-optimizing tour with {len(replacements_list)} replacement(s)")
 
-                # Re-run optimizer with updated POI list
-                updated_tour = reoptimize_with_replacement(
-                    updated_tour,
-                    gen_record,
-                    original_poi,
-                    replacement_poi,
-                    city
-                )
+            # Run smart re-optimization (handles all replacements at once)
+            result = reoptimizer.reoptimize(
+                tour_data=tour_data,
+                replacements=replacements_list,
+                city=city,
+                preferences=preferences
+            )
+
+            # Update tour data with re-optimized itinerary
+            updated_tour = tour_data
+            updated_tour['itinerary'] = result['itinerary']
+            updated_tour['optimization_scores'] = result['optimization_scores']
+            updated_tour['distance_cache'] = result['distance_cache']
+
+            # Add metadata about re-optimization
+            if 'reoptimization_history' not in updated_tour:
+                updated_tour['reoptimization_history'] = []
+
+            updated_tour['reoptimization_history'].append({
+                'timestamp': datetime.now().isoformat(),
+                'strategy_used': result['strategy_used'],
+                'replacements': replacements_list,
+                'scores': result['optimization_scores']
+            })
+
+            logger.info(f"Re-optimization complete using {result['strategy_used']} strategy. New score: {result['optimization_scores'].get('overall_score', 0):.2f}")
 
         # Update backup_pois structure for all replacements
         for replacement_item in request.replacements:

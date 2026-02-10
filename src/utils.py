@@ -637,3 +637,46 @@ def get_tour_filename(base: str, language: str, version: Optional[str] = None) -
     if version:
         return f"{base}_{version}_{language}.json"
     return f"{base}_{language}.json"
+
+
+def load_poi_metadata_from_research(city: str, poi_name: str) -> Dict[str, Any]:
+    """
+    Load POI metadata from research YAML file.
+
+    This is used by the itinerary optimizer and reoptimizer to get
+    POI coordinates, hours, visit info, etc.
+
+    Args:
+        city: City name
+        poi_name: POI name
+
+    Returns:
+        Dict with coordinates, operation_hours, visit_info, period, etc.
+        Returns empty dict if metadata not found.
+    """
+    poi_research_dir = Path("poi_research") / city
+
+    # Try different naming conventions
+    yaml_files = list(poi_research_dir.glob(f"{poi_name.replace(' ', '_')}.yaml"))
+    if not yaml_files:
+        yaml_files = list(poi_research_dir.glob(f"{poi_name.replace(' ', '-')}.yaml"))
+
+    if not yaml_files:
+        return {}
+
+    with open(yaml_files[0], 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+
+    poi_data = data.get('poi', {})
+    metadata = poi_data.get('metadata', {})
+    basic_info = poi_data.get('basic_info', {})
+    visit_info = metadata.get('visit_info', {})
+
+    return {
+        'coordinates': metadata.get('coordinates', {}),
+        'operation_hours': metadata.get('operation_hours', {}),
+        'visit_info': visit_info,
+        'period': basic_info.get('period', ''),
+        'date_built': basic_info.get('date_built', ''),
+        'estimated_hours': visit_info.get('typical_duration_minutes', 120) / 60.0
+    }

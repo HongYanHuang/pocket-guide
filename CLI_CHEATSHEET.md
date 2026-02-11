@@ -28,11 +28,242 @@ python3 extract_pois.py Rome > rome_pois.txt
 
 ## 📚 Table of Contents
 
+- [Workflow Diagrams](#-workflow-diagrams)
 - [Server Management](#-server-management)
 - [POI Operations](#-poi-operations)
 - [Trip Planning](#-trip-planning)
 - [Common Workflows](#-common-workflows)
 - [Troubleshooting](#-troubleshooting)
+
+---
+
+## 📊 Workflow Diagrams
+
+### Complete POI Generation Workflow
+
+```mermaid
+flowchart TD
+    Start([Start: Generate POI Content]) --> Research{Research Phase}
+
+    Research -->|--skip-research| NoResearch[Use description only]
+    Research -->|Default| CheckCache{Research cached?}
+
+    CheckCache -->|Yes + --force-research| DoResearch[Run Research Agent<br/>11 API calls]
+    CheckCache -->|Yes| UseCache[Use cached research]
+    CheckCache -->|No| DoResearch
+
+    NoResearch --> Generate[Generate Transcript<br/>1 API call]
+    UseCache --> Generate
+    DoResearch --> Generate
+
+    Generate --> Verify{--verify flag?}
+
+    Verify -->|No| Save[Save transcript<br/>Create new version]
+    Verify -->|Yes| CheckCoverage{Coverage ≥ 60%?}
+
+    CheckCoverage -->|Yes| Save
+    CheckCoverage -->|No| Refine[Refine transcript<br/>+1 API call]
+
+    Refine --> ReCheck{Coverage ≥ 60%?}
+    ReCheck -->|Yes| Save
+    ReCheck -->|No, retry < 3| Refine
+    ReCheck -->|No, retry = 3| Save
+
+    Save --> End([Done: Content Saved])
+
+    style Start fill:#e1f5e1
+    style End fill:#e1f5e1
+    style DoResearch fill:#fff4e6
+    style Generate fill:#e3f2fd
+    style Refine fill:#f3e5f5
+    style Save fill:#e8f5e9
+```
+
+### Batch Generation Workflow
+
+```mermaid
+flowchart TD
+    Start([Start: Batch Generate]) --> LoadFile[Load POI names from file]
+    LoadFile --> CheckCity{City specified?}
+
+    CheckCity -->|No| Error1[Error: --city required]
+    CheckCity -->|Yes| LoadCandidates[Load research_candidates.json]
+
+    LoadCandidates --> FilterSkipped[Filter skip: true POIs]
+    FilterSkipped --> Loop{For each POI}
+
+    Loop --> CheckExists{Transcript exists<br/>for language?}
+
+    CheckExists -->|Yes + no --force| Skip[⊘ Skip POI]
+    CheckExists -->|Yes + --force| GenPOI[⚡ Generate POI]
+    CheckExists -->|No| GenPOI
+
+    GenPOI --> Research{--skip-research?}
+    Research -->|Yes| QuickGen[Generate without research<br/>~2 min]
+    Research -->|No| FullGen[Generate with research<br/>~10 min]
+
+    QuickGen --> VerifyCheck{--verify?}
+    FullGen --> VerifyCheck
+
+    VerifyCheck -->|Yes| DoVerify[Verify coverage<br/>60-100%]
+    VerifyCheck -->|No| SavePOI[✓ Save POI]
+
+    DoVerify --> SavePOI
+    SavePOI --> Track[Track success/failure]
+    Skip --> Track
+
+    Track --> More{More POIs?}
+    More -->|Yes| Loop
+    More -->|No| Summary[Show summary:<br/>✓ Succeeded<br/>✗ Failed<br/>⊘ Skipped]
+
+    Summary --> End([Done: Batch Complete])
+    Error1 --> End
+
+    style Start fill:#e1f5e1
+    style End fill:#e1f5e1
+    style GenPOI fill:#e3f2fd
+    style QuickGen fill:#fff4e6
+    style FullGen fill:#fff4e6
+    style SavePOI fill:#e8f5e9
+    style Skip fill:#f5f5f5
+```
+
+### Trip Planning Workflow
+
+```mermaid
+flowchart TD
+    Start([Start: Plan Trip]) --> Params[Get parameters:<br/>city, days, interests,<br/>language, pace]
+
+    Params --> LoadPOIs[Load all POIs from<br/>poi_research/City/]
+
+    LoadPOIs --> SelectPOIs[AI selects 8-12 POIs<br/>matching interests<br/>1 API call]
+
+    SelectPOIs --> Backups[AI provides 2-3<br/>backup POIs per selection]
+
+    Backups --> Optimize[Optimize itinerary:<br/>- Minimize walking<br/>- Maximize coherence<br/>- 8h per day]
+
+    Optimize --> CheckLang{Language = en?}
+
+    CheckLang -->|Yes| SaveTour[Save tour]
+    CheckLang -->|No| CheckTranscripts{Check POI transcripts<br/>for target language}
+
+    CheckTranscripts --> Loop{For each POI}
+
+    Loop --> TransExists{Transcript exists<br/>in target language?}
+
+    TransExists -->|Yes| NextPOI[✓ Use existing]
+    TransExists -->|No| GenTrans[⚡ Generate transcript<br/>in target language<br/>~10 min]
+
+    NextPOI --> MorePOIs{More POIs?}
+    GenTrans --> MorePOIs
+
+    MorePOIs -->|Yes| Loop
+    MorePOIs -->|No| SaveTour
+
+    SaveTour --> Display[Display itinerary:<br/>- Day-by-day schedule<br/>- Walking distances<br/>- Optimization scores]
+
+    Display --> SaveFlag{--save flag?}
+
+    SaveFlag -->|Yes| CreateFiles[Create tour files:<br/>- tour_lang.json<br/>- generation_record_lang.json<br/>- metadata.json]
+    SaveFlag -->|No| End([Done: Display Only])
+
+    CreateFiles --> End2([Done: Tour Saved])
+
+    style Start fill:#e1f5e1
+    style End fill:#e1f5e1
+    style End2 fill:#e1f5e1
+    style SelectPOIs fill:#e3f2fd
+    style GenTrans fill:#fff4e6
+    style SaveTour fill:#e8f5e9
+```
+
+### Research Phase Detail
+
+```mermaid
+flowchart TD
+    Start([Research Phase]) --> Agent1[1. Research Agent<br/>Basic info + categories]
+
+    Agent1 --> Agent2[2. Historical Context<br/>Period, date, significance]
+
+    Agent2 --> Agent3[3. Core Features<br/>5-7 key features]
+
+    Agent3 --> Agent4[4. Feature Details<br/>Deep dive each feature]
+
+    Agent4 --> Agent5[5. People & Stories<br/>Historical figures]
+
+    Agent5 --> Agent6[6. Dramatic Moments<br/>Pivotal events]
+
+    Agent6 --> Agent7[7. Sensory Details<br/>Sounds, smells, visuals]
+
+    Agent7 --> Agent8[8. Modern Context<br/>Current state]
+
+    Agent8 --> Agent9[9. Visitor Tips<br/>Practical info]
+
+    Agent9 --> Agent10[10. Connections<br/>Related POIs]
+
+    Agent10 --> Agent11[11. References<br/>Sources & links]
+
+    Agent11 --> Save[Save research YAML<br/>poi_research/City/poi.yaml]
+
+    Save --> End([Research Complete])
+
+    style Start fill:#e1f5e1
+    style End fill:#e8f5e9
+    style Agent1 fill:#e3f2fd
+    style Agent2 fill:#e3f2fd
+    style Agent3 fill:#e3f2fd
+    style Agent4 fill:#e3f2fd
+    style Agent5 fill:#e3f2fd
+    style Agent6 fill:#e3f2fd
+    style Agent7 fill:#e3f2fd
+    style Agent8 fill:#e3f2fd
+    style Agent9 fill:#e3f2fd
+    style Agent10 fill:#e3f2fd
+    style Agent11 fill:#e3f2fd
+    style Save fill:#e8f5e9
+```
+
+### Flag Decision Tree
+
+```mermaid
+flowchart TD
+    Start([Choose Generation Mode]) --> Question1{Need full research?}
+
+    Question1 -->|Yes| Question2{Research exists?}
+    Question1 -->|No| UseSkip[Use --skip-research<br/>Fast: ~2 min/POI<br/>Basic content]
+
+    Question2 -->|Yes, up-to-date| Default[Use default<br/>Medium: ~10 min/POI<br/>Rich content]
+    Question2 -->|Yes, outdated| UseForce[Use --force-research<br/>Slow: ~10 min/POI<br/>Updated research]
+    Question2 -->|No| Default
+
+    Default --> Question3{Need quality check?}
+    UseSkip --> Question3
+    UseForce --> Question3
+
+    Question3 -->|Yes, ensure coverage| AddVerify[Add --verify<br/>+1-2 API calls<br/>60-100% coverage]
+    Question3 -->|No, trust output| NoVerify[No --verify<br/>Faster, lower cost]
+
+    AddVerify --> Question4{Batch mode?}
+    NoVerify --> Question4
+
+    Question4 -->|Yes| Question5{Regenerate existing?}
+    Question4 -->|No| Single[Single POI mode]
+
+    Question5 -->|Yes| AddForceFlag[Add --force<br/>Regenerate all POIs]
+    Question5 -->|No| AutoResume[Auto-resume<br/>Skip existing POIs]
+
+    AddForceFlag --> End([Run Command])
+    AutoResume --> End
+    Single --> End
+
+    style Start fill:#e1f5e1
+    style End fill:#e8f5e9
+    style UseSkip fill:#fff4e6
+    style Default fill:#e3f2fd
+    style UseForce fill:#f3e5f5
+    style AddVerify fill:#fff3cd
+    style NoVerify fill:#d1ecf1
+```
 
 ---
 

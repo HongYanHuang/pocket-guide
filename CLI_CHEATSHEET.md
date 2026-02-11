@@ -1,747 +1,247 @@
 # Pocket Guide CLI Cheatsheet
 
-Quick reference for all CLI commands in the Pocket Guide project.
-
-## ⚠️ Important: How to Run Commands
-
-All commands in this cheatsheet use `./pocket-guide` which must be run from the project root directory:
-
-```bash
-# Make sure you're in the project directory
-cd /path/to/pocket-guide
-
-# Run commands with ./
-./pocket-guide poi research Rome --count 50
-```
-
-**Alternative: Add to PATH** (optional)
-```bash
-# Add project directory to PATH in ~/.zshrc or ~/.bashrc
-export PATH="/path/to/pocket-guide:$PATH"
-
-# Then you can run without ./
-pocket-guide poi research Rome --count 50
-```
+Quick reference for the Pocket Guide CLI - optimized for readability and quick lookup.
 
 ---
 
-## 🎯 Quick Start: Complete Workflow
+## 🚀 Quick Start
+
+### Complete Workflow (30 minutes)
 
 ```bash
-# Step 1: Research POIs (AI discovers top attractions)
-./pocket-guide poi research Rome --count 30 --provider anthropic
-# ↓ Creates: poi_research/Rome/research_candidates.json
+# 1. Research POIs (AI discovers attractions)
+./pocket-guide poi research Rome --count 30
 
-# Step 2: Check for duplicates (optional, skip for new cities)
-./pocket-guide poi check-redundancy Rome
-# ↓ Updates: research_candidates.json with skip:true for duplicates
-
-# Step 3: Create input file (one POI name per line)
+# 2. Extract POI names to file
 python3 extract_pois.py Rome > rome_pois.txt
 
-# Step 4: Generate content (5-10 min per POI)
+# 3. Generate content (5-10 min per POI)
 ./pocket-guide poi batch-generate rome_pois.txt --city Rome
-# ↓ Creates: content/rome/<poi-id>/{transcript.txt, summary.txt, metadata.json}
+
+# 4. Plan a trip
+./pocket-guide trip plan --city Rome --days 3 --interests history --save
 ```
 
-**That's it!** Now you have full tour guide content for your POIs.
+**That's it!** You now have a complete tour guide with optimized itinerary.
 
 ---
 
-## 📋 Table of Contents
+## 📚 Table of Contents
 
-- [Quick Start: Complete Workflow](#quick-start-complete-workflow)
-- [Server Management](#server-management)
-- [POI Research & Discovery](#poi-research--discovery)
-- [POI Content Generation](#poi-content-generation)
-- [Batch Operations](#batch-operations)
-- [Trip Planning](#trip-planning)
-- [Metadata Management](#metadata-management)
-- [Utility Scripts](#utility-scripts)
+- [Server Management](#-server-management)
+- [POI Operations](#-poi-operations)
+- [Trip Planning](#-trip-planning)
+- [Common Workflows](#-common-workflows)
+- [Troubleshooting](#-troubleshooting)
+- [Appendix: Workflow Diagrams](#-appendix-workflow-diagrams)
 
 ---
 
-## 🚀 Server Management
+## 🖥️ Server Management
 
-### Start Development Servers
+### Start/Stop Development Servers
 
 ```bash
-# Start both backend and frontend (simple)
+# Start both backend + frontend
 ./start-dev.sh
 
-# Start both servers in tmux (advanced)
-./start-dev-tmux.sh
-
-# Start backend only
-source venv/bin/activate && python src/api_server.py
-
-# Start frontend only
-cd backstage && npm run dev
-```
-
-### Stop Development Servers
-
-```bash
 # Stop both servers
 ./stop-dev.sh
-
-# Stop backend only
-lsof -ti:8000 | xargs kill -9
-
-# Stop frontend only
-lsof -ti:5173 | xargs kill -9
 ```
 
-### Access Points
-
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-- **Frontend**: http://localhost:5173
+**Access:**
+- Backend API: http://localhost:8000/docs
+- Frontend: http://localhost:5173
 
 ---
 
-## 🔍 POI Research & Discovery
+## 🔍 POI Operations
 
-### Research POIs for a City
+### Research POIs
 
-Discover and research top POIs in a city using AI.
-
-```bash
-./pocket-guide poi research <city> [OPTIONS]
-
-# Examples:
-./pocket-guide poi research Paris --count 15
-./pocket-guide poi research Tokyo --provider anthropic
-./pocket-guide poi research Rome --count 50 --provider anthropic
-```
-
-**Options:**
-- `--count`: Number of POIs to research (default: 10, recommended: ≤30 for faster results)
-- `--provider`: AI provider (`anthropic`, `openai`, `google`)
-
-**Output:**
-- Creates `poi_research/<City>/research_candidates.json`
-- Lists POI candidates with metadata (name, description, category, historical_period)
-
-**⚠️ Note:**
-- Counts >30 may take 90+ seconds due to large response generation
-- Uses streaming API to prevent timeouts on large requests (count=50 works!)
-- Dynamic token allocation: `count × 250 + 500` tokens
-
-**What to do next?**
-
-1. **Review the results:**
-   ```bash
-   cat poi_research/Rome/research_candidates.json | python3 -m json.tool
-   ```
-
-2. **Check for duplicates** (if you have existing POIs):
-   ```bash
-   ./pocket-guide poi check-redundancy Rome
-   ```
-
-3. **Create input file** with POI names (one per line):
-   ```bash
-   # Option A: Use the extraction script (recommended - fastest!)
-   python3 extract_pois.py Rome > rome_pois.txt
-
-   # Option B: Manually create the file
-   cat > rome_pois.txt << EOF
-   Colosseum
-   Roman Forum
-   Pantheon
-   EOF
-   ```
-
-4. **Generate content** for all POIs:
-   ```bash
-   ./pocket-guide poi batch-generate rome_pois.txt --city Rome
-   ```
-
-### Check for Duplicates
-
-Check if research candidates duplicate existing POIs.
+Discover top attractions using AI.
 
 ```bash
-./pocket-guide poi check-redundancy <city> [OPTIONS]
+./pocket-guide poi research <city> --count <number>
 
-# Examples:
-./pocket-guide poi check-redundancy Athens
-./pocket-guide poi check-redundancy Istanbul --provider anthropic
+# Examples
+./pocket-guide poi research Paris --count 20
+./pocket-guide poi research Tokyo --count 50 --provider anthropic
 ```
 
-**What it does:**
-- Compares candidates against existing POIs in `content/<city>/`
-- Marks duplicates with `skip: true` in research_candidates.json
-- Shows unique POIs ready for generation
+**Output:** `poi_research/<City>/research_candidates.json`
 
-### Extract POI Names to Text File
-
-Automatically extract POI names from research_candidates.json to create input file for batch generation.
-
-```bash
-python3 extract_pois.py <city> > <output_file>
-
-# Examples:
-python3 extract_pois.py Rome > rome_pois.txt
-python3 extract_pois.py Athens > athens_pois.txt
-
-# Include duplicates/skipped POIs
-python3 extract_pois.py Istanbul --include-skipped > istanbul_all_pois.txt
-```
-
-**Options:**
-- `--include-skipped`: Include POIs marked as duplicates (skip: true)
-
-**What it does:**
-- Reads `poi_research/<City>/research_candidates.json`
-- Extracts POI names (one per line)
-- By default, excludes duplicates (skip: true)
-- Prints to stdout (use `>` to save to file)
-
-**Output example** (rome_pois.txt):
-```
-Colosseum
-Roman Forum
-Pantheon
-Vatican Museums
-...
-```
+**Next steps:**
+1. Extract names: `python3 extract_pois.py <city> > pois.txt`
+2. Generate content: `./pocket-guide poi batch-generate pois.txt --city <city>`
 
 ---
 
-## 📝 POI Content Generation
+### Generate POI Content
 
-### Generate Single POI
-
-Generate tour guide content for one POI with full research.
-
+#### Single POI
 ```bash
 ./pocket-guide generate \
   --poi-name "Eiffel Tower" \
   --city "Paris" \
-  --provider anthropic \
-  --language English
+  --language en
 
-# With custom description:
+# Skip research (faster, basic content)
 ./pocket-guide generate \
-  --poi-name "Colosseum" \
-  --city "Rome" \
-  --description "Ancient amphitheater, gladiator battles" \
-  --provider openai
+  --poi-name "Eiffel Tower" \
+  --city "Paris" \
+  --skip-research
+
+# Force re-research (update existing research data)
+./pocket-guide generate \
+  --poi-name "Eiffel Tower" \
+  --city "Paris" \
+  --force-research
+
+# Enable verification (checks 60-100% coverage, costs more)
+./pocket-guide generate \
+  --poi-name "Eiffel Tower" \
+  --city "Paris" \
+  --verify
 ```
 
 **Options:**
-- `--poi-name`: POI name (required)
-- `--city`: City name (optional but recommended)
-- `--provider`: AI provider (`anthropic`, `openai`, `google`)
-- `--description`: Brief POI description
-- `--language`: Target language (ISO 639-1 code, e.g., `en`, `zh-tw`, `pt-br`, default: `en`)
-- `--skip-research`: Skip research phase (faster but less rich)
-- `--force-research`: Force re-research even if cached
+- `--skip-research`: Skip research phase (fast, basic content)
+- `--force-research`: Re-do research even if cached
+- `--verify`: Enable transcript verification (60-100% coverage check, increases cost)
+
+#### Batch Generation (Recommended)
+```bash
+./pocket-guide poi batch-generate <file> --city <city>
+
+# Examples
+./pocket-guide poi batch-generate pois.txt --city Rome
+./pocket-guide poi batch-generate pois.txt --city Rome --skip-research  # Faster
+./pocket-guide poi batch-generate pois.txt --city Rome --force  # Regenerate all
+./pocket-guide poi batch-generate pois.txt --city Rome --verify  # Enable verification
+```
+
+**Options:**
+- `--skip-research`: Skip research phase (faster, less rich)
+- `--force`: Force regeneration even if content exists
+- `--verify`: Enable transcript verification (60-100% coverage, costs more)
+
+**Features:**
+- ✅ Auto-resumes from failures
+- ✅ Smart verification (optional with `--verify`)
+- ✅ API retry logic (5 attempts)
+- ⏱️ ~5-10 minutes per POI
+- 📊 Coverage check: 60-100% of research (with `--verify`)
 
 **Output:**
-- `content/<city>/<poi-id>/transcript_{language}.txt` - Tour narration (e.g., `transcript_zh-tw.txt`)
-- `content/<city>/<poi-id>/summary.txt` - Key points
-- `content/<city>/<poi-id>/metadata.json` - Version history
-- `poi_research/<City>/<poi_name>.yaml` - Research data (always in English)
-
-**Language Support:**
-- Supports 40+ languages via ISO 639-1 codes
-- Research data always in English (unchanged)
-- Generated transcript in target language
-- Examples: `en`, `zh-tw`, `zh-cn`, `es-mx`, `pt-br`, `fr`, `de`, `ja`, `ko`, etc.
+- `content/<city>/<poi-id>/transcript_{language}.txt`
+- `content/<city>/<poi-id>/summary.txt`
+- `content/<city>/<poi-id>/metadata.json`
 
 ---
 
-## 🔄 Batch Operations
-
-### Batch Generate POIs
-
-Generate multiple POIs from a text file (one POI name per line).
+### Check for Duplicates
 
 ```bash
-./pocket-guide poi batch-generate <input_file> --city <city> [OPTIONS]
+./pocket-guide poi check-redundancy <city>
 
-# Examples:
-./pocket-guide poi batch-generate pois.txt --city Istanbul
-./pocket-guide poi batch-generate paris_pois.txt --city Paris --provider anthropic
-./pocket-guide poi batch-generate quick_batch.txt --city Athens --skip-research
+# Example
+./pocket-guide poi check-redundancy Athens
 ```
 
-**Input file format** (`pois.txt`):
-```
-Süleymaniye Mosque
-Blue Mosque
-Topkapı Palace
-Basilica Cistern
-```
-
-**Options:**
-- `--city`: City name (required)
-- `--provider`: AI provider (`anthropic`, `openai`, `google`)
-- `--skip-research`: Skip research for faster generation (NOT recommended)
-- `--force`: Force regeneration even if content already exists
-
-**Features:**
-- ✅ **Resumes from failures** - Skips POIs that already have content (use `--force` to regenerate)
-- Automatically skips POIs marked with `skip: true` in research_candidates.json
-- Creates versioned content with generation records
-- Calculates distances if Google Maps API is configured
-- Shows progress bar with success/failure tracking
-- ✅ **Smart verification loop** - Automatically improves transcript coverage (60-100%)
-- ✅ **API retry logic** - Handles rate limits & connection errors (5 retries with exponential backoff)
-- ✅ **100% reliability** - No more batch failures due to connection issues
-
-**⚠️ Important:**
-- By default, research IS generated (rich historical content)
-- Use `--skip-research` only for testing or when research exists
-- Each POI takes ~5-10 minutes with full research (11 API calls)
-- Automatic 500ms delays prevent API rate limiting
-
-**Resuming after failures:**
-```bash
-# If batch-generate fails midway, just run it again!
-# It will automatically skip POIs that already have content
-./pocket-guide poi batch-generate rome_pois.txt --city Rome
-
-# Output example:
-# ⊘ Colosseum (already exists, use --force to regenerate)
-# ⊘ Roman Forum (already exists, use --force to regenerate)
-# [cyan]Generating: Pantheon[/cyan]  ← Resumes from here
-
-# To regenerate ALL POIs (create new versions):
-./pocket-guide poi batch-generate rome_pois.txt --city Rome --force
-```
+Marks duplicates with `skip: true` in research_candidates.json.
 
 ---
 
 ## 🗺️ Trip Planning
 
-### Plan a Trip Itinerary
-
-Generate an optimized trip itinerary by selecting POIs and creating a day-by-day schedule.
+### Plan Itinerary
 
 ```bash
-./pocket-guide trip plan --city <city> --days <days> [OPTIONS]
+./pocket-guide trip plan \
+  --city <city> \
+  --days <number> \
+  --interests <interest> \
+  --language <lang> \
+  --save
 
-# Examples:
-./pocket-guide trip plan --city Rome --days 3 --interests history --interests architecture
-./pocket-guide trip plan --city Athens --days 2 --interests mythology --pace relaxed --save
-./pocket-guide trip plan --city Paris --days 5 --must-see "Eiffel Tower" --walking high --save
-
-# Multilanguage tour generation (automatically generates POI transcripts in target language):
-./pocket-guide trip plan --city Rome --days 2 --interests history --language zh-tw --save
-./pocket-guide trip plan --city Athens --days 3 --interests mythology --language es-mx --save
-./pocket-guide trip plan --city Paris --days 4 --interests art --language pt-br --save
-```
-
-**Required Options:**
-- `--city`: City name (e.g., Rome, Athens, Paris)
-- `--days`: Number of days for the trip
-
-**Optional:**
-- `--interests`: User interests (can specify multiple: `--interests history --interests art`)
-- `--provider`: AI provider for POI selection (`anthropic`, `openai`, `google`, default: anthropic)
-- `--must-see`: POIs that must be included (can specify multiple)
-- `--pace`: Trip pace (`relaxed`, `normal`, `packed`, default: normal)
-- `--walking`: Walking tolerance (`low`, `moderate`, `high`, default: moderate)
-- `--language`: Tour language (ISO 639-1 code, e.g., `en`, `zh-tw`, `pt-br`, default: `en`)
-- `--save`: Save the generated tour for later
-
-**What it does:**
-
-**Step 1: POI Selection (AI-powered)**
-- Loads all available POIs for the city from `poi_research/` (always in English)
-- Sends POI list + user preferences to Claude
-- AI selects 8-12 starting POIs that match your interests (in target language)
-- AI provides 2-3 backup POIs for each selected POI (alternatives if closed/crowded)
-- AI lists rejected POIs with reasons why they weren't selected
-- Dynamic token calculation: `poi_count × 150 + 1000` tokens
-
-**Step 2: Itinerary Optimization**
-- Arranges selected POIs into optimal daily schedule
-- Minimizes walking distance between POIs
-- Maximizes thematic coherence (similar POIs on same day)
-- Respects time constraints (8 hours per day)
-- Calculates walking times and distances
-
-**Step 3: Transcript Generation (Automatic - NEW)**
-- Checks if POI transcripts exist in target language
-- Automatically generates missing transcripts (uses English research data)
-- Smart caching: existing transcripts are reused, not regenerated
-- Each transcript generation takes ~5-10 minutes with full research
-- Progress displayed: "✓ exists" vs "⚡ generating"
-
-**Step 4: Tour Saving**
-- Creates language-specific tour files (e.g., `tour_zh-tw.json`)
-- Independent version tracking per language
-- Preserves full generation transparency and metadata
-
-**Output:**
-- Day-by-day itinerary with POI order, visit duration, walking times
-- Optimization scores (distance, coherence, overall)
-- If `--save` used: Creates tour in `tours/<city>/<tour-id>/`
-
-**Example Output:**
-```
-✓ Selected 10 POIs for itinerary
-  + 25 backup POIs available
-  + 12 POIs rejected
-
-Day 1 (7.5h total, 3.2km walking)
-  1. Colosseum (2.5h)
-  2. Roman Forum (2.0h) ← 10min walk
-  3. Palatine Hill (1.5h) ← 5min walk
-
-Day 2 (8.0h total, 4.1km walking)
-  1. Pantheon (1.0h)
-  2. Trevi Fountain (0.5h) ← 8min walk
-  ...
-```
-
-**Saved Tour Structure:**
-```
-tours/rome/rome-tour-20260129-111100-aa7baf/
-├── metadata.json                                # Tour metadata (tracks all languages)
-├── tour_en.json                                 # English tour (latest)
-├── tour_v1_2026-01-29_en.json                  # English tour v1
-├── tour_zh-tw.json                              # Chinese Traditional tour (latest)
-├── tour_v1_2026-02-05_zh-tw.json               # Chinese Traditional tour v1
-├── generation_record_v1_2026-01-29_en.json     # English generation record
-└── generation_record_v1_2026-02-05_zh-tw.json  # Chinese generation record
-```
-
-**Metadata Structure (language tracking):**
-```json
-{
-  "tour_id": "rome-tour-20260129-111100-aa7baf",
-  "city": "Rome",
-  "languages": ["en", "zh-tw"],
-  "current_version_en": 1,
-  "current_version_zh-tw": 1,
-  "version_history_en": [...],
-  "version_history_zh-tw": [...],
-  "created_at": "2026-01-29T11:11:00.000000",
-  "updated_at": "2026-02-05T12:12:50.288785"
-}
-```
-
-**Generation Record Contains:**
-```json
-{
-  "input_parameters": {
-    "city": "Rome",
-    "duration_days": 3,
-    "interests": ["history", "architecture"],
-    "preferences": {...}
-  },
-  "poi_selection": {
-    "backup_pois": {
-      "Colosseum": [
-        {
-          "poi": "Baths of Trajan",
-          "similarity_score": 0.85,
-          "reason": "Similar Roman imperial architecture, nearby location"
-        }
-      ]
-    },
-    "rejected_pois": [
-      {
-        "poi": "Modern Art Museum",
-        "reason": "Not historical/architectural focus"
-      }
-    ],
-    "total_backup_pois": 25,
-    "total_rejected_pois": 12
-  },
-  "optimization_scores": {
-    "distance_score": 0.85,
-    "coherence_score": 0.92,
-    "overall_score": 0.89
-  }
-}
-```
-
-### List Saved Tours
-
-View all saved tours for a city.
-
-```bash
-./pocket-guide trip list --city <city>
-
-# Examples:
-./pocket-guide trip list --city Rome
-./pocket-guide trip list --city Athens
-```
-
-**Output:**
-- Tour ID, creation date, duration, interests
-- **Available languages** for each tour (e.g., `en, zh-tw, pt-br`)
-- Latest version for each language
-
-### Show Tour Details
-
-Display full itinerary for a saved tour.
-
-```bash
-./pocket-guide trip show <tour-id> --city <city> [OPTIONS]
-
-# Examples:
-./pocket-guide trip show rome-tour-20260129-111100-aa7baf --city Rome
-./pocket-guide trip show rome-tour-20260129-111100-aa7baf --city Rome --language zh-tw
-./pocket-guide trip show athens-tour-20260130-140000-xyz789 --city Athens --language es-mx
+# Examples
+./pocket-guide trip plan --city Rome --days 3 --interests history --save
+./pocket-guide trip plan --city Athens --days 2 --interests mythology --language zh-tw --save
 ```
 
 **Options:**
 - `--city`: City name (required)
-- `--version`: Specific version number (optional, defaults to latest)
-- `--language`: Language version to load (default: `en`)
+- `--days`: Trip duration (required)
+- `--interests`: Multiple allowed (`--interests history --interests art`)
+- `--language`: ISO 639-1 code (default: `en`)
+- `--pace`: `relaxed`, `normal`, `packed`
+- `--walking`: `low`, `moderate`, `high`
+- `--must-see`: POIs to include
+- `--save`: Save the tour
+
+**What happens:**
+1. AI selects 8-12 POIs matching interests
+2. Provides 2-3 backup POIs per selection
+3. Optimizes daily schedule (minimize walking, maximize coherence)
+4. Auto-generates missing transcripts in target language
+5. Saves language-specific tour files
 
 **Output:**
-- Complete day-by-day itinerary in specified language
-- POI details, walking times, daily totals
-- User preferences and constraints
-- Language information
-
-**Features:**
-- ✅ **Full transparency** - See which POIs were selected, which are backups, which were rejected and why
-- ✅ **Smart POI selection** - AI matches POIs to your interests and preferences
-- ✅ **Backup POIs** - Alternative POIs that can substitute if needed (NOT in the tour)
-- ✅ **Optimization** - Minimizes walking distance while maximizing thematic coherence
-- ✅ **Versioning** - Each tour can have multiple versions with full history
-- ✅ **Dynamic scaling** - Token allocation scales with POI count (efficient for small cities, handles large cities)
-- ✅ **Multilanguage support** - Generate tours in any language (40+ languages supported)
-- ✅ **Automatic transcript generation** - Generates missing POI transcripts in target language
-- ✅ **Smart caching** - Existing transcripts reused, not regenerated
-- ✅ **Research stays English** - POI research data unchanged, only tour descriptions translated
-
-**⚠️ Requirements:**
-- City must have POIs in `poi_research/<City>/` directory
-- Run `./pocket-guide poi research <city> --count 30` first if needed
-- Distance matrix improves optimization but is optional
-
----
-
-## 📊 Metadata Management
-
-### Collect Metadata for City
-
-Fetch POI metadata (coordinates, hours, etc.) from Google Maps.
-
-```bash
-# Via API endpoint:
-curl -X POST http://localhost:8000/cities/<city>/collect
-
-# Examples:
-curl -X POST http://localhost:8000/cities/paris/collect
-curl -X POST http://localhost:8000/cities/athens/collect
 ```
+Day 1 (7.5h, 3.2km walking)
+  1. Colosseum (2.5h)
+  2. Roman Forum (2.0h) ← 10min walk
+  3. Palatine Hill (1.5h) ← 5min walk
 
-**Requirements:**
-- Google Maps API key configured in `config.yaml`
-
-**Output:**
-- Updates `content/<city>/<poi-id>/metadata.json` for each POI
-- Fetches: coordinates, address, hours, ratings, etc.
-- Calculates distance matrix between POIs
-
-### Recollect Single POI
-
-Re-fetch metadata for one POI:
-
-```bash
-curl -X POST http://localhost:8000/pois/<city>/<poi-id>/recollect
-
-# Example:
-curl -X POST http://localhost:8000/pois/athens/acropolis/recollect
-```
-
-### Verify Metadata Completeness
-
-Check which POIs have complete/incomplete metadata:
-
-```bash
-curl http://localhost:8000/cities/<city>/verify
-
-# Example:
-curl http://localhost:8000/cities/istanbul/verify | python3 -m json.tool
+✓ Tour saved: tours/rome/rome-tour-20260129-111100-aa7baf/
 ```
 
 ---
 
-## 🛠️ Utility Scripts
-
-### Generate Missing Research Data
-
-Backfill research YAML files for POIs created with `--skip-research`.
+### View Saved Tours
 
 ```bash
-# Use the custom script:
-python3 generate_missing_research.py
+# List all tours
+./pocket-guide trip list --city <city>
 
-# Or create custom script for specific POIs:
-python3 -c "
-from src.research_agent import ResearchAgent
-from src.utils import load_config
-import yaml
-from pathlib import Path
+# Show specific tour
+./pocket-guide trip show <tour-id> --city <city> --language <lang>
 
-config = load_config()
-agent = ResearchAgent(config)
-
-# Generate research for one POI
-data = agent.research_poi_recursive('POI Name', 'City', '', 'anthropic')
-
-# Save to file
-path = Path('poi_research/City/poi_name.yaml')
-path.parent.mkdir(parents=True, exist_ok=True)
-with open(path, 'w') as f:
-    yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-"
-```
-
----
-
-## 📂 File Structure Reference
-
-```
-pocket-guide/
-├── content/                    # Generated POI content
-│   └── <city>/                 # City folder (kebab-case)
-│       └── <poi-id>/           # POI folder (kebab-case)
-│           ├── transcript.txt  # Tour narration
-│           ├── summary.txt     # Key points (numbered)
-│           ├── metadata.json   # Version history + metadata
-│           └── generation_record_v*.json
-│
-├── poi_research/               # Research data
-│   └── <City>/                 # City folder (TitleCase)
-│       ├── research_candidates.json
-│       └── <poi_name>.yaml     # Research YAML (snake_case)
-│
-├── poi_distances/              # Distance matrices
-│   └── <city>_distances.json
-│
-└── backstage/                  # Admin frontend
-    └── src/
-        ├── views/
-        │   ├── TranscriptView.vue    # View/edit transcripts
-        │   └── ResearchView.vue      # View research data
-        └── components/
-            ├── ResearchStructured.vue
-            └── ResearchRaw.vue
+# Examples
+./pocket-guide trip list --city Rome
+./pocket-guide trip show rome-tour-20260129-111100-aa7baf --city Rome --language zh-tw
 ```
 
 ---
 
 ## 🔑 Common Workflows
 
-### Workflow 1: Generate Content for New City
+### Workflow 1: New City Setup
 
 ```bash
-# 1. Research POIs (discover top attractions using AI)
-./pocket-guide poi research "New York" --count 30 --provider anthropic
+# 1. Research POIs
+./pocket-guide poi research "New York" --count 30
 
-# Output: poi_research/New York/research_candidates.json
-# Contains: 30 POI candidates with names, descriptions, categories, historical periods
-
-# 2. Review the research results
-cat poi_research/New\ York/research_candidates.json | python3 -m json.tool
-
-# 3. Check for duplicates (skip if this is a brand new city)
-./pocket-guide poi check-redundancy "New York"
-
-# Output: Updates research_candidates.json with skip:true for duplicates
-# Shows: Which POIs are unique vs. duplicates
-
-# 4. Create input file with POI names (one per line)
-# Option A: Use extraction script (recommended - extracts all unique POIs)
+# 2. Extract names
 python3 extract_pois.py "New York" > nyc_pois.txt
 
-# Option B: Manually create from research results
-cat > nyc_pois.txt << EOF
-Statue of Liberty
-Central Park
-Empire State Building
-Brooklyn Bridge
-Times Square
-EOF
+# 3. Generate content
+./pocket-guide poi batch-generate nyc_pois.txt --city "New York"
 
-# 5. Batch generate content (5-10 min per POI with full research)
-./pocket-guide poi batch-generate nyc_pois.txt --city "New York" --provider anthropic
-
-# Features: Smart verification loop + API retry (100% reliability)
-# Output: transcript.txt, summary.txt, metadata.json for each POI
-
-# 6. Collect metadata (requires Google Maps API key in config.yaml)
+# 4. Collect metadata (optional - requires Google Maps API)
 curl -X POST http://localhost:8000/cities/new-york/collect
-
-# Output: Adds coordinates, hours, ratings, distance matrix
-
-# 7. View in backstage UI
-./start-dev.sh
-open http://localhost:5173
 ```
 
-### Workflow 2: Add Single POI to Existing City
+---
+
+### Workflow 2: Plan Multilanguage Trip
 
 ```bash
-# Generate with full research
-./pocket-guide generate \
-  --poi-name "Notre-Dame Cathedral" \
-  --city "Paris" \
-  --provider anthropic
+# 1. Research POIs (English - always)
+./pocket-guide poi research Rome --count 50
 
-# Verify it was created
-ls content/paris/notre-dame-cathedral/
-```
-
-### Workflow 3: View/Edit Content in Backstage
-
-```bash
-# 1. Start servers
-./start-dev.sh
-
-# 2. Open browser
-open http://localhost:5173
-
-# 3. Navigate to POI → Click "View Transcript" or "View Research"
-# 4. Edit transcript → Auto-backup created before saving
-```
-
-### Workflow 4: Fix Missing Research Data
-
-```bash
-# If POIs were generated with --skip-research, backfill research:
-python3 generate_missing_research.py
-
-# Or generate for specific POI:
-./pocket-guide generate \
-  --poi-name "Existing POI" \
-  --city "City" \
-  --force-research  # Re-research even if content exists
-```
-
-### Workflow 5: Plan a Trip Itinerary
-
-```bash
-# 1. Ensure you have POIs researched for the city
-./pocket-guide poi research Rome --count 50 --provider anthropic
-
-# Output: poi_research/Rome/research_candidates.json with 50 POIs
-
-# 2. Plan a trip with your preferences (English)
-./pocket-guide trip plan \
-  --city Rome \
-  --days 3 \
-  --interests history \
-  --interests architecture \
-  --pace normal \
-  --walking moderate \
-  --save
-
-# 2b. Plan a multilanguage trip (automatically generates transcripts!)
+# 2. Plan trip in Chinese
 ./pocket-guide trip plan \
   --city Rome \
   --days 2 \
@@ -749,206 +249,424 @@ python3 generate_missing_research.py
   --language zh-tw \
   --save
 
-# AI will:
-# - Select 8-12 POIs matching your interests (in target language)
-# - Provide 25+ backup POIs (alternatives, NOT in tour)
-# - List rejected POIs with reasons
-# - Optimize daily schedule to minimize walking
-# - Group similar POIs on same day
-# - [NEW] Check if POI transcripts exist in target language
-# - [NEW] Automatically generate missing transcripts
-
-# Output example (multilanguage):
-# Checking POI transcripts for language: zh-tw
-#   ⚡ Colosseum - generating transcript in zh-tw...
-#     ✓ Generated successfully
-#   ⚡ Roman Forum - generating transcript in zh-tw...
-#     ✓ Generated successfully
-#   ✓ Pantheon - transcript exists
-#
-# ✓ Generated 2 new transcripts in Chinese (Traditional)
-#
-# ✓ Selected 10 POIs for itinerary
-#   + 25 backup POIs available
-#   + 15 POIs rejected
-#
-# Day 1 (7.5h total, 3.2km walking)
-#   1. 羅馬競技場 (2.5h)  # Colosseum
-#   2. 羅馬廣場 (2.0h) ← 10min walk  # Roman Forum
-#   3. 帕拉蒂尼山 (1.5h) ← 5min walk  # Palatine Hill
-
-# 3. View saved tours (shows available languages)
-./pocket-guide trip list --city Rome
-
-# Output: List of all tours with IDs, dates, and languages (e.g., "en, zh-tw")
-
-# 4. Show tour details in specific language
-./pocket-guide trip show rome-tour-20260205-121250-11edf4 --city Rome --language zh-tw
-
-# 5. Review selection transparency (why POIs were chosen/rejected)
-cat tours/rome/rome-tour-20260205-121250-11edf4/generation_record_v1_2026-02-05_zh-tw.json | python3 -m json.tool
-
-# Shows:
-# - Input parameters (interests, preferences, language)
-# - Backup POIs with similarity scores and reasons (in target language)
-# - Rejected POIs with rejection reasons (in target language)
-# - Optimization scores
-
-# 6. View in backstage UI (auto-detects language)
-./start-dev.sh
-open http://localhost:5173/tours/rome-tour-20260205-121250-11edf4
-# Frontend will display tour in zh-tw with correct transcripts
+# Auto-generates Chinese transcripts if missing!
 ```
 
 ---
 
-## 🎯 Quick Tips
+### Workflow 3: Add Single POI
 
-**Speed vs Quality:**
-- ✅ **With research** (default): Rich content, 5-10 min per POI
-- ⚡ **Without research** (`--skip-research`): Fast, 1-2 min per POI, basic content
+```bash
+./pocket-guide generate \
+  --poi-name "Notre-Dame Cathedral" \
+  --city "Paris" \
+  --language fr
+```
 
-**Provider Comparison:**
-- **Anthropic (Claude)**: Best storytelling, most dramatic
-- **OpenAI (GPT-4)**: Balanced, reliable
-- **Google (Gemini)**: Fast, cost-effective
+---
 
-**File Naming:**
-- Content directory: `kebab-case` (e.g., `blue-mosque`)
-- Research directory: `snake_case` (e.g., `blue_mosque.yaml`)
-- City folders: `kebab-case` in content, `TitleCase` in research
+### Workflow 4: Resume Failed Batch
 
-**Backup Safety:**
-- Transcript edits create timestamped backups automatically
-- Format: `transcript_backup_YYYYMMDD_HHMMSS.txt`
+```bash
+# If batch fails, just run again - it auto-resumes!
+./pocket-guide poi batch-generate pois.txt --city Rome
+
+# Shows:
+# ⊘ Colosseum (already exists)
+# ⊘ Roman Forum (already exists)
+# ⚡ Pantheon (generating...)  ← Resumes here
+```
 
 ---
 
 ## 🆘 Troubleshooting
 
-### "Module not found" errors
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| "Module not found" | `source venv/bin/activate` |
+| "Port already in use" | `./stop-dev.sh` |
+| "Research data not found" | Check `poi_research/<City>/<poi>.yaml` exists |
+| API rate limit | Auto-handled (5 retries + 500ms delays) |
+| Batch fails midway | Just run again - auto-resumes |
+
+---
+
+### Check API Logs
 
 ```bash
-# Activate virtual environment first:
-source venv/bin/activate
+# View backend logs
+python src/api_server.py
+
+# Test API keys
+python test-api-keys.py
 ```
 
-### "Research data not found"
+---
+
+## 📂 File Structure
+
+```
+pocket-guide/
+├── content/<city>/<poi-id>/       # Generated content
+│   ├── transcript_{lang}.txt      # Tour narration
+│   ├── summary.txt                # Key points
+│   └── metadata.json              # Version history
+│
+├── poi_research/<City>/           # Research data
+│   ├── research_candidates.json   # AI-discovered POIs
+│   └── <poi_name>.yaml            # Detailed research
+│
+└── tours/<city>/<tour-id>/        # Saved tours
+    ├── tour_{lang}.json           # Language-specific tour
+    └── generation_record_{lang}.json
+```
+
+---
+
+## 🎯 Key Features
+
+### POI Generation
+- ✅ **Smart verification loop** - 60-100% coverage
+- ✅ **API retry logic** - 5 attempts with backoff
+- ✅ **Auto-resume** - Skips completed POIs
+- ✅ **Multi-language** - 40+ languages supported
+
+### Trip Planning
+- ✅ **AI-powered selection** - Matches interests
+- ✅ **Backup POIs** - Alternatives if needed
+- ✅ **Route optimization** - Minimize walking
+- ✅ **Auto-transcripts** - Generates missing languages
+- ✅ **Full transparency** - See why POIs were chosen/rejected
+
+### Quality
+- ⚡ **Fast**: 5-10 min per POI with research
+- 🎭 **Dramatic**: Storytelling-focused narration
+- 📊 **Complete**: Research + transcript + metadata
+- 🔄 **Versioned**: Full history tracking
+
+---
+
+## 🔗 Quick Links
+
+**Documentation:**
+- [API Docs](http://localhost:8000/docs) (when server running)
+- [QUICKSTART.md](QUICKSTART.md) - Detailed getting started
+- [TRIP_PLANNER_USAGE.md](TRIP_PLANNER_USAGE.md) - Trip planner deep dive
+
+**Troubleshooting:**
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- [DEBUG_INSTRUCTIONS.md](DEBUG_INSTRUCTIONS.md)
+
+---
+
+## 📖 Command Reference
+
+### POI Commands
 
 ```bash
-# Check if research file exists:
-ls poi_research/<City>/<poi_name>.yaml
+# Research
+poi research <city> [--count N] [--provider NAME]
 
-# Generate if missing:
+# Generate single
+generate --poi-name "NAME" --city "CITY" [--language LANG] [--skip-research] [--force-research] [--verify]
+
+# Generate batch
+poi batch-generate <file> --city <city> [--skip-research] [--force] [--verify]
+
+# Check duplicates
+poi check-redundancy <city>
+```
+
+### Trip Commands
+
+```bash
+# Plan trip
+trip plan --city <city> --days <N> [--interests X] [--language LANG] [--save]
+
+# List tours
+trip list --city <city>
+
+# Show tour
+trip show <tour-id> --city <city> [--language LANG]
+```
+
+### Utility Scripts
+
+```bash
+# Extract POI names
+python3 extract_pois.py <city> [--include-skipped] > output.txt
+
+# Generate missing research
 python3 generate_missing_research.py
 ```
 
-### "Port already in use"
+---
 
-```bash
-# Kill processes on ports 8000 (backend) and 5173 (frontend):
-./stop-dev.sh
+## 🌐 Language Support
+
+**Supported codes**: `en`, `zh-tw`, `zh-cn`, `es`, `es-mx`, `pt-br`, `fr`, `de`, `it`, `ja`, `ko`, `ar`, etc.
+
+**How it works:**
+- Research data: Always English
+- Transcripts: Language-specific (`transcript_zh-tw.txt`)
+- Tours: Language-specific (`tour_zh-tw.json`)
+- Auto-generation: Missing transcripts created on-demand
+
+---
+
+## 🎓 Tips
+
+### Speed vs Quality
+- **With research** (default): Rich content, ~10 min/POI
+- **Without research** (`--skip-research`): Fast, ~2 min/POI, basic content
+- **Re-research** (`--force-research`): Update existing research data
+- **With verification** (`--verify`): Ensures 60-100% coverage, costs more (extra API calls)
+
+### Provider Comparison
+- **Anthropic (Claude)**: Best storytelling, most dramatic
+- **OpenAI (GPT-4)**: Balanced, reliable
+- **Google (Gemini)**: Fast, cost-effective
+
+### File Naming
+- Content: `kebab-case` (`blue-mosque/`)
+- Research: `snake_case` (`blue_mosque.yaml`)
+- Cities: `TitleCase` in research, `kebab-case` in content
+
+---
+
+## 📊 Appendix: Workflow Diagrams
+
+### Complete POI Generation Workflow
+
+```mermaid
+flowchart TD
+    Start([Start: Generate POI Content]) --> Research{Research Phase}
+
+    Research -->|--skip-research| NoResearch[Use description only]
+    Research -->|Default| CheckCache{Research cached?}
+
+    CheckCache -->|Yes + --force-research| DoResearch[Run Research Agent<br/>11 API calls]
+    CheckCache -->|Yes| UseCache[Use cached research]
+    CheckCache -->|No| DoResearch
+
+    NoResearch --> Generate[Generate Transcript<br/>1 API call]
+    UseCache --> Generate
+    DoResearch --> Generate
+
+    Generate --> Verify{--verify flag?}
+
+    Verify -->|No| Save[Save transcript<br/>Create new version]
+    Verify -->|Yes| CheckCoverage{Coverage ≥ 60%?}
+
+    CheckCoverage -->|Yes| Save
+    CheckCoverage -->|No| Refine[Refine transcript<br/>+1 API call]
+
+    Refine --> ReCheck{Coverage ≥ 60%?}
+    ReCheck -->|Yes| Save
+    ReCheck -->|No, retry < 3| Refine
+    ReCheck -->|No, retry = 3| Save
+
+    Save --> End([Done: Content Saved])
+
+    style Start fill:#e1f5e1
+    style End fill:#e1f5e1
+    style DoResearch fill:#fff4e6
+    style Generate fill:#e3f2fd
+    style Refine fill:#f3e5f5
+    style Save fill:#e8f5e9
 ```
 
-### View API logs
+### Batch Generation Workflow
 
-```bash
-# Backend is running - check terminal output
-# Or restart with verbose logging:
-source venv/bin/activate
-python src/api_server.py
+```mermaid
+flowchart TD
+    Start([Start: Batch Generate]) --> LoadFile[Load POI names from file]
+    LoadFile --> CheckCity{City specified?}
+
+    CheckCity -->|No| Error1[Error: --city required]
+    CheckCity -->|Yes| LoadCandidates[Load research_candidates.json]
+
+    LoadCandidates --> FilterSkipped[Filter skip: true POIs]
+    FilterSkipped --> Loop{For each POI}
+
+    Loop --> CheckExists{Transcript exists<br/>for language?}
+
+    CheckExists -->|Yes + no --force| Skip[⊘ Skip POI]
+    CheckExists -->|Yes + --force| GenPOI[⚡ Generate POI]
+    CheckExists -->|No| GenPOI
+
+    GenPOI --> Research{--skip-research?}
+    Research -->|Yes| QuickGen[Generate without research<br/>~2 min]
+    Research -->|No| FullGen[Generate with research<br/>~10 min]
+
+    QuickGen --> VerifyCheck{--verify?}
+    FullGen --> VerifyCheck
+
+    VerifyCheck -->|Yes| DoVerify[Verify coverage<br/>60-100%]
+    VerifyCheck -->|No| SavePOI[✓ Save POI]
+
+    DoVerify --> SavePOI
+    SavePOI --> Track[Track success/failure]
+    Skip --> Track
+
+    Track --> More{More POIs?}
+    More -->|Yes| Loop
+    More -->|No| Summary[Show summary:<br/>✓ Succeeded<br/>✗ Failed<br/>⊘ Skipped]
+
+    Summary --> End([Done: Batch Complete])
+    Error1 --> End
+
+    style Start fill:#e1f5e1
+    style End fill:#e1f5e1
+    style GenPOI fill:#e3f2fd
+    style QuickGen fill:#fff4e6
+    style FullGen fill:#fff4e6
+    style SavePOI fill:#e8f5e9
+    style Skip fill:#f5f5f5
 ```
 
-### API Rate Limit or Connection Errors
+### Trip Planning Workflow
 
-✅ **Automatically handled!** The system now includes:
-- 5 retry attempts with exponential backoff (1s, 2s, 4s, 8s, 16s)
-- 500ms delay between all API calls to prevent rate limiting
-- Automatic handling of 429 (rate limit) and 529 (overload) errors
-- Connection error recovery
+```mermaid
+flowchart TD
+    Start([Start: Plan Trip]) --> Params[Get parameters:<br/>city, days, interests,<br/>language, pace]
 
-**If batch generation still fails:**
-```bash
-# Check your network connection
-ping anthropic.com
+    Params --> LoadPOIs[Load all POIs from<br/>poi_research/City/]
 
-# Verify API key is valid
-python test-api-keys.py
+    LoadPOIs --> SelectPOIs[AI selects 8-12 POIs<br/>matching interests<br/>1 API call]
 
-# Try with a different provider
-./pocket-guide poi batch-generate pois.txt --city City --provider google
+    SelectPOIs --> Backups[AI provides 2-3<br/>backup POIs per selection]
+
+    Backups --> Optimize[Optimize itinerary:<br/>- Minimize walking<br/>- Maximize coherence<br/>- 8h per day]
+
+    Optimize --> CheckLang{Language = en?}
+
+    CheckLang -->|Yes| SaveTour[Save tour]
+    CheckLang -->|No| CheckTranscripts{Check POI transcripts<br/>for target language}
+
+    CheckTranscripts --> Loop{For each POI}
+
+    Loop --> TransExists{Transcript exists<br/>in target language?}
+
+    TransExists -->|Yes| NextPOI[✓ Use existing]
+    TransExists -->|No| GenTrans[⚡ Generate transcript<br/>in target language<br/>~10 min]
+
+    NextPOI --> MorePOIs{More POIs?}
+    GenTrans --> MorePOIs
+
+    MorePOIs -->|Yes| Loop
+    MorePOIs -->|No| SaveTour
+
+    SaveTour --> Display[Display itinerary:<br/>- Day-by-day schedule<br/>- Walking distances<br/>- Optimization scores]
+
+    Display --> SaveFlag{--save flag?}
+
+    SaveFlag -->|Yes| CreateFiles[Create tour files:<br/>- tour_lang.json<br/>- generation_record_lang.json<br/>- metadata.json]
+    SaveFlag -->|No| End([Done: Display Only])
+
+    CreateFiles --> End2([Done: Tour Saved])
+
+    style Start fill:#e1f5e1
+    style End fill:#e1f5e1
+    style End2 fill:#e1f5e1
+    style SelectPOIs fill:#e3f2fd
+    style GenTrans fill:#fff4e6
+    style SaveTour fill:#e8f5e9
+```
+
+### Research Phase Detail
+
+```mermaid
+flowchart TD
+    Start([Research Phase]) --> Agent1[1. Research Agent<br/>Basic info + categories]
+
+    Agent1 --> Agent2[2. Historical Context<br/>Period, date, significance]
+
+    Agent2 --> Agent3[3. Core Features<br/>5-7 key features]
+
+    Agent3 --> Agent4[4. Feature Details<br/>Deep dive each feature]
+
+    Agent4 --> Agent5[5. People & Stories<br/>Historical figures]
+
+    Agent5 --> Agent6[6. Dramatic Moments<br/>Pivotal events]
+
+    Agent6 --> Agent7[7. Sensory Details<br/>Sounds, smells, visuals]
+
+    Agent7 --> Agent8[8. Modern Context<br/>Current state]
+
+    Agent8 --> Agent9[9. Visitor Tips<br/>Practical info]
+
+    Agent9 --> Agent10[10. Connections<br/>Related POIs]
+
+    Agent10 --> Agent11[11. References<br/>Sources & links]
+
+    Agent11 --> Save[Save research YAML<br/>poi_research/City/poi.yaml]
+
+    Save --> End([Research Complete])
+
+    style Start fill:#e1f5e1
+    style End fill:#e8f5e9
+    style Agent1 fill:#e3f2fd
+    style Agent2 fill:#e3f2fd
+    style Agent3 fill:#e3f2fd
+    style Agent4 fill:#e3f2fd
+    style Agent5 fill:#e3f2fd
+    style Agent6 fill:#e3f2fd
+    style Agent7 fill:#e3f2fd
+    style Agent8 fill:#e3f2fd
+    style Agent9 fill:#e3f2fd
+    style Agent10 fill:#e3f2fd
+    style Agent11 fill:#e3f2fd
+    style Save fill:#e8f5e9
+```
+
+### Flag Decision Tree
+
+```mermaid
+flowchart TD
+    Start([Choose Generation Mode]) --> Question1{Need full research?}
+
+    Question1 -->|Yes| Question2{Research exists?}
+    Question1 -->|No| UseSkip[Use --skip-research<br/>Fast: ~2 min/POI<br/>Basic content]
+
+    Question2 -->|Yes, up-to-date| Default[Use default<br/>Medium: ~10 min/POI<br/>Rich content]
+    Question2 -->|Yes, outdated| UseForce[Use --force-research<br/>Slow: ~10 min/POI<br/>Updated research]
+    Question2 -->|No| Default
+
+    Default --> Question3{Need quality check?}
+    UseSkip --> Question3
+    UseForce --> Question3
+
+    Question3 -->|Yes, ensure coverage| AddVerify[Add --verify<br/>+1-2 API calls<br/>60-100% coverage]
+    Question3 -->|No, trust output| NoVerify[No --verify<br/>Faster, lower cost]
+
+    AddVerify --> Question4{Batch mode?}
+    NoVerify --> Question4
+
+    Question4 -->|Yes| Question5{Regenerate existing?}
+    Question4 -->|No| Single[Single POI mode]
+
+    Question5 -->|Yes| AddForceFlag[Add --force<br/>Regenerate all POIs]
+    Question5 -->|No| AutoResume[Auto-resume<br/>Skip existing POIs]
+
+    AddForceFlag --> End([Run Command])
+    AutoResume --> End
+    Single --> End
+
+    style Start fill:#e1f5e1
+    style End fill:#e8f5e9
+    style UseSkip fill:#fff4e6
+    style Default fill:#e3f2fd
+    style UseForce fill:#f3e5f5
+    style AddVerify fill:#fff3cd
+    style NoVerify fill:#d1ecf1
 ```
 
 ---
 
-## 📚 API Endpoints Reference
+**Last Updated**: February 2026
+**Version**: 2.0.0
 
-### Transcript Endpoints
-
-```bash
-# Get transcript + summary
-GET /pois/{city}/{poi_id}/transcript
-
-# Update transcript (creates backup)
-PUT /pois/{city}/{poi_id}/transcript
-  Body: {"transcript": "Updated text..."}
-```
-
-### Research Endpoints
-
-```bash
-# Get research data (structured + raw YAML)
-GET /pois/{city}/{poi_id}/research
-```
-
-### Metadata Endpoints
-
-```bash
-# List cities
-GET /cities
-
-# List POIs in city
-GET /cities/{city}/pois
-
-# Get POI details
-GET /pois/{city}/{poi_id}
-
-# Update POI metadata
-PUT /pois/{city}/{poi_id}/metadata
-
-# Get distance matrix
-GET /distances/{city}
-```
-
-**Test with curl:**
-
-```bash
-# Get transcript
-curl http://localhost:8000/pois/athens/acropolis/transcript | python3 -m json.tool
-
-# Get research
-curl http://localhost:8000/pois/istanbul/hagia-sophia-grand-mosque/research | python3 -m json.tool
-
-# Update transcript
-curl -X PUT http://localhost:8000/pois/athens/acropolis/transcript \
-  -H "Content-Type: application/json" \
-  -d '{"transcript": "Updated tour content..."}'
-```
-
----
-
-## 🔗 Related Documentation
-
-- **API Documentation**: http://localhost:8000/docs (when server is running)
-- **Frontend Routes**:
-  - `/` - Dashboard (POI list)
-  - `/poi/:city/:poiId` - POI detail
-  - `/poi/:city/:poiId/transcript` - Transcript viewer
-  - `/poi/:city/:poiId/research` - Research viewer
-
----
-
-**Last Updated**: December 2025
-**Version**: 1.0.0
-
-For more information, see the README or visit the API docs at http://localhost:8000/docs
+For detailed information, see [QUICKSTART.md](QUICKSTART.md) or [API Documentation](http://localhost:8000/docs).

@@ -429,6 +429,11 @@ basic_info:
   description: # 1-2 sentence overview
   labels: [native, poi]
 
+visit_info:
+  typical_duration_minutes: # Integer: Realistic time visitors typically spend (e.g., 120 for major museum, 15 for fountain)
+  indoor_outdoor: # "indoor", "outdoor", or "mixed"
+  accessibility: # "full" if wheelchair accessible, "partial" if some areas accessible, "limited" if difficult
+
 core_features:  # 2-5 essential physical facts visitors need (ALWAYS included, never filtered)
   - # What visitor can SEE/TOUCH/HEAR/SMELL/EXPERIENCE right now at this POI
   - # How to identify key visual elements (e.g., "Roman figures are larger, wear armor")
@@ -464,6 +469,16 @@ concepts:
 ```
 
 IMPORTANT:
+
+For visit_info (visitor planning information):
+- typical_duration_minutes: Estimate realistic time based on:
+  * Size/scale of the site (small fountain vs large museum)
+  * What there is to see (number of rooms, exhibits, features)
+  * Travel guide recommendations (check typical visit times)
+  * Queue/wait times if applicable
+  Examples: Vatican Museums=150, Colosseum=120, Pantheon=60, Trevi Fountain=15
+- indoor_outdoor: "indoor" (museum, church), "outdoor" (fountain, ruins), "mixed" (palace with gardens)
+- accessibility: "full" (wheelchair accessible), "partial" (some areas only), "limited" (stairs, uneven ground)
 
 For core_features (CRITICAL - these ground visitors in physical reality):
 - List 2-5 essential physical facts about what visitors experience at the POI RIGHT NOW

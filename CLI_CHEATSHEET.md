@@ -96,11 +96,18 @@ Discover top attractions using AI.
   --poi-name "Eiffel Tower" \
   --city "Paris" \
   --force-research
+
+# Enable verification (checks 60-100% coverage, costs more)
+./pocket-guide generate \
+  --poi-name "Eiffel Tower" \
+  --city "Paris" \
+  --verify
 ```
 
 **Options:**
 - `--skip-research`: Skip research phase (fast, basic content)
 - `--force-research`: Re-do research even if cached
+- `--verify`: Enable transcript verification (60-100% coverage check, increases cost)
 
 #### Batch Generation (Recommended)
 ```bash
@@ -110,17 +117,20 @@ Discover top attractions using AI.
 ./pocket-guide poi batch-generate pois.txt --city Rome
 ./pocket-guide poi batch-generate pois.txt --city Rome --skip-research  # Faster
 ./pocket-guide poi batch-generate pois.txt --city Rome --force  # Regenerate all
+./pocket-guide poi batch-generate pois.txt --city Rome --verify  # Enable verification
 ```
 
 **Options:**
 - `--skip-research`: Skip research phase (faster, less rich)
 - `--force`: Force regeneration even if content exists
+- `--verify`: Enable transcript verification (60-100% coverage, costs more)
 
 **Features:**
 - ✅ Auto-resumes from failures
-- ✅ Smart verification (60-100% coverage)
+- ✅ Smart verification (optional with `--verify`)
 - ✅ API retry logic (5 attempts)
 - ⏱️ ~5-10 minutes per POI
+- 📊 Coverage check: 60-100% of research (with `--verify`)
 
 **Output:**
 - `content/<city>/<poi-id>/transcript_{language}.txt`
@@ -359,10 +369,10 @@ pocket-guide/
 poi research <city> [--count N] [--provider NAME]
 
 # Generate single
-generate --poi-name "NAME" --city "CITY" [--language LANG] [--skip-research] [--force-research]
+generate --poi-name "NAME" --city "CITY" [--language LANG] [--skip-research] [--force-research] [--verify]
 
 # Generate batch
-poi batch-generate <file> --city <city> [--skip-research] [--force]
+poi batch-generate <file> --city <city> [--skip-research] [--force] [--verify]
 
 # Check duplicates
 poi check-redundancy <city>
@@ -411,6 +421,7 @@ python3 generate_missing_research.py
 - **With research** (default): Rich content, ~10 min/POI
 - **Without research** (`--skip-research`): Fast, ~2 min/POI, basic content
 - **Re-research** (`--force-research`): Update existing research data
+- **With verification** (`--verify`): Ensures 60-100% coverage, costs more (extra API calls)
 
 ### Provider Comparison
 - **Anthropic (Claude)**: Best storytelling, most dramatic

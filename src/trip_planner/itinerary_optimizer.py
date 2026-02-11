@@ -105,6 +105,28 @@ class ItineraryOptimizerAgent:
             distance_matrix
         )
 
+        # Enforce duration_days limit as safety net
+        if len(itinerary) > duration_days:
+            print(f"  [OPTIMIZER] Warning: Generated {len(itinerary)} days but only {duration_days} requested", flush=True)
+            print(f"  [OPTIMIZER] Trimming to first {duration_days} days and re-optimizing...", flush=True)
+
+            # Calculate how many POIs fit in duration_days
+            pois_to_keep = sum(len(day['pois']) for day in itinerary[:duration_days])
+
+            # Take the first pois_to_keep POIs from optimized_sequence
+            # (they're already optimally ordered, so we keep the best sequence)
+            trimmed_sequence = optimized_sequence[:pois_to_keep]
+
+            # Re-schedule with correct number of POIs
+            itinerary = self._schedule_days(
+                trimmed_sequence,
+                duration_days,
+                start_time,
+                distance_matrix
+            )
+
+            print(f"  ✓ Re-optimized to {len(itinerary)} days with {pois_to_keep} POIs", flush=True)
+
         # Validate constraints
         violations = self._validate_constraints(itinerary)
 

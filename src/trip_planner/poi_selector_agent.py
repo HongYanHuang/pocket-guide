@@ -174,6 +174,20 @@ class POISelectorAgent:
                 if not poi_data:
                     continue
 
+                # Get estimated visit duration
+                estimated_hours = 1.0  # default fallback: 1 hour
+
+                # Priority 1: Try research data visit_info (from AI research)
+                visit_info = poi_data.get('visit_info', {})
+                if 'typical_duration_minutes' in visit_info:
+                    # Convert minutes to hours and round to 1 decimal
+                    estimated_hours = round(visit_info['typical_duration_minutes'] / 60, 1)
+                else:
+                    # Priority 2: Try metadata.visit_info (from poi-metadata command)
+                    visit_info = poi_data.get('metadata', {}).get('visit_info', {})
+                    if 'typical_duration_minutes' in visit_info:
+                        estimated_hours = round(visit_info['typical_duration_minutes'] / 60, 1)
+
                 # Build POI summary
                 poi_summary = {
                     'poi_id': poi_data.get('poi_id', yaml_file.stem),
@@ -186,7 +200,8 @@ class POISelectorAgent:
                     'people': [p.get('name') for p in poi_data.get('people', [])],
                     'events': [e.get('name') for e in poi_data.get('events', [])],
                     'concepts': [c.get('name') for c in poi_data.get('concepts', [])],
-                    'labels': poi_data.get('basic_info', {}).get('labels', [])
+                    'labels': poi_data.get('basic_info', {}).get('labels', []),
+                    'estimated_hours': estimated_hours
                 }
 
                 pois.append(poi_summary)
@@ -221,6 +236,8 @@ class POISelectorAgent:
         poi_list = []
         for i, poi in enumerate(available_pois, 1):
             poi_str = f"{i}. {poi['name']}"
+            if poi.get('estimated_hours'):
+                poi_str += f" [Estimated visit time: {poi['estimated_hours']}h]"
             if poi.get('description'):
                 poi_str += f"\n   Description: {poi['description'][:150]}..."
             if poi.get('period'):
@@ -294,12 +311,17 @@ CONSTRAINTS:
 {constraints_str}
 
 TASK:
-1. Select 8-12 "Starting POIs" that best match the user's profile for a {duration_days}-day trip
+1. Select "Starting POIs" where the TOTAL estimated visit time fits within {duration_days * 7}h (leaving ~{duration_days}h for walking between POIs)
 2. For each Starting POI, suggest 2-3 "Back-up POIs" that are similar and could serve as replacements
 3. Explain your reasoning for selections and similarity
 
-SELECTION CRITERIA:
-- Respect time budget ({duration_days} days = approximately {duration_days * 8} hours of activities)
+SELECTION CRITERIA - TIME BUDGET:
+- CRITICAL: Sum of all selected POI visit times should be ≤ {duration_days * 8} hours total
+- Each POI shows [Estimated visit time: Xh] - use these values to calculate your total
+- Better to select fewer quality POIs than rush through too many
+- Walking time between POIs will be calculated separately (not included in POI visit time)
+
+SELECTION CRITERIA - CONTENT:
 - Match user interests: {', '.join(interests) if interests else 'varied experiences'}
 - Consider geographic diversity (don't cluster everything in one area)
 - Balance famous must-sees with hidden gems

@@ -177,8 +177,8 @@ class POISelectorAgent:
                 # Get estimated visit duration
                 estimated_hours = 1.0  # default fallback: 1 hour
 
-                # Try to get from research data visit_info
-                visit_info = poi_data.get('visit_info', {})
+                # Try to get from metadata.visit_info (added by poi-metadata command)
+                visit_info = poi_data.get('metadata', {}).get('visit_info', {})
                 if 'typical_duration_minutes' in visit_info:
                     # Convert minutes to hours and round to 1 decimal
                     estimated_hours = round(visit_info['typical_duration_minutes'] / 60, 1)

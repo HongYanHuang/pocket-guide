@@ -328,9 +328,9 @@ class POIMetadataAgent:
             logger.error(f"Failed to get coordinates for {poi_name}")
             return None
 
-        # Classify indoor/outdoor if not already done
+        # Classify indoor/outdoor and estimate duration if not already done
         if 'visit_info' not in metadata:
-            metadata['visit_info'] = self._infer_visit_info(poi)
+            metadata['visit_info'] = self._infer_visit_info(poi, metadata)
 
         # Add timestamp
         metadata['last_metadata_update'] = datetime.now(timezone.utc).isoformat()
@@ -366,18 +366,21 @@ class POIMetadataAgent:
 
         return None
 
-    def _infer_visit_info(self, poi: Dict) -> Dict:
+    def _infer_visit_info(self, poi: Dict, metadata: Dict = None) -> Dict:
         """
-        Infer visit information from POI data.
+        Infer visit information from POI data and Google Maps metadata.
 
         Args:
-            poi: POI dictionary
+            poi: POI dictionary (research data)
+            metadata: Metadata dictionary from Google Maps (contains 'types')
 
         Returns:
             Visit info dictionary
         """
-        # Check POI types from Google Maps
-        types = poi.get('types', [])
+        # Check POI types from Google Maps metadata
+        if metadata is None:
+            metadata = {}
+        types = metadata.get('types', [])
 
         # Simple heuristic for indoor/outdoor
         outdoor_types = ['park', 'monument', 'plaza', 'square', 'archaeological_site']
@@ -405,11 +408,75 @@ class POIMetadataAgent:
             elif any(word in poi_name or word in description for word in ['museum', 'church', 'cathedral', 'hall']):
                 indoor_outdoor = 'indoor'
 
+        # Estimate duration based on POI type and name
+        duration_minutes = self._estimate_duration(types, poi)
+
         return {
             'indoor_outdoor': indoor_outdoor,
-            'typical_duration_minutes': 30,  # Default estimate
+            'typical_duration_minutes': duration_minutes,
             'accessibility': 'unknown'
         }
+
+    def _estimate_duration(self, types: List[str], poi: Dict) -> int:
+        """
+        Estimate typical visit duration based on POI type and characteristics.
+
+        Args:
+            types: Google Maps POI types
+            poi: POI dictionary with research data
+
+        Returns:
+            Estimated duration in minutes
+        """
+        poi_name = poi.get('poi_name', poi.get('name', '')).lower()
+        description = poi.get('basic_info', {}).get('description', '').lower()
+
+        # Category-based duration mapping
+        # Check Google Maps types first
+        if 'museum' in types:
+            # Large museums get more time
+            if any(word in poi_name for word in ['vatican', 'national', 'capitoline', 'borghese']):
+                return 150  # 2.5 hours for major museums
+            return 90  # 1.5 hours for regular museums
+
+        if 'church' in types or 'place_of_worship' in types:
+            # Major basilicas
+            if any(word in poi_name for word in ['basilica', 'cathedral', 'st. peter', 'lateran']):
+                return 60  # 1 hour for major churches
+            return 30  # 30 min for smaller churches
+
+        if 'park' in types or 'natural_feature' in types:
+            return 60  # 1 hour for parks/gardens
+
+        # Check name/description for category keywords
+        if 'museum' in poi_name or 'museum' in description:
+            return 120  # 2 hours
+
+        if any(word in poi_name for word in ['colosseum', 'colosseo', 'forum', 'palatine', 'pantheon']):
+            return 120  # 2 hours for major archaeological sites
+
+        if any(word in poi_name for word in ['basilica', 'cathedral', 'church', 'chiesa']):
+            if 'vatican' in poi_name or 'peter' in poi_name:
+                return 90  # 1.5 hours for St. Peter's
+            return 45  # 45 min for other churches
+
+        if any(word in poi_name for word in ['fountain', 'fontana', 'piazza', 'square']):
+            return 15  # 15 min for fountains/squares
+
+        if any(word in poi_name for word in ['arch', 'gate', 'column', 'obelisk', 'statue']):
+            return 20  # 20 min for monuments
+
+        if any(word in poi_name for word in ['villa', 'palace', 'palazzo']):
+            return 75  # 1.25 hours for palaces
+
+        if any(word in poi_name for word in ['garden', 'park', 'villa']):
+            return 60  # 1 hour for gardens/parks
+
+        if 'baths' in poi_name or 'terme' in poi_name:
+            return 60  # 1 hour for ancient baths
+
+        # Default for tourist attractions
+        return 45  # 45 minutes default
 
     def _save_poi_metadata(self, poi: Dict, metadata: Dict) -> None:
         """

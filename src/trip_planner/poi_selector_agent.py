@@ -634,12 +634,14 @@ Generate the POI selection now:"""
                         if member_name in poi_lookup:
                             poi_data = poi_lookup[member_name]
 
-                            # Create POI entry for starting_pois
+                            # Create POI entry for starting_pois (matching the format from AI selection)
                             new_poi = {
                                 'poi': member_name,
                                 'reason': f'Required combo ticket member (part of {ticket.get("name", ticket_id)})',
+                                'suggested_day': 1,  # Will be optimized by the itinerary optimizer
                                 'estimated_hours': poi_data.get('estimated_hours', 2.0),
-                                'priority': 'high'
+                                'priority': 'high',
+                                'metadata': {}
                             }
 
                             selection['starting_pois'].append(new_poi)

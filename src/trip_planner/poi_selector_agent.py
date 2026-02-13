@@ -123,6 +123,10 @@ class POISelectorAgent:
         print(f"  [POI SELECTOR] Parsing AI response...", flush=True)
         selection = self._parse_and_validate(response, available_pois)
 
+        # Apply combo ticket constraints
+        print(f"  [POI SELECTOR] Checking combo ticket requirements...", flush=True)
+        selection = self._apply_combo_ticket_constraints(selection, city, available_pois)
+
         # Add metadata
         selection['metadata'] = {
             'city': city,
@@ -567,3 +571,102 @@ Generate the POI selection now:"""
         )
 
         return response.text
+
+    def _apply_combo_ticket_constraints(
+        self,
+        selection: Dict[str, Any],
+        city: str,
+        available_pois: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Apply combo ticket constraints to POI selection.
+
+        If any POI in a combo ticket group is selected, automatically include
+        all members of that group in the starting POIs.
+
+        Args:
+            selection: POI selection result with starting_pois, backup_pois, rejected_pois
+            city: City name
+            available_pois: List of all available POIs
+
+        Returns:
+            Updated selection with combo ticket members added
+        """
+        from data.combo_ticket_loader import ComboTicketLoader
+
+        # Load combo tickets for this city
+        loader = ComboTicketLoader()
+        combo_tickets = loader.load_city_combo_tickets(city)
+
+        if not combo_tickets:
+            # No combo tickets for this city
+            return selection
+
+        # Build POI name -> POI data mapping
+        poi_lookup = {poi['name']: poi for poi in available_pois}
+
+        # Get currently selected POI names
+        selected_names = {poi['poi'] for poi in selection['starting_pois']}
+
+        # Track which combo tickets are triggered
+        triggered_tickets = []
+        added_pois = []
+
+        # Check each combo ticket
+        for ticket_id, ticket in combo_tickets.items():
+            members = set(ticket.get('members', []))
+
+            # Check if any member is in the selected POIs
+            if members & selected_names:
+                # At least one member is selected
+                triggered_tickets.append(ticket_id)
+
+                # Find missing members that need to be added
+                missing_members = members - selected_names
+
+                if missing_members:
+                    print(f"    [COMBO TICKET] Triggered: {ticket.get('name', ticket_id)}", flush=True)
+                    print(f"    [COMBO TICKET] Adding missing members: {', '.join(missing_members)}", flush=True)
+
+                    # Add missing members to starting_pois
+                    for member_name in missing_members:
+                        # Find the POI in available_pois
+                        if member_name in poi_lookup:
+                            poi_data = poi_lookup[member_name]
+
+                            # Create POI entry for starting_pois
+                            new_poi = {
+                                'poi': member_name,
+                                'reason': f'Required combo ticket member (part of {ticket.get("name", ticket_id)})',
+                                'estimated_hours': poi_data.get('estimated_hours', 2.0),
+                                'priority': 'high'
+                            }
+
+                            selection['starting_pois'].append(new_poi)
+                            added_pois.append(member_name)
+                            selected_names.add(member_name)
+
+                            # Remove from rejected_pois if present
+                            selection['rejected_pois'] = [
+                                p for p in selection['rejected_pois']
+                                if p['poi'] != member_name
+                            ]
+
+                            # Remove from backup_pois if present
+                            for category in list(selection['backup_pois'].keys()):
+                                selection['backup_pois'][category] = [
+                                    p for p in selection['backup_pois'][category]
+                                    if p['poi'] != member_name
+                                ]
+                        else:
+                            print(f"    [WARNING] Combo ticket member '{member_name}' not found in available POIs", flush=True)
+
+        if added_pois:
+            print(f"  ✓ Added {len(added_pois)} POI(s) due to combo ticket requirements", flush=True)
+
+        # Update metadata
+        if triggered_tickets:
+            selection.setdefault('combo_tickets_applied', [])
+            selection['combo_tickets_applied'].extend(triggered_tickets)
+
+        return selection

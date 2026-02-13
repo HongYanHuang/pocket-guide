@@ -65,11 +65,15 @@
             v-model="formData.members"
             multiple
             filterable
-            placeholder="Select POIs to include"
+            allow-create
+            default-first-option
+            placeholder="Search and select POIs (type to search or add new)"
             style="width: 100%; margin-bottom: 10px"
+            :filter-method="filterPOIs"
+            :loading="loadingPOIs"
           >
             <el-option
-              v-for="poi in availablePOIs"
+              v-for="poi in filteredPOIs"
               :key="poi.poi_name"
               :label="poi.poi_name"
               :value="poi.poi_name"
@@ -243,6 +247,9 @@ const dialogVisible = computed({
 
 const formRef = ref(null)
 const saving = ref(false)
+const loadingPOIs = ref(false)
+const filteredPOIs = ref([])
+const searchQuery = ref('')
 
 const defaultFormData = () => ({
   id: '',
@@ -304,9 +311,26 @@ const rules = {
 }
 
 // Methods
+const filterPOIs = (query) => {
+  searchQuery.value = query
+  if (!query) {
+    filteredPOIs.value = props.availablePOIs || []
+  } else {
+    const lowerQuery = query.toLowerCase()
+    filteredPOIs.value = (props.availablePOIs || []).filter(poi =>
+      poi.poi_name.toLowerCase().includes(lowerQuery)
+    )
+  }
+}
+
 const removeMember = (index) => {
   formData.value.members.splice(index, 1)
 }
+
+// Initialize filtered POIs
+watch(() => props.availablePOIs, (newPOIs) => {
+  filteredPOIs.value = newPOIs || []
+}, { immediate: true })
 
 const handleClose = () => {
   formRef.value?.resetFields()

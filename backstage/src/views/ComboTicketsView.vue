@@ -213,10 +213,30 @@ const loadComboTickets = async () => {
 const loadAvailablePOIs = async () => {
   try {
     const response = await metadataAPI.getCityPOIs(selectedCity.value)
-    availablePOIs.value = response.pois || []
+    // Transform POI data to simple array of POI names for easier selection
+    if (response.pois && Array.isArray(response.pois)) {
+      availablePOIs.value = response.pois.map(poi => ({
+        poi_name: poi.poi_name || poi.name || poi,
+        poi_id: poi.poi_id || poi.id || poi
+      }))
+    } else {
+      availablePOIs.value = []
+    }
   } catch (error) {
     console.error('Failed to load POIs:', error)
-    availablePOIs.value = []
+    // Fallback: try to get from combo tickets members
+    if (comboTickets.value.length > 0) {
+      const allMembers = new Set()
+      comboTickets.value.forEach(ticket => {
+        ticket.members.forEach(member => allMembers.add(member))
+      })
+      availablePOIs.value = Array.from(allMembers).map(name => ({
+        poi_name: name,
+        poi_id: name
+      }))
+    } else {
+      availablePOIs.value = []
+    }
   }
 }
 

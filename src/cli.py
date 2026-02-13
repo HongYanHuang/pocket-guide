@@ -1217,9 +1217,13 @@ def ensure_poi_transcripts(
 @click.option('--pace', type=click.Choice(['relaxed', 'normal', 'packed']), default='normal', help='Trip pace')
 @click.option('--walking', type=click.Choice(['low', 'moderate', 'high']), default='moderate', help='Walking tolerance')
 @click.option('--language', default='en', help='Tour language (ISO 639-1 code, e.g., en, zh-tw, pt-br)')
+@click.option('--mode', type=click.Choice(['simple', 'ilp']), default='simple', help='Optimization mode: simple (greedy+2-opt, fast) or ilp (optimal, slower)')
+@click.option('--start-location', help='Starting point (POI name or "lat,lng" coordinates)')
+@click.option('--end-location', help='Ending point (POI name or "lat,lng" coordinates)')
+@click.option('--start-date', help='Trip start date (YYYY-MM-DD format, e.g., 2026-03-15). Used to check opening hours.')
 @click.option('--save', is_flag=True, help='Save the generated tour')
 @click.pass_context
-def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, language, save):
+def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, language, mode, start_location, end_location, start_date, save):
     """
     Generate an optimized trip itinerary for a city.
 
@@ -1248,8 +1252,13 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
 
         console.print(f"[dim]Interests: {', '.join(interests_list) if interests_list else 'General tourism'}[/dim]")
         console.print(f"[dim]Pace: {pace} | Walking: {walking} | Language: {language_name}[/dim]")
+        console.print(f"[dim]Optimization mode: {mode}[/dim]")
         if must_see_list:
             console.print(f"[dim]Must-see: {', '.join(must_see_list)}[/dim]")
+        if start_location:
+            console.print(f"[dim]Start location: {start_location}[/dim]")
+        if end_location:
+            console.print(f"[dim]End location: {end_location}[/dim]")
         console.print()
 
         # Step 1: POI Selection
@@ -1287,6 +1296,52 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
         console.print(table)
         console.print()
 
+        # Parse start/end locations
+        def parse_location(location_str):
+            """Parse location string as either POI name or lat,lng coordinates"""
+            if not location_str:
+                return None
+
+            # Check if it's coordinates (lat,lng format)
+            if ',' in location_str:
+                try:
+                    parts = location_str.split(',')
+                    lat = float(parts[0].strip())
+                    lng = float(parts[1].strip())
+                    return {
+                        'name': location_str,
+                        'coordinates': {'latitude': lat, 'longitude': lng}
+                    }
+                except:
+                    pass
+
+            # Treat as POI name - try to find in starting_pois
+            for poi in starting_pois:
+                if poi['poi'].lower() == location_str.lower():
+                    return {
+                        'name': poi['poi'],
+                        'coordinates': poi.get('coordinates', {})
+                    }
+
+            # If not found, just use the name
+            return {'name': location_str, 'coordinates': {}}
+
+        parsed_start = parse_location(start_location)
+        parsed_end = parse_location(end_location)
+
+        # Parse start date if provided
+        trip_start_date = None
+        if start_date:
+            try:
+                trip_start_date = datetime.strptime(start_date, '%Y-%m-%d')
+                console.print(f"[dim]Trip start date: {trip_start_date.strftime('%A, %B %d, %Y')}[/dim]")
+            except ValueError:
+                console.print(f"[yellow]Warning: Invalid date format '{start_date}'. Expected YYYY-MM-DD. Using current date.[/yellow]")
+                trip_start_date = datetime.now()
+        else:
+            # Default to current date for opening hours checking
+            trip_start_date = datetime.now()
+
         # Step 2: Itinerary Optimization
         console.print("[bold cyan]Step 2: Optimizing itinerary...[/bold cyan]")
         optimizer = ItineraryOptimizerAgent(config)
@@ -1296,16 +1351,24 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
             city=city,
             duration_days=days,
             start_time="09:00",
-            preferences=preferences
+            preferences=preferences,
+            mode=mode,
+            start_location=parsed_start,
+            end_location=parsed_end,
+            trip_start_date=trip_start_date
         )
 
         itinerary = optimized_result.get('itinerary', [])
         scores = optimized_result.get('optimization_scores', {})
+        solver_stats = optimized_result.get('solver_stats', None)
 
         console.print(f"[green]✓ Itinerary optimized[/green]")
         console.print(f"[dim]  Distance score: {scores.get('distance_score', 0):.2f}[/dim]")
         console.print(f"[dim]  Coherence score: {scores.get('coherence_score', 0):.2f}[/dim]")
-        console.print(f"[dim]  Overall score: {scores.get('overall_score', 0):.2f}[/dim]\n")
+        console.print(f"[dim]  Overall score: {scores.get('overall_score', 0):.2f}[/dim]")
+        if solver_stats:
+            console.print(f"[dim]  Solver: {solver_stats.get('status', 'N/A')} in {solver_stats.get('solve_time', 0)}s[/dim]")
+        console.print()
 
         # Display itinerary
         for day_plan in itinerary:
@@ -1318,13 +1381,33 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
 
             for i, poi_entry in enumerate(day_pois, 1):
                 poi_name = poi_entry.get('poi', 'Unknown')
-                visit_time = poi_entry.get('visit_duration_hours', 0)
-                walking_from_prev = poi_entry.get('walking_time_from_previous_minutes', 0)
+                # Use estimated_hours from POI metadata (both simple and ILP modes)
+                visit_time = poi_entry.get('estimated_hours', 2.0)
+
+                # Calculate walking time from previous POI
+                walking_minutes = 0
+                if i > 1:
+                    # Calculate distance to previous POI
+                    prev_poi = day_pois[i - 2]
+                    prev_coords = prev_poi.get('coordinates', {})
+                    curr_coords = poi_entry.get('coordinates', {})
+
+                    if prev_coords.get('latitude') and curr_coords.get('latitude'):
+                        # Simple Haversine distance
+                        from math import radians, sin, cos, sqrt, asin
+                        lat1, lon1 = radians(prev_coords['latitude']), radians(prev_coords['longitude'])
+                        lat2, lon2 = radians(curr_coords['latitude']), radians(curr_coords['longitude'])
+                        dlat, dlon = lat2 - lat1, lon2 - lon1
+                        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                        distance_km = 2 * 6371 * asin(sqrt(a))
+
+                        # Convert to walking minutes (4 km/h average walking speed)
+                        walking_minutes = (distance_km / 4.0) * 60
 
                 if i == 1:
                     console.print(f"  {i}. [cyan]{poi_name}[/cyan] ({visit_time:.1f}h)")
                 else:
-                    console.print(f"  {i}. [cyan]{poi_name}[/cyan] ({visit_time:.1f}h) [dim]← {walking_from_prev:.0f}min walk[/dim]")
+                    console.print(f"  {i}. [cyan]{poi_name}[/cyan] ({visit_time:.1f}h) [dim]← {walking_minutes:.0f}min walk[/dim]")
 
             console.print()
 
@@ -1505,13 +1588,29 @@ def trip_show(ctx, tour_id, city, version, language):
 
             for i, poi_entry in enumerate(day_pois, 1):
                 poi_name = poi_entry.get('poi', 'Unknown')
-                visit_time = poi_entry.get('visit_duration_hours', 0)
-                walking_time = poi_entry.get('walking_time_from_previous_minutes', 0)
+                # Use estimated_hours from POI metadata
+                visit_time = poi_entry.get('estimated_hours', 2.0)
+
+                # Calculate walking time from previous POI
+                walking_minutes = 0
+                if i > 1:
+                    prev_poi = day_pois[i - 2]
+                    prev_coords = prev_poi.get('coordinates', {})
+                    curr_coords = poi_entry.get('coordinates', {})
+
+                    if prev_coords.get('latitude') and curr_coords.get('latitude'):
+                        from math import radians, sin, cos, sqrt, asin
+                        lat1, lon1 = radians(prev_coords['latitude']), radians(prev_coords['longitude'])
+                        lat2, lon2 = radians(curr_coords['latitude']), radians(curr_coords['longitude'])
+                        dlat, dlon = lat2 - lat1, lon2 - lon1
+                        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                        distance_km = 2 * 6371 * asin(sqrt(a))
+                        walking_minutes = (distance_km / 4.0) * 60
 
                 if i == 1:
                     console.print(f"  {i}. {poi_name} ({visit_time:.1f}h)")
                 else:
-                    console.print(f"  {i}. {poi_name} ({visit_time:.1f}h) ← {walking_time:.0f}min walk")
+                    console.print(f"  {i}. {poi_name} ({visit_time:.1f}h) ← {walking_minutes:.0f}min walk")
 
             console.print()
 

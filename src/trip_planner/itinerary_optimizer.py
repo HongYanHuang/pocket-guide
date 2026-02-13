@@ -9,7 +9,7 @@ This agent takes selected POIs and creates an optimized itinerary considering:
 """
 
 import math
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from datetime import datetime, timedelta
 import yaml
 from pathlib import Path
@@ -35,6 +35,7 @@ class ItineraryOptimizerAgent:
         self.config = config
         self.max_hours_per_day = 8  # Maximum activity hours per day
         self.walking_speed_kmh = 4.0  # Average walking speed in km/h
+        self.ilp_optimizer = None  # Lazy load ILP optimizer
 
     def optimize_itinerary(
         self,
@@ -42,7 +43,11 @@ class ItineraryOptimizerAgent:
         city: str,
         duration_days: int,
         start_time: str = "09:00",
-        preferences: Dict[str, Any] = None
+        preferences: Dict[str, Any] = None,
+        mode: str = 'simple',
+        start_location: Optional[Dict] = None,
+        end_location: Optional[Dict] = None,
+        trip_start_date: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
         Optimize POI sequence into day-by-day itinerary.
@@ -53,6 +58,7 @@ class ItineraryOptimizerAgent:
             duration_days: Number of days
             start_time: Daily start time (default "09:00")
             preferences: User preferences for optimization weights
+            mode: Optimization mode - 'simple' (greedy+2-opt) or 'ilp' (OR-Tools)
 
         Returns:
             {
@@ -69,7 +75,8 @@ class ItineraryOptimizerAgent:
                     'coherence_score': 0.78,
                     'overall_score': 0.81
                 },
-                'constraints_violated': []
+                'constraints_violated': [],
+                'solver_stats': {...}  # Only present if mode='ilp'
             }
         """
         preferences = preferences or {}
@@ -87,23 +94,66 @@ class ItineraryOptimizerAgent:
         print(f"  [OPTIMIZER] Analyzing storytelling coherence...", flush=True)
         coherence_scores = self._calculate_coherence_scores(enriched_pois)
 
-        # Optimize sequence using hybrid scoring
-        print(f"  [OPTIMIZER] Optimizing sequence...", flush=True)
-        optimized_sequence = self._optimize_sequence(
-            enriched_pois,
-            distance_matrix,
-            coherence_scores,
-            preferences
-        )
+        # Optimize sequence based on mode
+        optimization_scores = {}
+        solver_stats = None
 
-        # Schedule into days
-        print(f"  [OPTIMIZER] Scheduling into {duration_days} days...", flush=True)
-        itinerary = self._schedule_days(
-            optimized_sequence,
-            duration_days,
-            start_time,
-            distance_matrix
-        )
+        if mode == 'ilp' and self._is_ilp_available():
+            # ILP mode - use OR-Tools CP-SAT solver
+            print(f"  [OPTIMIZER] Using ILP optimization mode...", flush=True)
+
+            if not self.ilp_optimizer:
+                from .ilp_optimizer import ILPOptimizer
+                self.ilp_optimizer = ILPOptimizer(self.config)
+
+            ilp_result = self.ilp_optimizer.optimize_sequence(
+                enriched_pois,
+                distance_matrix,
+                coherence_scores,
+                duration_days,
+                preferences,
+                start_location=start_location,
+                end_location=end_location,
+                trip_start_date=trip_start_date
+            )
+
+            optimized_sequence = ilp_result['sequence']
+            day_assignments = ilp_result['day_assignments']
+            optimization_scores = ilp_result['scores']
+            solver_stats = ilp_result.get('solver_stats', {})
+
+            # Schedule into days using ILP day assignments
+            print(f"  [OPTIMIZER] Scheduling into {duration_days} days...", flush=True)
+            itinerary = self._schedule_days_with_assignments(
+                optimized_sequence,
+                day_assignments,
+                duration_days,
+                start_time,
+                distance_matrix
+            )
+
+        else:
+            # Simple mode - use greedy + 2-opt
+            if mode == 'ilp':
+                print(f"  [OPTIMIZER] Warning: ILP mode requested but not available, using simple mode", flush=True)
+            else:
+                print(f"  [OPTIMIZER] Using simple optimization mode...", flush=True)
+
+            optimized_sequence = self._optimize_sequence(
+                enriched_pois,
+                distance_matrix,
+                coherence_scores,
+                preferences
+            )
+
+            # Schedule into days
+            print(f"  [OPTIMIZER] Scheduling into {duration_days} days...", flush=True)
+            itinerary = self._schedule_days(
+                optimized_sequence,
+                duration_days,
+                start_time,
+                distance_matrix
+            )
 
         # Enforce duration_days limit as safety net
         if len(itinerary) > duration_days:
@@ -130,18 +180,23 @@ class ItineraryOptimizerAgent:
         # Validate constraints
         violations = self._validate_constraints(itinerary)
 
-        # Calculate final scores
-        scores = self._calculate_scores(
-            itinerary,
-            distance_matrix,
-            coherence_scores,
-            optimized_sequence
-        )
+        # Calculate final scores (use ILP scores if available)
+        if optimization_scores:
+            scores = optimization_scores
+        else:
+            scores = self._calculate_scores(
+                itinerary,
+                distance_matrix,
+                coherence_scores,
+                optimized_sequence
+            )
 
         print(f"  ✓ Optimized itinerary created", flush=True)
         print(f"  ✓ Distance score: {scores['distance_score']:.2f}, Coherence: {scores['coherence_score']:.2f}", flush=True)
+        if solver_stats:
+            print(f"  ✓ Solver: {solver_stats.get('status', 'N/A')} in {solver_stats.get('solve_time', 0)}s", flush=True)
 
-        return {
+        result = {
             'itinerary': itinerary,
             'optimization_scores': scores,
             'constraints_violated': violations,
@@ -149,9 +204,15 @@ class ItineraryOptimizerAgent:
                 'city': city,
                 'duration_days': duration_days,
                 'total_pois': len(selected_pois),
-                'start_time': start_time
+                'start_time': start_time,
+                'optimization_mode': mode
             }
         }
+
+        if solver_stats:
+            result['solver_stats'] = solver_stats
+
+        return result
 
     def _enrich_pois_with_metadata(
         self,
@@ -559,6 +620,80 @@ class ItineraryOptimizerAgent:
             })
 
         return itinerary
+
+    def _schedule_days_with_assignments(
+        self,
+        sequence: List[Dict[str, Any]],
+        day_assignments: Dict[str, int],
+        duration_days: int,
+        start_time: str,
+        distance_matrix: Dict[Tuple[str, str], float]
+    ) -> List[Dict[str, Any]]:
+        """
+        Schedule POIs into days using ILP day assignments.
+
+        Args:
+            sequence: Optimized POI sequence
+            day_assignments: POI name -> day number mapping from ILP
+            duration_days: Number of days
+            start_time: Daily start time
+            distance_matrix: Distances for travel time calculation
+
+        Returns:
+            List of day schedules
+        """
+        # Group POIs by assigned day
+        days_pois = [[] for _ in range(duration_days)]
+
+        for poi in sequence:
+            day = day_assignments.get(poi['poi'], 0)
+            if day < duration_days:
+                days_pois[day].append(poi)
+
+        # Build itinerary
+        itinerary = []
+        for day_num, day_pois in enumerate(days_pois):
+            if not day_pois:
+                continue
+
+            total_hours = 0.0
+            total_walking = 0.0
+
+            for i, poi in enumerate(day_pois):
+                visit_hours = poi.get('estimated_hours', 2.0)
+                total_hours += visit_hours
+
+                # Add travel time
+                if i > 0:
+                    prev_poi = day_pois[i - 1]
+                    distance_km = distance_matrix.get((prev_poi['poi'], poi['poi']), 0)
+                    travel_hours = distance_km / self.walking_speed_kmh
+                    total_hours += travel_hours
+                    total_walking += distance_km
+
+            itinerary.append({
+                'day': day_num + 1,
+                'pois': day_pois,
+                'total_hours': round(total_hours, 1),
+                'total_walking_km': round(total_walking, 2),
+                'start_time': start_time
+            })
+
+        return itinerary
+
+    def _is_ilp_available(self) -> bool:
+        """
+        Check if ILP optimization is available.
+
+        Returns:
+            True if OR-Tools is installed and ILP is enabled in config
+        """
+        try:
+            import ortools
+            ilp_enabled = self.config.get('optimization', {}).get('ilp_enabled', False)
+            return ilp_enabled
+        except ImportError:
+            return False
 
     def _validate_constraints(
         self,

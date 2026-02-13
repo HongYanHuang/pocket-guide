@@ -37,7 +37,8 @@ class ItineraryReoptimizer:
         tour_data: Dict,
         replacements: List[Dict],  # [{ original_poi, replacement_poi, day }, ...]
         city: str,
-        preferences: Dict = None
+        preferences: Dict = None,
+        mode: str = 'auto'  # 'simple', 'ilp', 'auto'
     ) -> Dict:
         """
         Main entry point for re-optimization.
@@ -47,6 +48,7 @@ class ItineraryReoptimizer:
             replacements: List of replacement dicts
             city: City name
             preferences: User preferences for optimization
+            mode: Optimization mode - 'simple', 'ilp', or 'auto' (default)
 
         Returns:
             {
@@ -58,20 +60,33 @@ class ItineraryReoptimizer:
         """
         preferences = preferences or {}
 
+        # Auto-detect optimization mode based on constraints
+        if mode == 'auto':
+            # Get all POIs from tour
+            all_pois = []
+            for day in tour_data.get('itinerary', []):
+                all_pois.extend(day.get('pois', []))
+
+            has_constraints = self._has_constraints(all_pois)
+            selected_mode = 'ilp' if has_constraints else 'simple'
+            print(f"  [REOPTIMIZER] Auto-detected mode: {selected_mode} (constraints: {has_constraints})", flush=True)
+        else:
+            selected_mode = mode
+
         # Initialize or update distance cache
         self._update_distance_cache(tour_data, replacements, city)
 
         # Determine optimization strategy
         strategy = self._determine_strategy(tour_data, replacements)
 
-        print(f"  [REOPTIMIZER] Using strategy: {strategy}", flush=True)
+        print(f"  [REOPTIMIZER] Using strategy: {strategy} with {selected_mode} optimization", flush=True)
 
         if strategy == 'local_swap':
-            return self._local_swap_optimization(tour_data, replacements[0], city)
+            return self._local_swap_optimization(tour_data, replacements[0], city, selected_mode)
         elif strategy == 'day_level':
-            return self._day_level_optimization(tour_data, replacements, city, preferences)
+            return self._day_level_optimization(tour_data, replacements, city, preferences, selected_mode)
         else:  # 'full_tour'
-            return self._full_tour_optimization(tour_data, replacements, city, preferences)
+            return self._full_tour_optimization(tour_data, replacements, city, preferences, selected_mode)
 
     def _determine_strategy(self, tour_data: Dict, replacements: List[Dict]) -> str:
         """
@@ -196,7 +211,8 @@ class ItineraryReoptimizer:
         self,
         tour_data: Dict,
         replacement: Dict,
-        city: str
+        city: str,
+        mode: str = 'simple'
     ) -> Dict:
         """
         Tier 1: Try all positions within the same day.
@@ -287,7 +303,8 @@ class ItineraryReoptimizer:
         tour_data: Dict,
         replacements: List[Dict],
         city: str,
-        preferences: Dict
+        preferences: Dict,
+        mode: str = 'simple'
     ) -> Dict:
         """
         Tier 2: Re-optimize only affected days using greedy + 2-opt.
@@ -375,7 +392,8 @@ class ItineraryReoptimizer:
         tour_data: Dict,
         replacements: List[Dict],
         city: str,
-        preferences: Dict
+        preferences: Dict,
+        mode: str = 'simple'
     ) -> Dict:
         """
         Tier 3: Full re-optimization using existing ItineraryOptimizerAgent.
@@ -431,7 +449,8 @@ class ItineraryReoptimizer:
             city=city,
             duration_days=duration_days,
             start_time=start_time,
-            preferences=preferences
+            preferences=preferences,
+            mode=mode
         )
 
         # Update distance cache with newly calculated distances
@@ -666,3 +685,31 @@ class ItineraryReoptimizer:
             'overall_score': round(overall_score, 2),
             'total_distance_km': round(total_distance, 2)
         }
+
+    def _has_constraints(self, pois: List[Dict[str, Any]]) -> bool:
+        """
+        Check if any POI has booking/combo/precedence constraints.
+
+        Args:
+            pois: List of POIs
+
+        Returns:
+            True if constraints are present
+        """
+        for poi in pois:
+            metadata = poi.get('metadata', {})
+
+            # Check for booking requirements with time windows
+            if metadata.get('booking_info', {}).get('required'):
+                return True
+
+            # Check for combo ticket requirements
+            if metadata.get('combo_ticket', {}).get('must_visit_together'):
+                return True
+
+            # Check for explicit precedence constraints
+            precedence = metadata.get('precedence', {})
+            if precedence.get('must_visit_after') or precedence.get('must_visit_before'):
+                return True
+
+        return False

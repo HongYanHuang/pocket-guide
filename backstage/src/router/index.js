@@ -5,6 +5,7 @@ import TranscriptView from '../views/TranscriptView.vue'
 import ResearchView from '../views/ResearchView.vue'
 import ToursView from '../views/ToursView.vue'
 import TourDetail from '../views/TourDetail.vue'
+import ComboTicketsView from '../views/ComboTicketsView.vue'
 
 const routes = [
   {
@@ -36,6 +37,11 @@ const routes = [
     path: '/tours/:tourId',
     name: 'TourDetail',
     component: TourDetail
+  },
+  {
+    path: '/combo-tickets',
+    name: 'ComboTickets',
+    component: ComboTicketsView
   }
 ]
 

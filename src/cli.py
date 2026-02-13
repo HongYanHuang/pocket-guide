@@ -1624,5 +1624,96 @@ def trip_show(ctx, tour_id, city, version, language):
         sys.exit(1)
 
 
+# ==== Validation Commands ====
+
+@cli.group()
+def validate():
+    """Data validation commands"""
+    pass
+
+
+@validate.command('combo-tickets')
+@click.option('--city', required=True, help='City name (e.g., rome, paris)')
+@click.pass_context
+def validate_combo_tickets(ctx, city):
+    """
+    Validate combo ticket data consistency.
+
+    Checks:
+    - All members in combo tickets are valid POIs
+    - All POIs referencing combo tickets have valid IDs
+    - Bi-directional consistency between tickets and POI references
+    """
+    from data.combo_ticket_loader import ComboTicketLoader
+
+    console.print(f"\n[bold cyan]Validating combo tickets for {city}...[/bold cyan]\n")
+
+    loader = ComboTicketLoader()
+
+    try:
+        # Load combo tickets
+        combo_tickets = loader.load_city_combo_tickets(city)
+
+        if not combo_tickets:
+            console.print(f"[yellow]No combo tickets found for {city}[/yellow]")
+            return
+
+        console.print(f"[dim]Found {len(combo_tickets)} combo ticket(s)[/dim]\n")
+
+        # Validate
+        issues = loader.validate_combo_tickets(city)
+
+        if not issues:
+            console.print("[green]✓ All combo tickets are valid![/green]")
+            console.print(f"[dim]Validated {len(combo_tickets)} combo ticket(s) with no issues[/dim]")
+            return
+
+        # Display issues
+        error_count = sum(1 for issue in issues if issue['type'] == 'error')
+        warning_count = sum(1 for issue in issues if issue['type'] == 'warning')
+
+        console.print(f"[yellow]Found {len(issues)} validation issue(s):[/yellow]")
+        console.print(f"[red]  • {error_count} error(s)[/red]")
+        console.print(f"[yellow]  • {warning_count} warning(s)[/yellow]\n")
+
+        # Group issues by type
+        errors = [i for i in issues if i['type'] == 'error']
+        warnings = [i for i in issues if i['type'] == 'warning']
+
+        if errors:
+            console.print("[bold red]Errors:[/bold red]")
+            for issue in errors:
+                console.print(f"  [red]✗[/red] {issue['message']}")
+                if issue.get('entity'):
+                    console.print(f"    [dim]Entity: {issue['entity']}[/dim]")
+                if issue.get('poi'):
+                    console.print(f"    [dim]POI: {issue['poi']}[/dim]")
+                if issue.get('combo_ticket'):
+                    console.print(f"    [dim]Ticket: {issue['combo_ticket']}[/dim]")
+            console.print()
+
+        if warnings:
+            console.print("[bold yellow]Warnings:[/bold yellow]")
+            for issue in warnings:
+                console.print(f"  [yellow]⚠[/yellow] {issue['message']}")
+                if issue.get('entity'):
+                    console.print(f"    [dim]Entity: {issue['entity']}[/dim]")
+                if issue.get('poi'):
+                    console.print(f"    [dim]POI: {issue['poi']}[/dim]")
+                if issue.get('combo_ticket'):
+                    console.print(f"    [dim]Ticket: {issue['combo_ticket']}[/dim]")
+            console.print()
+
+        # Exit with error code if there are errors
+        if error_count > 0:
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"[red]Error during validation: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 if __name__ == '__main__':
     cli(obj={})

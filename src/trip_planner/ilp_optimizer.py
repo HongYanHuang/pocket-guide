@@ -609,15 +609,26 @@ class ILPOptimizer:
         num_pois = len(pois)
         max_pois_per_day = len(list(visit_vars[0][0].keys()))
 
-        # Group POIs by combo_ticket.group_id
+        # Group POIs by combo ticket groups (from enriched data)
         from collections import defaultdict
         groups = defaultdict(list)
 
         for i, poi in enumerate(pois):
-            combo_info = poi.get('metadata', {}).get('combo_ticket', {})
-            if combo_info.get('must_visit_together'):
-                group_id = combo_info.get('group_id')
-                if group_id:
+            # Use enriched combo_ticket_groups from ComboTicketLoader
+            combo_groups = poi.get('metadata', {}).get('combo_ticket_groups', [])
+
+            for group in combo_groups:
+                constraints = group.get('constraints', {})
+                if constraints.get('must_visit_together'):
+                    group_id = group.get('id')
+                    if group_id:
+                        groups[group_id].append(i)
+
+            # Fallback: support old format for backward compatibility
+            old_combo_info = poi.get('metadata', {}).get('combo_ticket', {})
+            if old_combo_info.get('must_visit_together'):
+                group_id = old_combo_info.get('group_id')
+                if group_id and group_id not in groups:
                     groups[group_id].append(i)
 
         # For each group, enforce constraints

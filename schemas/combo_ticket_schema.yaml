@@ -1,0 +1,233 @@
+# Combo Ticket Schema Definition
+# Defines the structure and validation rules for combo ticket data
+
+combo_ticket:
+  type: object
+  required:
+    - id
+    - name
+    - type
+    - members
+
+  properties:
+    id:
+      type: string
+      description: "Unique identifier for the combo ticket (lowercase, underscores only)"
+      pattern: "^[a-z0-9_]+$"
+      examples:
+        - archaeological_pass_rome
+        - vatican_combo
+        - borghese_gallery_gardens
+
+    name:
+      type: string
+      description: "Human-readable name of the combo ticket"
+      minLength: 3
+      maxLength: 100
+      examples:
+        - "Rome Archaeological Pass"
+        - "Vatican Museums + Sistine Chapel"
+
+    description:
+      type: string
+      description: "Detailed description of what the combo ticket includes"
+      maxLength: 500
+
+    type:
+      type: string
+      description: "Type of combo ticket constraint"
+      enum:
+        - same_day_consecutive    # Must visit on same day, in order
+        - same_day_any_order      # Must visit on same day, any order
+        - multi_day               # Can span multiple days
+        - same_day_clustered      # Same day, close together but not necessarily consecutive
+      default: same_day_consecutive
+
+    members:
+      type: array
+      description: "List of POI names that are part of this combo ticket"
+      items:
+        type: string
+      minItems: 2
+      maxItems: 10
+      uniqueItems: true
+
+    constraints:
+      type: object
+      description: "Visit constraints for the combo ticket"
+      properties:
+        must_visit_together:
+          type: boolean
+          description: "Whether all members must be visited together"
+          default: true
+
+        max_separation_hours:
+          type: number
+          description: "Maximum hours between first and last POI in group"
+          minimum: 0
+          maximum: 24
+          default: 4
+
+        visit_order:
+          type: string
+          description: "Whether visit order is enforced"
+          enum: [fixed, flexible, chronological]
+          default: flexible
+
+        same_day_required:
+          type: boolean
+          description: "Whether all POIs must be on the same day"
+          default: true
+
+    pricing:
+      type: object
+      description: "Pricing information for the combo ticket"
+      properties:
+        adult:
+          type: number
+          description: "Adult price"
+          minimum: 0
+
+        reduced:
+          type: number
+          description: "Reduced price (students, seniors)"
+          minimum: 0
+
+        child:
+          type: number
+          description: "Child price"
+          minimum: 0
+
+        free_under_age:
+          type: integer
+          description: "Age under which admission is free"
+          minimum: 0
+          maximum: 18
+
+        currency:
+          type: string
+          description: "Currency code (ISO 4217)"
+          pattern: "^[A-Z]{3}$"
+          default: EUR
+
+        validity_days:
+          type: integer
+          description: "Number of days the ticket is valid"
+          minimum: 1
+          maximum: 30
+          default: 1
+
+        savings:
+          type: number
+          description: "Amount saved vs buying individual tickets"
+          minimum: 0
+
+        savings_percentage:
+          type: number
+          description: "Percentage saved vs individual tickets"
+          minimum: 0
+          maximum: 100
+
+    booking_info:
+      type: object
+      description: "Booking and purchase information"
+      properties:
+        required:
+          type: boolean
+          description: "Whether advance booking is required"
+          default: false
+
+        recommended:
+          type: boolean
+          description: "Whether advance booking is recommended"
+          default: false
+
+        advance_booking_days:
+          type: integer
+          description: "Minimum days in advance to book"
+          minimum: 0
+          maximum: 365
+
+        url:
+          type: string
+          description: "URL to purchase the combo ticket"
+          format: uri
+
+        notes:
+          type: string
+          description: "Additional booking notes"
+          maxLength: 300
+
+    metadata:
+      type: object
+      description: "Additional metadata"
+      properties:
+        provider:
+          type: string
+          description: "Ticket provider/vendor"
+
+        includes:
+          type: array
+          description: "What the ticket includes"
+          items:
+            type: string
+
+        excludes:
+          type: array
+          description: "What the ticket doesn't include"
+          items:
+            type: string
+
+        tips:
+          type: array
+          description: "Tips for using the combo ticket"
+          items:
+            type: string
+
+        last_updated:
+          type: string
+          description: "When this information was last verified"
+          format: date
+
+# City-level combo tickets file structure
+combo_tickets_file:
+  type: object
+  required:
+    - combo_tickets
+
+  properties:
+    combo_tickets:
+      type: array
+      description: "List of all combo tickets for this city"
+      items:
+        $ref: "#/combo_ticket"
+
+    metadata:
+      type: object
+      properties:
+        city:
+          type: string
+          description: "City name"
+
+        last_updated:
+          type: string
+          format: date
+
+        verified_by:
+          type: string
+          description: "Who last verified this information"
+
+# POI reference format (in individual POI files)
+poi_combo_reference:
+  type: object
+  properties:
+    combo_tickets:
+      type: array
+      description: "List of combo ticket IDs this POI belongs to"
+      items:
+        type: string
+        pattern: "^[a-z0-9_]+$"
+      uniqueItems: true
+      examples:
+        - [archaeological_pass_rome]
+        - [vatican_combo, rome_history_pass]

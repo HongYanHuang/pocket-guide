@@ -13,6 +13,11 @@ from typing import Dict, List, Any, Tuple, Optional
 from datetime import datetime, timedelta
 import yaml
 from pathlib import Path
+import sys
+
+# Add parent directory to path for data module import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from data.combo_ticket_loader import ComboTicketLoader
 
 
 class ItineraryOptimizerAgent:
@@ -227,7 +232,7 @@ class ItineraryOptimizerAgent:
             city: City name
 
         Returns:
-            Enriched POIs with full metadata
+            Enriched POIs with full metadata and combo ticket groups
         """
         poi_research_dir = Path("poi_research") / city
         enriched = []
@@ -268,6 +273,11 @@ class ItineraryOptimizerAgent:
                 if 'estimated_hours' not in poi_copy:
                     poi_copy['estimated_hours'] = 2.0
                 enriched.append(poi_copy)
+
+        # Enrich with combo ticket data
+        combo_loader = ComboTicketLoader()
+        combo_tickets = combo_loader.load_city_combo_tickets(city)
+        enriched = combo_loader.enrich_pois_with_combo_tickets(enriched, combo_tickets)
 
         return enriched
 

@@ -14,7 +14,7 @@ from data.combo_ticket_loader import ComboTicketLoader
 
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/combo-tickets", tags=["combo-tickets"])
+router = APIRouter(prefix="/combo-tickets", tags=["combo-tickets"])
 
 # Initialize loader
 combo_loader = ComboTicketLoader()

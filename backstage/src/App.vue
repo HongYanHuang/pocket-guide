@@ -17,6 +17,9 @@
         <el-menu-item index="/tours">
           <span>Tours</span>
         </el-menu-item>
+        <el-menu-item index="/tour/generate">
+          <span>Generate Tour</span>
+        </el-menu-item>
         <el-menu-item index="/combo-tickets">
           <span>Combo Tickets</span>
         </el-menu-item>

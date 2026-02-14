@@ -29,6 +29,7 @@ from api_models import (
 from poi_metadata_agent import POIMetadataAgent
 from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
 from api_combo_tickets import router as combo_tickets_router
+from api_tour_generator import router as tour_generator_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -54,6 +55,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(combo_tickets_router)
+app.include_router(tour_generator_router)
 
 # Load configuration
 try:

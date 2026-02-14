@@ -5,6 +5,7 @@ import TranscriptView from '../views/TranscriptView.vue'
 import ResearchView from '../views/ResearchView.vue'
 import ToursView from '../views/ToursView.vue'
 import TourDetail from '../views/TourDetail.vue'
+import TourGeneratorView from '../views/TourGeneratorView.vue'
 import ComboTicketsView from '../views/ComboTicketsView.vue'
 
 const routes = [
@@ -37,6 +38,11 @@ const routes = [
     path: '/tours/:tourId',
     name: 'TourDetail',
     component: TourDetail
+  },
+  {
+    path: '/tour/generate',
+    name: 'TourGenerator',
+    component: TourGeneratorView
   },
   {
     path: '/combo-tickets',

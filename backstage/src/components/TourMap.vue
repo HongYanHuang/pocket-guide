@@ -115,6 +115,27 @@ const createLocationIcon = (type) => {
   })
 }
 
+// Parse location string to coordinates
+// Can be either "lat,lng" or a place name (for place names, return null)
+const parseLocationCoordinates = (locationStr) => {
+  if (!locationStr) return null
+
+  // Check if it's a coordinate pair (format: "lat,lng")
+  const coordMatch = locationStr.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/)
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1])
+    const lng = parseFloat(coordMatch[2])
+
+    // Validate coordinates
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return [lat, lng]
+    }
+  }
+
+  // If not valid coordinates, it's a place name - return null
+  return null
+}
+
 const renderTourOnMap = () => {
   if (!map || !props.tour) return
 
@@ -123,14 +144,13 @@ const renderTourOnMap = () => {
 
   // Add start location if exists
   if (props.tour.input_parameters?.start_location) {
-    // For simplicity, we'll add a marker at the first POI location with special icon
-    // In a real implementation, you'd geocode the start_location string
-    const firstPOI = props.tour.itinerary[0]?.pois[0]
-    if (firstPOI?.coordinates) {
-      const marker = L.marker(
-        [firstPOI.coordinates.latitude, firstPOI.coordinates.longitude],
-        { icon: createLocationIcon('start') }
-      ).addTo(map)
+    const startCoords = parseLocationCoordinates(props.tour.input_parameters.start_location)
+
+    if (startCoords) {
+      // Use parsed coordinates
+      const marker = L.marker(startCoords, {
+        icon: createLocationIcon('start')
+      }).addTo(map)
 
       marker.bindPopup(`
         <div style="font-weight: 600; margin-bottom: 4px">Start Point</div>
@@ -138,7 +158,27 @@ const renderTourOnMap = () => {
       `)
 
       markers.push(marker)
-      allCoordinates.push([firstPOI.coordinates.latitude, firstPOI.coordinates.longitude])
+      allCoordinates.push(startCoords)
+    } else {
+      // Fallback: Place name or invalid coords - use first POI location
+      const firstPOI = props.tour.itinerary[0]?.pois[0]
+      if (firstPOI?.coordinates) {
+        const marker = L.marker(
+          [firstPOI.coordinates.latitude, firstPOI.coordinates.longitude],
+          { icon: createLocationIcon('start') }
+        ).addTo(map)
+
+        marker.bindPopup(`
+          <div style="font-weight: 600; margin-bottom: 4px">Start Point</div>
+          <div>${props.tour.input_parameters.start_location}</div>
+          <div style="font-size: 11px; color: #909399; margin-top: 4px">
+            (Approximate location - based on first POI)
+          </div>
+        `)
+
+        markers.push(marker)
+        allCoordinates.push([firstPOI.coordinates.latitude, firstPOI.coordinates.longitude])
+      }
     }
   }
 
@@ -205,14 +245,13 @@ const renderTourOnMap = () => {
 
   // Add end location if exists
   if (props.tour.input_parameters?.end_location) {
-    const lastDay = props.tour.itinerary[props.tour.itinerary.length - 1]
-    const lastPOI = lastDay?.pois[lastDay.pois.length - 1]
+    const endCoords = parseLocationCoordinates(props.tour.input_parameters.end_location)
 
-    if (lastPOI?.coordinates) {
-      const marker = L.marker(
-        [lastPOI.coordinates.latitude, lastPOI.coordinates.longitude],
-        { icon: createLocationIcon('end') }
-      ).addTo(map)
+    if (endCoords) {
+      // Use parsed coordinates
+      const marker = L.marker(endCoords, {
+        icon: createLocationIcon('end')
+      }).addTo(map)
 
       marker.bindPopup(`
         <div style="font-weight: 600; margin-bottom: 4px">End Point</div>
@@ -220,7 +259,29 @@ const renderTourOnMap = () => {
       `)
 
       markers.push(marker)
-      allCoordinates.push([lastPOI.coordinates.latitude, lastPOI.coordinates.longitude])
+      allCoordinates.push(endCoords)
+    } else {
+      // Fallback: Place name or invalid coords - use last POI location
+      const lastDay = props.tour.itinerary[props.tour.itinerary.length - 1]
+      const lastPOI = lastDay?.pois[lastDay.pois.length - 1]
+
+      if (lastPOI?.coordinates) {
+        const marker = L.marker(
+          [lastPOI.coordinates.latitude, lastPOI.coordinates.longitude],
+          { icon: createLocationIcon('end') }
+        ).addTo(map)
+
+        marker.bindPopup(`
+          <div style="font-weight: 600; margin-bottom: 4px">End Point</div>
+          <div>${props.tour.input_parameters.end_location}</div>
+          <div style="font-size: 11px; color: #909399; margin-top: 4px">
+            (Approximate location - based on last POI)
+          </div>
+        `)
+
+        markers.push(marker)
+        allCoordinates.push([lastPOI.coordinates.latitude, lastPOI.coordinates.longitude])
+      }
     }
   }
 

@@ -93,6 +93,17 @@
           </div>
         </el-card>
 
+        <!-- Tour Map -->
+        <el-card style="margin-bottom: 20px">
+          <template #header>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <el-icon :size="18"><Location /></el-icon>
+              <span style="font-weight: 600">Interactive Map</span>
+            </div>
+          </template>
+          <TourMap :tour="tour" />
+        </el-card>
+
         <!-- Tour Info Card -->
         <el-card style="margin-bottom: 20px">
           <template #header>
@@ -578,6 +589,7 @@ import { useRoute } from 'vue-router'
 import { Loading, ArrowDown, LocationInformation, Location, Guide, Right } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
+import TourMap from '../components/TourMap.vue'
 
 const route = useRoute()
 const loading = ref(true)

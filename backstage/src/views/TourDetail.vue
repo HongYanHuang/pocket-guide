@@ -34,6 +34,65 @@
 
       <!-- Tour Details -->
       <div v-else-if="tour">
+        <!-- Route Overview Card -->
+        <el-card
+          v-if="tour.input_parameters.start_location || tour.input_parameters.end_location"
+          style="margin-bottom: 20px; background: linear-gradient(to right, #f0f9ff, #e0f2fe)"
+        >
+          <template #header>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <el-icon :size="18"><Guide /></el-icon>
+              <span style="font-weight: 600">Journey Route</span>
+            </div>
+          </template>
+
+          <div style="display: flex; align-items: center; justify-content: center; gap: 20px; padding: 20px 0">
+            <!-- Start Location -->
+            <div v-if="tour.input_parameters.start_location" class="route-point">
+              <div class="route-icon start-icon">
+                <el-icon :size="24"><LocationInformation /></el-icon>
+              </div>
+              <div style="margin-top: 10px; text-align: center">
+                <div style="font-size: 12px; color: #67c23a; font-weight: 600; margin-bottom: 5px">
+                  START POINT
+                </div>
+                <div style="font-size: 14px; font-weight: 500">
+                  {{ tour.input_parameters.start_location }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Arrow / Days -->
+            <div v-if="tour.input_parameters.start_location || tour.input_parameters.end_location" style="display: flex; flex-direction: column; align-items: center; margin: 0 20px">
+              <el-icon :size="30" style="color: #409eff"><Right /></el-icon>
+              <el-tag size="small" style="margin-top: 10px" type="info">
+                {{ tour.itinerary.length }} day{{ tour.itinerary.length > 1 ? 's' : '' }} · {{ totalPOIs }} POIs
+              </el-tag>
+            </div>
+
+            <!-- End Location -->
+            <div v-if="tour.input_parameters.end_location" class="route-point">
+              <div class="route-icon end-icon">
+                <el-icon :size="24"><Location /></el-icon>
+              </div>
+              <div style="margin-top: 10px; text-align: center">
+                <div style="font-size: 12px; color: #e6a23c; font-weight: 600; margin-bottom: 5px">
+                  END POINT
+                </div>
+                <div style="font-size: 14px; font-weight: 500">
+                  {{ tour.input_parameters.end_location }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Message when neither is set -->
+            <div v-if="!tour.input_parameters.start_location && !tour.input_parameters.end_location" style="color: #909399; text-align: center">
+              <el-icon :size="24"><Guide /></el-icon>
+              <div style="margin-top: 10px">No specific start or end location set</div>
+            </div>
+          </div>
+        </el-card>
+
         <!-- Tour Info Card -->
         <el-card style="margin-bottom: 20px">
           <template #header>
@@ -83,6 +142,18 @@
             </el-descriptions-item>
             <el-descriptions-item label="Language" v-if="tour.input_parameters.language">
               {{ tour.input_parameters.language }}
+            </el-descriptions-item>
+            <el-descriptions-item label="Start Location" :span="2" v-if="tour.input_parameters.start_location">
+              <el-tag type="success" size="small">
+                <el-icon style="margin-right: 5px"><LocationInformation /></el-icon>
+                {{ tour.input_parameters.start_location }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="End Location" :span="2" v-if="tour.input_parameters.end_location">
+              <el-tag type="warning" size="small">
+                <el-icon style="margin-right: 5px"><Location /></el-icon>
+                {{ tour.input_parameters.end_location }}
+              </el-tag>
             </el-descriptions-item>
           </el-descriptions>
 
@@ -380,7 +451,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loading, ArrowDown } from '@element-plus/icons-vue'
+import { Loading, ArrowDown, LocationInformation, Location, Guide, Right } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
@@ -643,5 +714,36 @@ onMounted(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Route display styles */
+.route-point {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.route-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+}
+
+.route-icon:hover {
+  transform: scale(1.1);
+}
+
+.start-icon {
+  background: linear-gradient(135deg, #67c23a, #85ce61);
+}
+
+.end-icon {
+  background: linear-gradient(135deg, #e6a23c, #f0c78a);
 }
 </style>

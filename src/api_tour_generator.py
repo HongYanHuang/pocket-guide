@@ -160,31 +160,38 @@ async def generate_tour(request: TourGenerationRequest):
             logger.info("Step 3: Saving tour...")
             tour_manager = TourManager(conf)
 
-            tour_data = {
+            # Build input parameters for tracking
+            input_parameters = {
                 'city': request.city,
                 'duration_days': request.days,
                 'interests': request.interests,
                 'preferences': preferences,
+                'must_see': request.must_see,
+                'provider': request.provider,
+                'mode': request.mode,
+                'start_location': request.start_location,
+                'end_location': request.end_location,
+                'start_date': request.start_date,
                 'language': request.language,
-                'itinerary': itinerary,
-                'optimization_scores': optimization_scores,
-                'backup_pois': backup_pois,
-                'metadata': {
-                    'generated_at': datetime.now().isoformat(),
-                    'provider': request.provider,
-                    'mode': request.mode,
-                    'start_location': request.start_location,
-                    'end_location': request.end_location,
-                    'start_date': request.start_date
-                }
+                'generated_via': 'backstage_ui'
             }
 
-            tour_id = tour_manager.save_tour(
-                city=request.city,
+            # Build tour data structure
+            tour_data = {
+                'itinerary': itinerary,
+                'optimization_scores': optimization_scores
+            }
+
+            # Save tour with full parameters
+            result = tour_manager.save_tour(
                 tour_data=tour_data,
+                city=request.city,
+                input_parameters=input_parameters,
+                selection_result=selection_result,
                 language=request.language
             )
 
+            tour_id = result['tour_id']
             logger.info(f"Tour saved with ID: {tour_id}")
         else:
             # Generate a temporary ID

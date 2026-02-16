@@ -189,7 +189,27 @@
               <el-card>
                 <template #header>
                   <div style="display: flex; justify-content: space-between; align-items: center">
-                    <span style="font-weight: 600">Day {{ day.day }}</span>
+                    <div style="display: flex; align-items: center; gap: 10px">
+                      <span style="font-weight: 600">Day {{ day.day }}</span>
+                      <!-- Start location indicator for Day 1 -->
+                      <el-tag
+                        v-if="day.day === 1 && tour.input_parameters.start_location"
+                        size="small"
+                        type="success"
+                      >
+                        <el-icon style="margin-right: 3px"><LocationInformation /></el-icon>
+                        Starts from: {{ tour.input_parameters.start_location }}
+                      </el-tag>
+                      <!-- End location indicator for last day -->
+                      <el-tag
+                        v-if="day.day === tour.itinerary.length && tour.input_parameters.end_location"
+                        size="small"
+                        type="warning"
+                      >
+                        <el-icon style="margin-right: 3px"><Location /></el-icon>
+                        Ends at: {{ tour.input_parameters.end_location }}
+                      </el-tag>
+                    </div>
                     <div>
                       <el-tag size="small" style="margin-right: 5px">
                         {{ day.total_hours.toFixed(1) }}h total

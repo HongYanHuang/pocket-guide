@@ -38,9 +38,9 @@ class ItineraryOptimizerAgent:
             config: Application configuration dictionary
         """
         self.config = config
-        self.max_hours_per_day = 8  # Maximum activity hours per day
         self.walking_speed_kmh = 4.0  # Average walking speed in km/h
         self.ilp_optimizer = None  # Lazy load ILP optimizer
+        # Note: max_hours_per_day is now calculated dynamically based on pace preference
 
     def optimize_itinerary(
         self,
@@ -86,6 +86,16 @@ class ItineraryOptimizerAgent:
         """
         preferences = preferences or {}
 
+        # Calculate max hours per day based on pace (same logic as POI selector)
+        pace_value = preferences.get('pace', 'normal')
+        if pace_value == 'relaxed':
+            max_hours_per_day = 6.0  # Relaxed: fewer POIs, more leisure time
+        elif pace_value == 'packed':
+            max_hours_per_day = 9.0  # Packed: maximize sightseeing
+        else:  # normal
+            max_hours_per_day = 7.5  # Normal: balanced
+
+        print(f"  [OPTIMIZER] Pace: {pace_value} ({max_hours_per_day}h/day)", flush=True)
         print(f"  [OPTIMIZER] Loading metadata for {len(selected_pois)} POIs...", flush=True)
 
         # Load full POI metadata with coordinates and hours
@@ -157,7 +167,8 @@ class ItineraryOptimizerAgent:
                 optimized_sequence,
                 duration_days,
                 start_time,
-                distance_matrix
+                distance_matrix,
+                max_hours_per_day
             )
 
         # Enforce duration_days limit as safety net
@@ -177,13 +188,14 @@ class ItineraryOptimizerAgent:
                 trimmed_sequence,
                 duration_days,
                 start_time,
-                distance_matrix
+                distance_matrix,
+                max_hours_per_day
             )
 
             print(f"  ✓ Re-optimized to {len(itinerary)} days with {pois_to_keep} POIs", flush=True)
 
         # Validate constraints
-        violations = self._validate_constraints(itinerary)
+        violations = self._validate_constraints(itinerary, max_hours_per_day)
 
         # Calculate final scores (use ILP scores if available)
         if optimization_scores:
@@ -561,7 +573,8 @@ class ItineraryOptimizerAgent:
         sequence: List[Dict[str, Any]],
         duration_days: int,
         start_time: str,
-        distance_matrix: Dict[Tuple[str, str], float]
+        distance_matrix: Dict[Tuple[str, str], float],
+        max_hours_per_day: float = 7.5
     ) -> List[Dict[str, Any]]:
         """
         Schedule POIs into day-by-day itinerary.
@@ -571,6 +584,7 @@ class ItineraryOptimizerAgent:
             duration_days: Number of days
             start_time: Daily start time (e.g., "09:00")
             distance_matrix: Distances for travel time calculation
+            max_hours_per_day: Maximum hours per day based on pace
 
         Returns:
             List of day schedules
@@ -599,7 +613,7 @@ class ItineraryOptimizerAgent:
             # Check if this POI fits in current day
             total_hours_needed = visit_hours + travel_hours
 
-            if current_day_hours + total_hours_needed <= self.max_hours_per_day:
+            if current_day_hours + total_hours_needed <= max_hours_per_day:
                 # Fits in current day
                 current_day_pois.append(poi)
                 current_day_hours += total_hours_needed
@@ -707,13 +721,15 @@ class ItineraryOptimizerAgent:
 
     def _validate_constraints(
         self,
-        itinerary: List[Dict[str, Any]]
+        itinerary: List[Dict[str, Any]],
+        max_hours_per_day: float = 7.5
     ) -> List[str]:
         """
         Validate itinerary against constraints.
 
         Args:
             itinerary: Day-by-day itinerary
+            max_hours_per_day: Maximum hours per day based on pace
 
         Returns:
             List of constraint violation messages
@@ -722,9 +738,9 @@ class ItineraryOptimizerAgent:
 
         for day in itinerary:
             # Check hours per day
-            if day['total_hours'] > self.max_hours_per_day:
+            if day['total_hours'] > max_hours_per_day:
                 violations.append(
-                    f"Day {day['day']}: Exceeds {self.max_hours_per_day}h limit "
+                    f"Day {day['day']}: Exceeds {max_hours_per_day}h limit "
                     f"({day['total_hours']}h scheduled)"
                 )
 

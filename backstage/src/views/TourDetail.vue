@@ -221,6 +221,58 @@
                   </div>
                 </template>
 
+                <!-- Start Location Card (Day 1 only) -->
+                <el-card
+                  v-if="day.day === 1 && tour.input_parameters.start_location"
+                  shadow="hover"
+                  :body-style="{ padding: '15px' }"
+                  style="margin-bottom: 15px; border-left: 3px solid #67c23a"
+                >
+                  <div style="display: flex; justify-content: space-between; align-items: start">
+                    <div style="flex: 1">
+                      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px">
+                        <span style="
+                          background: linear-gradient(135deg, #67c23a, #85ce61);
+                          color: white;
+                          width: 24px;
+                          height: 24px;
+                          border-radius: 50%;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                          font-size: 12px;
+                          font-weight: 600;
+                        ">
+                          <el-icon :size="14"><LocationInformation /></el-icon>
+                        </span>
+                        <span style="font-weight: 600; font-size: 15px">
+                          {{ tour.input_parameters.start_location }}
+                        </span>
+                        <el-tag size="small" type="success">
+                          Start Point
+                        </el-tag>
+                      </div>
+
+                      <div style="color: #606266; font-size: 13px; margin-bottom: 10px; padding-left: 34px">
+                        Your journey begins here
+                      </div>
+                    </div>
+                  </div>
+                </el-card>
+
+                <!-- Walking transition from start location to first POI -->
+                <div
+                  v-if="day.day === 1 && tour.input_parameters.start_location && day.pois.length > 0"
+                  style="text-align: center; margin-bottom: 15px"
+                >
+                  <el-icon :size="16" color="#909399">
+                    <ArrowDown />
+                  </el-icon>
+                  <div style="color: #909399; font-size: 12px">
+                    Walking to first POI
+                  </div>
+                </div>
+
                 <!-- POIs for this day -->
                 <div v-for="(poi, index) in day.pois" :key="index">
                   <el-card
@@ -397,6 +449,58 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Walking transition from last POI to end location -->
+                <div
+                  v-if="day.day === tour.itinerary.length && tour.input_parameters.end_location && day.pois.length > 0"
+                  style="text-align: center; margin-bottom: 15px"
+                >
+                  <el-icon :size="16" color="#909399">
+                    <ArrowDown />
+                  </el-icon>
+                  <div style="color: #909399; font-size: 12px">
+                    Walking to end point
+                  </div>
+                </div>
+
+                <!-- End Location Card (Last day only) -->
+                <el-card
+                  v-if="day.day === tour.itinerary.length && tour.input_parameters.end_location"
+                  shadow="hover"
+                  :body-style="{ padding: '15px' }"
+                  style="border-left: 3px solid #e6a23c"
+                >
+                  <div style="display: flex; justify-content: space-between; align-items: start">
+                    <div style="flex: 1">
+                      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px">
+                        <span style="
+                          background: linear-gradient(135deg, #e6a23c, #f0c78a);
+                          color: white;
+                          width: 24px;
+                          height: 24px;
+                          border-radius: 50%;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                          font-size: 12px;
+                          font-weight: 600;
+                        ">
+                          <el-icon :size="14"><Location /></el-icon>
+                        </span>
+                        <span style="font-weight: 600; font-size: 15px">
+                          {{ tour.input_parameters.end_location }}
+                        </span>
+                        <el-tag size="small" type="warning">
+                          End Point
+                        </el-tag>
+                      </div>
+
+                      <div style="color: #606266; font-size: 13px; margin-bottom: 10px; padding-left: 34px">
+                        Your journey ends here
+                      </div>
+                    </div>
+                  </div>
+                </el-card>
               </el-card>
             </el-timeline-item>
           </el-timeline>

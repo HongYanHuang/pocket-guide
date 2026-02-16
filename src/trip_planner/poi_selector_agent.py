@@ -252,14 +252,10 @@ class POISelectorAgent:
 
         pois_formatted = "\n\n".join(poi_list)
 
-        # Build preferences section
+        # Build preferences section (note: pace is handled in time budget, not shown here)
         prefs_list = []
-        if preferences.get('walking_tolerance'):
-            prefs_list.append(f"- Walking tolerance: {preferences['walking_tolerance']}")
         if preferences.get('indoor_outdoor'):
             prefs_list.append(f"- Indoor/Outdoor preference: {preferences['indoor_outdoor']}")
-        if preferences.get('pace'):
-            prefs_list.append(f"- Trip pace: {preferences['pace']}")
 
         prefs_str = "\n".join(prefs_list) if prefs_list else "- No specific preferences"
 
@@ -275,6 +271,24 @@ class POISelectorAgent:
         # Get language name for instructions
         from utils import get_language_name
         language_name = get_language_name(language)
+
+        # Calculate time budget based on pace
+        pace_value = preferences.get('pace', 'normal')
+        if pace_value == 'relaxed':
+            hours_per_day = 6.0  # Relaxed: fewer POIs, more leisure time
+            walking_buffer = 1.5  # More buffer for relaxed walking
+            pace_note = "Select FEWER POIs for deeper, more relaxed experiences. Quality over quantity."
+        elif pace_value == 'packed':
+            hours_per_day = 9.0  # Packed: maximize sightseeing
+            walking_buffer = 0.5  # Less buffer, efficient transitions
+            pace_note = "Maximize number of POIs visited. Efficient time management and quick visits."
+        else:  # normal
+            hours_per_day = 7.5  # Normal: balanced
+            walking_buffer = 1.0
+            pace_note = "Balanced number of POIs with reasonable time at each location."
+
+        total_visit_hours = duration_days * hours_per_day
+        total_walking_hours = duration_days * walking_buffer
 
         # Build language instruction block
         language_instruction = ""
@@ -315,15 +329,17 @@ CONSTRAINTS:
 {constraints_str}
 
 TASK:
-1. Select "Starting POIs" where the TOTAL estimated visit time fits within {duration_days * 7}h (leaving ~{duration_days}h for walking between POIs)
-2. For each Starting POI, suggest 2-3 "Back-up POIs" that are similar and could serve as replacements
-3. Explain your reasoning for selections and similarity
+1. Select "Starting POIs" where the TOTAL estimated visit time fits within {total_visit_hours:.1f}h (based on {pace_value} pace)
+2. Account for approximately {total_walking_hours:.1f}h of walking time between POIs
+3. For each Starting POI, suggest 2-3 "Back-up POIs" that are similar and could serve as replacements
+4. Explain your reasoning for selections and similarity
 
 SELECTION CRITERIA - TIME BUDGET:
-- CRITICAL: Sum of all selected POI visit times should be ≤ {duration_days * 8} hours total
+- CRITICAL: Sum of all selected POI visit times should be ≤ {total_visit_hours:.1f} hours total
+- This is {hours_per_day:.1f} hours per day for {duration_days} day(s) at {pace_value} pace
 - Each POI shows [Estimated visit time: Xh] - use these values to calculate your total
-- Better to select fewer quality POIs than rush through too many
-- Walking time between POIs will be calculated separately (not included in POI visit time)
+- Walking time between POIs ({total_walking_hours:.1f}h total) will be calculated separately
+- PACE GUIDANCE: {pace_note}
 
 SELECTION CRITERIA - CONTENT:
 - Match user interests: {', '.join(interests) if interests else 'varied experiences'}

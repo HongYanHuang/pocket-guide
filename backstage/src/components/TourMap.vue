@@ -141,6 +141,9 @@ const renderTourOnMap = () => {
 
   const allCoordinates = []
   let poiCounter = 0
+  let startLocationCoords = null
+  let firstPOICoords = null
+  let lastPOICoords = null
 
   // Add start location if exists
   if (props.tour.input_parameters?.start_location) {
@@ -148,6 +151,7 @@ const renderTourOnMap = () => {
 
     if (startCoords) {
       // Use parsed coordinates
+      startLocationCoords = startCoords
       const marker = L.marker(startCoords, {
         icon: createLocationIcon('start')
       }).addTo(map)
@@ -163,10 +167,11 @@ const renderTourOnMap = () => {
       // Fallback: Place name or invalid coords - use first POI location
       const firstPOI = props.tour.itinerary[0]?.pois[0]
       if (firstPOI?.coordinates) {
-        const marker = L.marker(
-          [firstPOI.coordinates.latitude, firstPOI.coordinates.longitude],
-          { icon: createLocationIcon('start') }
-        ).addTo(map)
+        const coords = [firstPOI.coordinates.latitude, firstPOI.coordinates.longitude]
+        startLocationCoords = coords
+        const marker = L.marker(coords, {
+          icon: createLocationIcon('start')
+        }).addTo(map)
 
         marker.bindPopup(`
           <div style="font-weight: 600; margin-bottom: 4px">Start Point</div>
@@ -177,7 +182,7 @@ const renderTourOnMap = () => {
         `)
 
         markers.push(marker)
-        allCoordinates.push([firstPOI.coordinates.latitude, firstPOI.coordinates.longitude])
+        allCoordinates.push(coords)
       }
     }
   }
@@ -197,6 +202,14 @@ const renderTourOnMap = () => {
       const coords = [poi.coordinates.latitude, poi.coordinates.longitude]
       dayCoordinates.push(coords)
       allCoordinates.push(coords)
+
+      // Capture first POI coordinates for start line
+      if (!firstPOICoords) {
+        firstPOICoords = coords
+      }
+
+      // Update last POI coordinates (will be the last one after loop ends)
+      lastPOICoords = coords
 
       // Create marker
       const marker = L.marker(coords, {
@@ -243,6 +256,18 @@ const renderTourOnMap = () => {
     }
   })
 
+  // Draw line from start location to first POI
+  if (startLocationCoords && firstPOICoords) {
+    const startLine = L.polyline([startLocationCoords, firstPOICoords], {
+      color: '#67c23a', // Green for start
+      weight: 3,
+      opacity: 0.7,
+      dashArray: '10, 5'
+    }).addTo(map)
+
+    polylines.push(startLine)
+  }
+
   // Add end location if exists
   if (props.tour.input_parameters?.end_location) {
     const endCoords = parseLocationCoordinates(props.tour.input_parameters.end_location)
@@ -260,16 +285,28 @@ const renderTourOnMap = () => {
 
       markers.push(marker)
       allCoordinates.push(endCoords)
+
+      // Draw line from last POI to end location
+      if (lastPOICoords) {
+        const endLine = L.polyline([lastPOICoords, endCoords], {
+          color: '#e6a23c', // Orange for end
+          weight: 3,
+          opacity: 0.7,
+          dashArray: '10, 5'
+        }).addTo(map)
+
+        polylines.push(endLine)
+      }
     } else {
       // Fallback: Place name or invalid coords - use last POI location
       const lastDay = props.tour.itinerary[props.tour.itinerary.length - 1]
       const lastPOI = lastDay?.pois[lastDay.pois.length - 1]
 
       if (lastPOI?.coordinates) {
-        const marker = L.marker(
-          [lastPOI.coordinates.latitude, lastPOI.coordinates.longitude],
-          { icon: createLocationIcon('end') }
-        ).addTo(map)
+        const endCoords = [lastPOI.coordinates.latitude, lastPOI.coordinates.longitude]
+        const marker = L.marker(endCoords, {
+          icon: createLocationIcon('end')
+        }).addTo(map)
 
         marker.bindPopup(`
           <div style="font-weight: 600; margin-bottom: 4px">End Point</div>
@@ -280,7 +317,7 @@ const renderTourOnMap = () => {
         `)
 
         markers.push(marker)
-        allCoordinates.push([lastPOI.coordinates.latitude, lastPOI.coordinates.longitude])
+        allCoordinates.push(endCoords)
       }
     }
   }

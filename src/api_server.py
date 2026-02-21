@@ -1619,6 +1619,21 @@ def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
         with open(gen_record_files[0], 'r', encoding='utf-8') as f:
             gen_record = json.load(f)
 
+        # CRITICAL FIX: Merge ALL backup_pois from generation record into tour_data
+        # This prevents losing backup POIs for unreplaced POIs when we save
+        backup_pois_from_gen = gen_record.get('poi_selection', {}).get('backup_pois', {})
+
+        if 'backup_pois' not in tour_data:
+            tour_data['backup_pois'] = {}
+
+        # Merge: gen_record has ALL original backup POIs, tour_data has updates from replacements
+        for poi_name, backup_list in backup_pois_from_gen.items():
+            if poi_name not in tour_data['backup_pois']:
+                tour_data['backup_pois'][poi_name] = backup_list
+                logger.debug(f"Preserved {len(backup_list)} backup POIs for '{poi_name}' from generation record")
+
+        logger.info(f"Complete backup_pois loaded: {len(tour_data['backup_pois'])} POIs with backup options")
+
         # Validate: Original POI should be in tour
         poi_in_tour = False
         for day in tour_data['itinerary']:
@@ -1636,21 +1651,13 @@ def replace_poi_in_tour(tour_id: str, request: POIReplacementRequest):
             )
 
         # Validate: Replacement POI should be in backup list for original POI
-        # Check tour_data.backup_pois (which includes replacement POIs)
-        # Fallback to gen_record for original POIs
-        backup_pois_from_tour = tour_data.get('backup_pois', {})
-        backup_pois_from_gen = gen_record.get('poi_selection', {}).get('backup_pois', {})
-
-        # Try tour_data first (has updates from replacements), fallback to gen_record
-        if request.original_poi in backup_pois_from_tour:
-            backup_list = backup_pois_from_tour[request.original_poi]
-        elif request.original_poi in backup_pois_from_gen:
-            backup_list = backup_pois_from_gen[request.original_poi]
-        else:
+        if request.original_poi not in tour_data['backup_pois']:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"No backup POIs available for '{request.original_poi}'"
             )
+
+        backup_list = tour_data['backup_pois'][request.original_poi]
 
         backup_poi_obj = next(
             (b for b in backup_list if b['poi'] == request.replacement_poi),
@@ -1830,10 +1837,25 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
         with open(gen_record_files[0], 'r', encoding='utf-8') as f:
             gen_record = json.load(f)
 
-        # Get backup POIs list for validation
-        # Check tour_data first (has updates from replacements), fallback to gen_record
-        backup_pois_from_tour = tour_data.get('backup_pois', {})
+        # CRITICAL FIX: Merge ALL backup_pois from generation record into tour_data
+        # This prevents losing backup POIs for unreplaced POIs when we save
         backup_pois_from_gen = gen_record.get('poi_selection', {}).get('backup_pois', {})
+
+        if 'backup_pois' not in tour_data:
+            tour_data['backup_pois'] = {}
+
+        # Merge: gen_record has ALL original backup POIs, tour_data has updates from replacements
+        # We need to preserve both - tour_data updates take precedence, but add missing ones from gen_record
+        for poi_name, backup_list in backup_pois_from_gen.items():
+            if poi_name not in tour_data['backup_pois']:
+                # POI hasn't been replaced yet, use original backup list
+                tour_data['backup_pois'][poi_name] = backup_list
+                logger.debug(f"Preserved {len(backup_list)} backup POIs for '{poi_name}' from generation record")
+
+        logger.info(f"Complete backup_pois loaded: {len(tour_data['backup_pois'])} POIs with backup options")
+
+        # Get references for validation (now both point to same merged data)
+        backup_pois_from_tour = tour_data['backup_pois']
 
         # Validate all replacements and auto-detect day if needed
         for replacement_item in request.replacements:
@@ -1867,16 +1889,14 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
                     replacement_item.day = detected_day
 
             # Validate: Replacement POI should be in backup list for original POI
-            # Try tour_data first, fallback to gen_record
-            if replacement_item.original_poi in backup_pois_from_tour:
-                backup_list = backup_pois_from_tour[replacement_item.original_poi]
-            elif replacement_item.original_poi in backup_pois_from_gen:
-                backup_list = backup_pois_from_gen[replacement_item.original_poi]
-            else:
+            # Now backup_pois_from_tour has complete merged data
+            if replacement_item.original_poi not in backup_pois_from_tour:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"No backup POIs available for '{replacement_item.original_poi}'"
                 )
+
+            backup_list = backup_pois_from_tour[replacement_item.original_poi]
 
             backup_poi_obj = next(
                 (b for b in backup_list if b['poi'] == replacement_item.replacement_poi),

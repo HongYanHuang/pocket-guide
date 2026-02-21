@@ -360,7 +360,7 @@ class POIReplacementItem(BaseModel):
     """Single POI replacement item"""
     original_poi: str = Field(..., description="POI name to replace")
     replacement_poi: str = Field(..., description="Backup POI name to use as replacement")
-    day: int = Field(..., ge=1, description="Day number where POI is located")
+    day: Optional[int] = Field(None, ge=1, description="Day number where POI is located (optional - backend will auto-detect if not provided)")
 
 
 class BatchPOIReplacementRequest(BaseModel):

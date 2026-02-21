@@ -1291,55 +1291,75 @@ def poi_name_to_id(poi_name: str) -> str:
 
 def update_backup_pois_for_replacement(tour_data: dict, gen_record: dict, original_poi: str, replacement_poi: str):
     """
-    Simple swap in backup_pois structure.
+    Defensive swap in backup_pois structure that preserves all backup options.
 
     Concept: Each itinerary position has a GROUP of POIs (1 selected + N backups).
     When replacing, just swap which POI is selected vs backup in that group.
+    CRITICAL: All backup POIs must be preserved - we never lose options!
 
     Example:
-        Before: Selected: Colosseum, Backups: [Theater of Marcellus, Circus Maximus]
+        Before: Selected: Colosseum, Backups: [Theater of Marcellus, Circus Maximus, Baths of Caracalla]
         Replace Colosseum → Theater of Marcellus
-        After:  Selected: Theater of Marcellus, Backups: [Colosseum, Circus Maximus]
+        After:  Selected: Theater of Marcellus, Backups: [Colosseum, Circus Maximus, Baths of Caracalla]
+                (Colosseum is now a backup, Theater of Marcellus removed from backups since it's selected)
 
     Args:
         tour_data: Tour data dictionary
-        gen_record: Generation record (not used in simple mode, kept for compatibility)
+        gen_record: Generation record (fallback if tour_data missing backup_pois)
         original_poi: POI being replaced (currently selected)
         replacement_poi: POI to select (currently in backups)
     """
     if 'backup_pois' not in tour_data:
         tour_data['backup_pois'] = {}
 
-    # Get original POI's backup list
+    # DEFENSIVE: Get backup list from tour_data first, fallback to gen_record
     original_backups = tour_data['backup_pois'].get(original_poi, [])
 
-    # Find and remove replacement_poi from the backup list
+    # If not in tour_data, try generation record (defensive - should have been loaded earlier)
+    if not original_backups and gen_record:
+        gen_backup_pois = gen_record.get('poi_selection', {}).get('backup_pois', {})
+        original_backups = gen_backup_pois.get(original_poi, [])
+        logger.info(f"Retrieved {len(original_backups)} backup POIs for '{original_poi}' from generation record")
+
+    # DEFENSIVE: Ensure replacement_poi is actually in the backup list
+    replacement_poi_metadata = next(
+        (b for b in original_backups if b['poi'] == replacement_poi),
+        None
+    )
+
+    if not replacement_poi_metadata:
+        logger.error(f"DEFENSIVE CHECK FAILED: '{replacement_poi}' not found in backup list for '{original_poi}'")
+        logger.error(f"Available backups: {[b['poi'] for b in original_backups]}")
+        raise ValueError(f"Cannot replace: '{replacement_poi}' is not a valid backup for '{original_poi}'")
+
+    # Create new backup list: original becomes backup, replacement removed (it's now selected)
     remaining_backups = [b for b in original_backups if b['poi'] != replacement_poi]
 
-    # Add original_poi to the remaining backups (it's now a backup option)
-    # Get the replacement_poi's metadata from the backup list
-    replacement_poi_metadata = None
-    for backup in original_backups:
-        if backup['poi'] == replacement_poi:
-            replacement_poi_metadata = backup
-            break
-
-    # Build new backup list for replacement_poi
+    # Build new backup list for replacement_poi (now the selected POI)
     new_backups = []
 
-    # Add original POI as first backup
+    # Add original POI as first backup (with metadata from replacement for consistency)
     new_backups.append({
         'poi': original_poi,
-        'similarity_score': replacement_poi_metadata.get('similarity_score', 1.0) if replacement_poi_metadata else 1.0,
-        'reason': replacement_poi_metadata.get('reason', 'Alternative option') if replacement_poi_metadata else 'Original POI',
-        'substitute_scenario': replacement_poi_metadata.get('substitute_scenario', 'Swap back') if replacement_poi_metadata else 'Reverse replacement'
+        'similarity_score': replacement_poi_metadata.get('similarity_score', 1.0),
+        'reason': replacement_poi_metadata.get('reason', 'Original POI, now alternative option'),
+        'substitute_scenario': f"Reverse replacement - swap back to {original_poi}"
     })
 
-    # Add all other backups (except the replacement_poi which is now selected)
+    # CRITICAL: Preserve all other backup options
     new_backups.extend(remaining_backups)
 
-    # Update backup_pois structure
+    # Defensive logging
+    logger.info(f"POI swap: '{original_poi}' → '{replacement_poi}'")
+    logger.info(f"  Original had {len(original_backups)} backups")
+    logger.info(f"  New selection '{replacement_poi}' now has {len(new_backups)} backups (including original)")
+    logger.info(f"  Backup POIs preserved: {[b['poi'] for b in new_backups]}")
+
+    # Update backup_pois structure for the NEW selected POI
     tour_data['backup_pois'][replacement_poi] = new_backups
+
+    # KEEP the old backup_pois entry for original_poi (allows future swaps back)
+    # Don't delete tour_data['backup_pois'][original_poi] - keep it for reference!
 
     # Remove original POI's entry (it's no longer selected)
     if original_poi in tour_data['backup_pois']:
@@ -1721,6 +1741,28 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
     """
     Replace multiple POIs in a tour with backup POIs in a single operation.
 
+    DEFENSIVE DESIGN:
+    - Frontend only needs to specify: which POI to replace (original_poi) and what to replace it with (replacement_poi)
+    - Backend handles all the logic: finding the POI, detecting which day it's on, validating the replacement
+    - Day parameter is optional - backend auto-detects if not provided, and validates/corrects if provided incorrectly
+    - All backup POIs are preserved - no data loss even if frontend makes mistakes
+    - Replacement POI must be from the original POI's backup list (validated by backend)
+
+    Example Request:
+        {
+          "replacements": [
+            {"original_poi": "Colosseum", "replacement_poi": "Baths of Caracalla"}
+          ],
+          "mode": "simple",
+          "language": "zh-tw"
+        }
+
+    Backend will:
+    1. Find "Colosseum" in the tour (any day)
+    2. Verify "Baths of Caracalla" is in Colosseum's backup list
+    3. Swap them safely, preserving all other backup options
+    4. Keep all backup POIs intact for future replacements
+
     Supports two modes:
     - simple: Replace POIs and keep current order/timing
     - reoptimize: Replace POIs and re-run itinerary optimizer
@@ -1793,14 +1835,17 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
         backup_pois_from_tour = tour_data.get('backup_pois', {})
         backup_pois_from_gen = gen_record.get('poi_selection', {}).get('backup_pois', {})
 
-        # Validate all replacements before processing any
+        # Validate all replacements and auto-detect day if needed
         for replacement_item in request.replacements:
-            # Validate: Original POI should be in tour
+            # Validate: Original POI should be in tour and auto-detect day if not provided
             poi_in_tour = False
+            detected_day = None
+
             for day in tour_data['itinerary']:
                 for poi_obj in day['pois']:
                     if poi_obj['poi'] == replacement_item.original_poi:
                         poi_in_tour = True
+                        detected_day = day['day']
                         break
                 if poi_in_tour:
                     break
@@ -1810,6 +1855,16 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Original POI '{replacement_item.original_poi}' not found in tour"
                 )
+
+            # Auto-detect day if not provided by frontend (defensive programming)
+            if replacement_item.day is None:
+                replacement_item.day = detected_day
+                logger.info(f"Auto-detected day {detected_day} for POI '{replacement_item.original_poi}'")
+            else:
+                # Validate frontend-provided day matches actual location
+                if replacement_item.day != detected_day:
+                    logger.warning(f"Frontend provided day {replacement_item.day} but POI is actually on day {detected_day}. Using actual day {detected_day}.")
+                    replacement_item.day = detected_day
 
             # Validate: Replacement POI should be in backup list for original POI
             # Try tour_data first, fallback to gen_record
@@ -1831,7 +1886,7 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
             if not backup_poi_obj:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"'{replacement_item.replacement_poi}' is not in backup list for '{replacement_item.original_poi}'"
+                    detail=f"'{replacement_item.replacement_poi}' is not in backup list for '{replacement_item.original_poi}'. Available backups: {[b['poi'] for b in backup_list]}"
                 )
 
         # Process replacements based on mode

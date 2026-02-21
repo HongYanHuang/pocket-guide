@@ -1,0 +1,9 @@
+- Project Purpose
+	- Build a customized tour generator for every traveller. Tour should be customized not standardized.
+- Project Restriction
+	- Always update cli parameter or function into CLI_CHEATSHEET.md for better usage.
+- Development Principle
+	- Always open a new branch for new feature development. This make development environment easy to restore and troubleshooting.
+	- Always push commits to remote feature branch regularly. This will avoid any recover issue.
+	- Never directly commit any code to main branch. Always create a new branch and then merge to main. This will keep production clean.
+	- Always wait for explicit instruction before merging to main. This will keep production clean.

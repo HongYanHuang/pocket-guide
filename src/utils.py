@@ -154,6 +154,44 @@ def get_language_name(language_code: str) -> str:
     return LANGUAGE_CODE_TO_NAME.get(normalized, 'English')
 
 
+def language_to_tts_locale(language_code: str) -> str:
+    """
+    Convert language code to TTS provider locale format
+
+    Args:
+        language_code: ISO 639-1 code (e.g., 'en', 'zh-tw', 'fr')
+
+    Returns:
+        TTS locale code (e.g., 'en-US', 'zh-TW', 'fr-FR')
+    """
+    normalized = normalize_language_code(language_code)
+
+    locale_map = {
+        'en': 'en-US',
+        'zh-cn': 'zh-CN',
+        'zh-tw': 'zh-TW',
+        'es': 'es-ES',
+        'es-mx': 'es-MX',
+        'pt': 'pt-PT',
+        'pt-br': 'pt-BR',
+        'fr': 'fr-FR',
+        'de': 'de-DE',
+        'it': 'it-IT',
+        'ja': 'ja-JP',
+        'ko': 'ko-KR',
+        'ru': 'ru-RU',
+        'ar': 'ar-SA',
+        'hi': 'hi-IN',
+        'nl': 'nl-NL',
+        'pl': 'pl-PL',
+        'tr': 'tr-TR',
+        'vi': 'vi-VN',
+        'th': 'th-TH',
+    }
+
+    return locale_map.get(normalized, 'en-US')
+
+
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     """Load configuration from YAML file"""
     if not os.path.exists(config_path):

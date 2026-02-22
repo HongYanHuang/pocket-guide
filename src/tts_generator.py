@@ -75,7 +75,12 @@ class TTSGenerator:
             input=text
         )
 
-        output_file = output_path / "audio.mp3"
+        # Language-specific audio file naming
+        if language:
+            lang_code = language.lower().replace('_', '-')
+            output_file = output_path / f"audio_{lang_code}.mp3"
+        else:
+            output_file = output_path / "audio.mp3"
         response.stream_to_file(str(output_file))
 
         return str(output_file)
@@ -124,7 +129,12 @@ class TTSGenerator:
             audio_config=audio_config
         )
 
-        output_file = output_path / "audio.mp3"
+        # Language-specific audio file naming
+        if language:
+            lang_code = language.lower().replace('_', '-')
+            output_file = output_path / f"audio_{lang_code}.mp3"
+        else:
+            output_file = output_path / "audio.mp3"
         with open(output_file, 'wb') as out:
             out.write(response.audio_content)
 
@@ -148,7 +158,12 @@ class TTSGenerator:
         if voice is None:
             voice = config.get('voice', self._get_default_edge_voice(language))
 
-        output_file = output_path / "audio.mp3"
+        # Language-specific audio file naming
+        if language:
+            lang_code = language.lower().replace('_', '-')
+            output_file = output_path / f"audio_{lang_code}.mp3"
+        else:
+            output_file = output_path / "audio.mp3"
 
         # Edge TTS requires async
         asyncio.run(self._edge_tts_async(text, str(output_file), voice))

@@ -390,6 +390,9 @@ trip list --city <city>
 
 # Show tour
 trip show <tour-id> --city <city> [--language LANG]
+
+# Generate TTS audio for tour
+trip tts <tour-id> --city <city> [--language LANG] [--provider edge|openai|google] [--force]
 ```
 
 ### Utility Scripts

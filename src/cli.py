@@ -8,8 +8,10 @@ from rich.table import Table
 from rich.prompt import Prompt, Confirm
 from rich.panel import Panel
 from rich import print as rprint
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from pathlib import Path
 import sys
+import json
 from datetime import datetime
 
 from utils import (
@@ -17,7 +19,7 @@ from utils import (
     list_cities, list_pois, text_to_ssml, load_transcript, get_poi_path,
     load_metadata, get_next_version, save_versioned_transcript,
     save_generation_record, extract_used_nodes, normalize_language_code,
-    list_available_languages, get_language_name
+    list_available_languages, get_language_name, language_to_tts_locale
 )
 from content_generator import ContentGenerator
 from tts_generator import TTSGenerator
@@ -1619,6 +1621,174 @@ def trip_show(ctx, tour_id, city, version, language):
         sys.exit(1)
     except Exception as e:
         console.print(f"[red]Error showing tour: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@trip.command('tts')
+@click.argument('tour_id')
+@click.option('--city', required=True, help='City name')
+@click.option('--language', help='Tour language (defaults to tour default language)')
+@click.option('--provider', type=click.Choice(['openai', 'google', 'edge']), help='TTS provider (default: edge)')
+@click.option('--force', is_flag=True, help='Regenerate audio even if it already exists')
+@click.pass_context
+def trip_tts(ctx, tour_id, city, language, provider, force):
+    """Generate TTS audio for all POIs in a tour"""
+
+    try:
+        config = ctx.obj['config']
+        content_dir = ctx.obj['content_dir']
+
+        # Initialize TourManager
+        tour_manager = TourManager(content_dir, config)
+
+        # Find tour directory (tours are at root level, not under content_dir)
+        tour_dir = Path('tours') / city / tour_id
+        if not tour_dir.exists():
+            console.print(f"[red]Tour not found: {tour_dir}[/red]")
+            sys.exit(1)
+
+        # Detect available languages from tour files
+        available_languages = []
+        for tour_file in tour_dir.glob('tour_*.json'):
+            if tour_file.stem.startswith('tour_v'):
+                continue  # Skip versioned files
+            lang = tour_file.stem.replace('tour_', '')
+            available_languages.append(lang)
+
+        if not available_languages:
+            console.print(f"[red]No tour files found in {tour_dir}[/red]")
+            sys.exit(1)
+
+        # Determine target language
+        target_language = language if language else available_languages[0]
+        target_language = normalize_language_code(target_language)
+
+        if target_language not in available_languages:
+            console.print(f"[red]Language '{target_language}' not available for this tour[/red]")
+            console.print(f"Available languages: {', '.join(available_languages)}")
+            sys.exit(1)
+
+        # Load transcript links
+        transcript_links_file = tour_dir / f'transcript_links_{target_language}.json'
+        if not transcript_links_file.exists():
+            console.print(f"[red]Transcript links file not found: {transcript_links_file}[/red]")
+            sys.exit(1)
+
+        with open(transcript_links_file, 'r', encoding='utf-8') as f:
+            transcript_links = json.load(f)
+
+        pois = transcript_links.get('links', [])
+        if not pois:
+            console.print(f"[yellow]No POIs found in transcript links[/yellow]")
+            return
+
+        # Convert language code to TTS locale
+        tts_locale = language_to_tts_locale(target_language)
+
+        # Determine provider (default to edge)
+        tts_provider = provider if provider else 'edge'
+
+        # Initialize TTS generator
+        tts_generator = TTSGenerator(config)
+
+        console.print(f"\n[bold]Generating TTS audio for tour:[/bold] {tour_id}")
+        console.print(f"Language: {get_language_name(target_language)} ({target_language})")
+        console.print(f"TTS Locale: {tts_locale}")
+        console.print(f"Provider: {tts_provider}")
+        console.print(f"POIs to process: {len(pois)}\n")
+
+        # Batch process POIs
+        succeeded = []
+        skipped = []
+        failed = []
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task(f"Processing {len(pois)} POIs...", total=len(pois))
+
+            for poi_info in pois:
+                poi_name = poi_info.get('poi', 'Unknown')
+                poi_id = poi_info.get('poi_id', '')
+                transcript_path = poi_info.get('transcript_path', '')
+
+                progress.update(task, description=f"Processing: {poi_name}")
+
+                try:
+                    # Get POI directory from transcript path
+                    transcript_file = Path(transcript_path)
+                    if not transcript_file.exists():
+                        failed.append((poi_name, f"Transcript not found: {transcript_path}"))
+                        progress.advance(task)
+                        continue
+
+                    poi_dir = transcript_file.parent
+
+                    # Check if audio already exists
+                    audio_file = poi_dir / f'audio_{target_language}.mp3'
+                    if audio_file.exists() and not force:
+                        skipped.append(poi_name)
+                        progress.advance(task)
+                        continue
+
+                    # Load transcript
+                    with open(transcript_file, 'r', encoding='utf-8') as f:
+                        transcript_text = f.read().strip()
+
+                    if not transcript_text:
+                        failed.append((poi_name, "Empty transcript"))
+                        progress.advance(task)
+                        continue
+
+                    # Generate TTS audio
+                    tts_generator.generate(
+                        text=transcript_text,
+                        output_path=poi_dir,
+                        language=tts_locale,
+                        provider=tts_provider
+                    )
+
+                    succeeded.append(poi_name)
+
+                except Exception as e:
+                    failed.append((poi_name, str(e)))
+
+                progress.advance(task)
+
+        # Display summary
+        console.print("\n[bold]Summary:[/bold]")
+        console.print(f"  [green]Succeeded:[/green] {len(succeeded)}")
+        console.print(f"  [yellow]Skipped (already exists):[/yellow] {len(skipped)}")
+        console.print(f"  [red]Failed:[/red] {len(failed)}")
+
+        if succeeded:
+            console.print("\n[green]Successfully generated audio for:[/green]")
+            for poi in succeeded:
+                console.print(f"  - {poi}")
+
+        if skipped:
+            console.print("\n[yellow]Skipped (use --force to regenerate):[/yellow]")
+            for poi in skipped:
+                console.print(f"  - {poi}")
+
+        if failed:
+            console.print("\n[red]Failed:[/red]")
+            for poi, error in failed:
+                console.print(f"  - {poi}: {error}")
+
+        console.print()
+
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error generating TTS: {e}[/red]")
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         sys.exit(1)

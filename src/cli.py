@@ -1769,7 +1769,7 @@ def trip_tts(ctx, tour_id, city, poi, language, provider, force):
                         text=transcript_text,
                         output_path=poi_dir,
                         language=tts_locale,
-                        provider=tts_provider
+                        provider=provider
                     )
 
                     succeeded.append(poi_name)

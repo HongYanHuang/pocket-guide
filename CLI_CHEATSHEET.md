@@ -391,8 +391,8 @@ trip list --city <city>
 # Show tour
 trip show <tour-id> --city <city> [--language LANG]
 
-# Generate TTS audio for tour
-trip tts <tour-id> --city <city> [--language LANG] [--provider edge|openai|google] [--force]
+# Generate TTS audio for tour (all POIs or specific POI)
+trip tts <tour-id> --city <city> [--poi POI_ID] [--language LANG] [--provider edge|openai|google] [--force]
 ```
 
 ### Utility Scripts

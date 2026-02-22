@@ -1629,12 +1629,13 @@ def trip_show(ctx, tour_id, city, version, language):
 @trip.command('tts')
 @click.argument('tour_id')
 @click.option('--city', required=True, help='City name')
+@click.option('--poi', help='Specific POI ID to generate TTS for (generates all if not specified)')
 @click.option('--language', help='Tour language (defaults to tour default language)')
-@click.option('--provider', type=click.Choice(['openai', 'google', 'edge']), help='TTS provider (default: edge)')
+@click.option('--provider', type=click.Choice(['edge', 'openai', 'google']), default='edge', help='TTS provider (default: edge)')
 @click.option('--force', is_flag=True, help='Regenerate audio even if it already exists')
 @click.pass_context
-def trip_tts(ctx, tour_id, city, language, provider, force):
-    """Generate TTS audio for all POIs in a tour"""
+def trip_tts(ctx, tour_id, city, poi, language, provider, force):
+    """Generate TTS audio for POIs in a tour"""
 
     try:
         config = ctx.obj['config']
@@ -1684,19 +1685,36 @@ def trip_tts(ctx, tour_id, city, language, provider, force):
             console.print(f"[yellow]No POIs found in transcript links[/yellow]")
             return
 
+        # Filter for specific POI if requested
+        if poi:
+            poi_normalized = poi.lower().strip()
+            filtered_pois = [
+                p for p in pois
+                if p.get('poi_id', '').lower() == poi_normalized or
+                   p.get('poi', '').lower() == poi_normalized
+            ]
+            if not filtered_pois:
+                console.print(f"[red]POI '{poi}' not found in tour[/red]")
+                console.print(f"Available POIs:")
+                for p in pois:
+                    console.print(f"  - {p.get('poi')} (ID: {p.get('poi_id')})")
+                sys.exit(1)
+            pois = filtered_pois
+
         # Convert language code to TTS locale
         tts_locale = language_to_tts_locale(target_language)
 
-        # Determine provider (default to edge)
-        tts_provider = provider if provider else 'edge'
+        # TTS provider (edge is default via Click decorator)
 
         # Initialize TTS generator
         tts_generator = TTSGenerator(config)
 
         console.print(f"\n[bold]Generating TTS audio for tour:[/bold] {tour_id}")
+        if poi:
+            console.print(f"[bold]POI:[/bold] {pois[0].get('poi')} ({pois[0].get('poi_id')})")
         console.print(f"Language: {get_language_name(target_language)} ({target_language})")
         console.print(f"TTS Locale: {tts_locale}")
-        console.print(f"Provider: {tts_provider}")
+        console.print(f"Provider: {provider}")
         console.print(f"POIs to process: {len(pois)}\n")
 
         # Batch process POIs

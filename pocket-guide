@@ -3,7 +3,13 @@
 # Suppresses known harmless warnings while preserving interactivity
 
 cd "$(dirname "$0")"
-source venv/bin/activate 2>/dev/null
+
+# Try pocket-guide-3.11 first (Python 3.11 with all TTS providers), then fall back to venv
+if [ -d "pocket-guide-3.11/bin" ]; then
+    source pocket-guide-3.11/bin/activate 2>/dev/null
+else
+    source venv/bin/activate 2>/dev/null
+fi
 
 # Filter stderr only, keep stdout interactive
 python src/cli.py "$@" 2> >(grep -v "importlib.metadata\|FutureWarning\|NotOpenSSLWarning\|urllib3" >&2)

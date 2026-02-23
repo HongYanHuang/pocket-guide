@@ -87,3 +87,4 @@ backstage/node_modules/
 backstage/dist/
 backstage/.env.local
 backstage/.env.*.local
+pocket-guide-3.11/

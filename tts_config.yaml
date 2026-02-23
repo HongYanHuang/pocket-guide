@@ -119,7 +119,8 @@ qwen:
   mode: "custom_voice"
 
   # Device configuration
-  device: "cuda:0"  # cuda:0, cuda:1, cpu (cpu is very slow)
+  # Options: "auto" (recommended), "cuda:0", "mps" (Apple Silicon), "cpu" (very slow)
+  device: "auto"  # Auto-detects best available device
   dtype: "bfloat16"  # bfloat16 (recommended), float16, float32
 
   # ========================================

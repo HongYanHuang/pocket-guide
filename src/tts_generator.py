@@ -234,7 +234,7 @@ class TTSGenerator:
         except ImportError:
             raise ImportError(
                 "Qwen TTS library not installed. Run: pip install qwen-tts\n"
-                "Note: Requires PyTorch with CUDA support for GPU acceleration"
+                "Note: Requires PyTorch with GPU support (CUDA for NVIDIA, MPS for Apple Silicon)"
             )
 
         config = self.tts_config.get('qwen', {})
@@ -242,7 +242,20 @@ class TTSGenerator:
         # Get configuration
         model_name = config.get('model', 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')
         mode = config.get('mode', 'custom_voice')  # custom_voice, voice_design, or voice_clone
-        device = config.get('device', 'cuda:0')
+
+        # Auto-detect device if not specified
+        device_config = config.get('device', 'auto')
+        if device_config == 'auto':
+            if torch.cuda.is_available():
+                device = 'cuda:0'
+            elif torch.backends.mps.is_available():
+                device = 'mps'
+            else:
+                device = 'cpu'
+                print("[WARNING] No GPU acceleration available. Qwen3-TTS will be very slow on CPU.")
+        else:
+            device = device_config
+
         dtype_str = config.get('dtype', 'bfloat16')
         speaker = config.get('speaker', voice or 'Vivian')
         instruction = config.get('instruction', '')

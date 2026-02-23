@@ -1,0 +1,387 @@
+# ========================================
+# TTS Configuration File
+# ========================================
+# Comprehensive configuration for Text-to-Speech providers
+# Supports: EdgeTTS (free), OpenAI TTS, Google Cloud TTS, Qwen3-TTS (free, local)
+
+# ========================================
+# Provider Selection
+# ========================================
+default_provider: edge  # edge, openai, google, qwen
+
+# ========================================
+# EdgeTTS Configuration (FREE)
+# ========================================
+# Microsoft Edge TTS - Free, no API key needed
+# Supports 400+ voices across 100+ languages
+edge:
+  enabled: true
+
+  # Voice selection (comment out to use language-based auto-selection)
+  # voice: "en-US-AriaNeural"
+
+  # Language-based voice mapping (auto-selected if voice not specified)
+  # Default voices are automatically chosen based on the language parameter
+  # Available voices can be listed with: python -m edge_tts --list-voices
+
+  # Voice characteristics control (via voice selection)
+  # Examples of voices with different tones:
+  # en-US-AriaNeural: Cheerful, friendly female
+  # en-US-GuyNeural: Warm, authoritative male
+  # en-US-JennyNeural: Clear, professional female
+  # zh-TW-HsiaoChenNeural: Natural Taiwanese female
+  # zh-CN-XiaoxiaoNeural: Warm Chinese female
+
+  # Note: EdgeTTS controls tone/emotion through voice selection
+  # not through parameters. Choose appropriate voice for desired tone.
+
+# ========================================
+# OpenAI TTS Configuration
+# ========================================
+openai:
+  enabled: true
+  api_key: "${OPENAI_API_KEY}"  # Set via environment variable or paste key here
+
+  # Voice selection
+  # Available: alloy, echo, fable, onyx, nova, shimmer
+  voice: "alloy"
+
+  # Voice characteristics:
+  # - alloy: Neutral, balanced (good for general use)
+  # - echo: Warm, conversational male
+  # - fable: Energetic, expressive British accent
+  # - onyx: Deep, authoritative male
+  # - nova: Vibrant, enthusiastic female
+  # - shimmer: Warm, clear female
+
+  # Model selection
+  model: "tts-1-hd"  # tts-1 (faster) or tts-1-hd (higher quality)
+
+  # Speed control (0.25 to 4.0, 1.0 is normal)
+  speed: 1.0
+
+  # Output format
+  format: "mp3"  # mp3, opus, aac, flac
+
+  # Quality/bitrate
+  bitrate: "192k"
+
+# ========================================
+# Google Cloud TTS Configuration
+# ========================================
+google:
+  enabled: false
+  credentials_file: ""  # Path to service account JSON file
+
+  # Voice configuration
+  voice_name: "en-US-Neural2-F"  # Female neural voice
+  language_code: "en-US"
+
+  # Voice characteristics control
+  # Speaking rate (0.25 to 4.0, 1.0 is normal)
+  speaking_rate: 1.0
+
+  # Pitch adjustment (-20.0 to 20.0, 0.0 is normal)
+  pitch: 0.0
+
+  # Volume gain in dB (-96.0 to 16.0)
+  volume_gain_db: 0.0
+
+  # Audio encoding
+  audio_encoding: "MP3"  # MP3, LINEAR16, OGG_OPUS
+
+  # Sample rate (e.g., 24000 for high quality)
+  sample_rate_hertz: 24000
+
+  # Effects profiles (optional)
+  # Available: headphone, small-bluetooth-speaker, medium-bluetooth-speaker,
+  #            large-home-entertainment-class-device, etc.
+  effects_profile_id: []
+
+# ========================================
+# Qwen3-TTS Configuration (FREE, LOCAL)
+# ========================================
+# Alibaba's open-source TTS with advanced voice control
+# Requires: GPU with CUDA, ~3GB VRAM for 1.7B model
+qwen:
+  enabled: true
+
+  # Model selection
+  # Available models:
+  # - Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice (smaller, faster, 1GB VRAM)
+  # - Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice (better quality, 3GB VRAM)
+  # - Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign (custom voice creation)
+  # - Qwen/Qwen3-TTS-12Hz-1.7B-Base (voice cloning)
+  model: "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+
+  # Generation mode
+  # Options: custom_voice, voice_design, voice_clone
+  mode: "custom_voice"
+
+  # Device configuration
+  device: "cuda:0"  # cuda:0, cuda:1, cpu (cpu is very slow)
+  dtype: "bfloat16"  # bfloat16 (recommended), float16, float32
+
+  # ========================================
+  # Custom Voice Mode Settings
+  # ========================================
+  # Use pre-defined speakers with instruction-based control
+
+  # Speaker selection
+  # Available speakers:
+  # - Vivian: Young female, clear pronunciation
+  # - Serena: Mature female, warm tone
+  # - Uncle_Fu: Middle-aged male, deep voice
+  # - Dylan: Young male, energetic
+  # - Eric: Mature male, authoritative
+  # - Ryan: Young male, casual
+  # - Aiden: Young male, friendly
+  # - Ono_Anna: Female, Japanese accent
+  # - Sohee: Female, Korean accent
+  speaker: "Vivian"
+
+  # Natural language instruction for tone/emotion control
+  # Examples:
+  # - "用特别愤怒的语气说" (angry tone in Chinese)
+  # - "Speak in a happy and enthusiastic tone"
+  # - "Use a calm, soothing voice"
+  # - "Dramatic and mysterious storytelling voice"
+  # - "Fast-paced, excited narration"
+  # - "Slow, contemplative reading"
+  # - "Whispered, secretive tone"
+  instruction: ""  # Leave empty for neutral tone
+
+  # ========================================
+  # Voice Design Mode Settings
+  # ========================================
+  # Create custom voices with detailed descriptions
+  # Only used if mode = "voice_design"
+
+  voice_design:
+    # Comprehensive voice design instruction
+    # Include: age, gender, accent, emotion, speaking style, pace, pitch
+    # Examples:
+    # - "Young adult female voice with British accent, cheerful and energetic, speaking at a moderate pace"
+    # - "Elderly male voice, deep and authoritative, slow deliberate speech, slight raspy quality"
+    # - "Middle-aged female, warm and motherly tone, gentle speaking style, clear pronunciation"
+    # - "Teenage male voice, casual and friendly, fast-paced excited speech, slight vocal fry"
+    description: "Clear, natural voice with good pronunciation and moderate pace"
+
+  # ========================================
+  # Voice Clone Mode Settings
+  # ========================================
+  # Clone voice from reference audio
+  # Only used if mode = "voice_clone"
+
+  voice_clone:
+    # Path to reference audio file (3-10 seconds recommended)
+    ref_audio: ""
+
+    # Transcript of the reference audio (must be accurate)
+    ref_text: ""
+
+    # Note: Voice cloning works best with:
+    # - Clear, high-quality audio
+    # - Minimal background noise
+    # - Single speaker
+    # - Natural speech (not singing or whispering)
+
+# ========================================
+# Advanced Tone & Emotion Control
+# ========================================
+# Guidelines for instruction/description parameters
+
+emotion_guide:
+  # Basic emotions
+  happy: "cheerful, joyful, delighted, upbeat, enthusiastic"
+  sad: "melancholic, sorrowful, downcast, dejected, mournful"
+  angry: "furious, irritated, aggressive, harsh, intense"
+  fearful: "anxious, nervous, worried, timid, trembling"
+  surprised: "astonished, shocked, amazed, startled"
+  neutral: "calm, balanced, steady, matter-of-fact"
+
+  # Complex emotions
+  mysterious: "enigmatic, secretive, hushed, intriguing"
+  excited: "energetic, animated, passionate, vibrant"
+  serious: "stern, grave, solemn, authoritative"
+  playful: "lighthearted, teasing, mischievous, fun"
+  romantic: "tender, gentle, affectionate, warm"
+  dramatic: "theatrical, expressive, intense, powerful"
+
+speaking_style_guide:
+  pace:
+    fast: "rapid speech, quick tempo, hurried"
+    slow: "deliberate, measured, unhurried pace"
+    moderate: "normal speaking speed, natural rhythm"
+
+  articulation:
+    clear: "precise pronunciation, crisp enunciation"
+    casual: "relaxed speech, natural flow"
+    dramatic: "expressive, varying emphasis"
+
+  volume:
+    loud: "strong projection, powerful delivery"
+    soft: "gentle, quiet, subdued"
+    whisper: "hushed, intimate, secretive"
+
+  pitch:
+    high: "bright, youthful, energetic tone"
+    low: "deep, mature, authoritative"
+    varied: "dynamic, expressive pitch changes"
+
+character_guide:
+  age:
+    child: "youthful, energetic, high-pitched"
+    teen: "young, casual, somewhat unstable"
+    young_adult: "energetic, clear, mature"
+    middle_aged: "experienced, stable, authoritative"
+    elderly: "aged, wise, slower pace, deeper or raspy"
+
+  gender:
+    male: "deeper voice, broader range"
+    female: "higher pitch, warmer tone"
+    neutral: "balanced, androgynous quality"
+
+  personality:
+    confident: "assertive, strong, clear"
+    shy: "hesitant, soft, uncertain"
+    friendly: "warm, approachable, welcoming"
+    professional: "polished, clear, business-like"
+    storyteller: "engaging, expressive, dramatic"
+
+# ========================================
+# Language-Specific Settings
+# ========================================
+language_settings:
+  # Chinese (Mandarin - Simplified)
+  "zh-CN":
+    recommended_provider: qwen  # Best for Chinese
+    qwen_speakers:
+      - Vivian  # Young female
+      - Uncle_Fu  # Male
+    edge_voices:
+      - zh-CN-XiaoxiaoNeural  # Female
+      - zh-CN-YunxiNeural  # Male
+
+  # Chinese (Traditional - Taiwan)
+  "zh-TW":
+    recommended_provider: qwen
+    qwen_speakers:
+      - Vivian
+      - Dylan
+    edge_voices:
+      - zh-TW-HsiaoChenNeural  # Female
+      - zh-TW-YunJheNeural  # Male
+
+  # English (US)
+  "en-US":
+    recommended_provider: edge  # Free and good quality
+    edge_voices:
+      - en-US-AriaNeural  # Friendly female
+      - en-US-GuyNeural  # Male
+      - en-US-JennyNeural  # Professional female
+    openai_voices:
+      - alloy  # Neutral
+      - nova  # Enthusiastic female
+
+  # Japanese
+  "ja-JP":
+    recommended_provider: qwen
+    qwen_speakers:
+      - Ono_Anna
+    edge_voices:
+      - ja-JP-NanamiNeural  # Female
+
+  # Korean
+  "ko-KR":
+    recommended_provider: qwen
+    qwen_speakers:
+      - Sohee
+    edge_voices:
+      - ko-KR-SunHiNeural  # Female
+
+# ========================================
+# Use Case Examples
+# ========================================
+examples:
+  tour_guide_cheerful:
+    provider: qwen
+    mode: custom_voice
+    speaker: Vivian
+    instruction: "Speak in an enthusiastic, friendly tour guide voice with clear pronunciation and moderate pace"
+
+  tour_guide_dramatic:
+    provider: qwen
+    mode: custom_voice
+    speaker: Eric
+    instruction: "Dramatic storytelling voice with varied emphasis, building suspense and excitement"
+
+  documentary_narrator:
+    provider: openai
+    voice: onyx
+    speed: 0.95
+
+  audiobook_female:
+    provider: qwen
+    mode: voice_design
+    description: "Middle-aged female voice, warm and motherly, gentle storytelling style, clear enunciation, slightly slower pace for easy comprehension"
+
+  museum_guide_professional:
+    provider: edge
+    voice: en-US-JennyNeural
+
+  excited_discovery:
+    provider: qwen
+    mode: custom_voice
+    speaker: Dylan
+    instruction: "Very excited and amazed tone, as if discovering something incredible, fast-paced energetic speech"
+
+# ========================================
+# Performance & Optimization
+# ========================================
+performance:
+  # Qwen model caching
+  cache_qwen_model: true  # Keep model loaded in memory between calls
+
+  # Batch processing
+  enable_batch: false  # Process multiple TTS requests together (future feature)
+
+  # Quality vs Speed tradeoff
+  quality_preset: "balanced"  # fast, balanced, high_quality
+
+  presets:
+    fast:
+      qwen_model: "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+      qwen_dtype: "float16"
+      openai_model: "tts-1"
+    balanced:
+      qwen_model: "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+      qwen_dtype: "bfloat16"
+      openai_model: "tts-1-hd"
+    high_quality:
+      qwen_model: "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+      qwen_dtype: "float32"
+      openai_model: "tts-1-hd"
+      google_sample_rate: 48000
+
+# ========================================
+# Output Settings
+# ========================================
+output:
+  # File naming
+  # Pattern: audio_{language}.mp3
+  # Example: audio_zh-tw.mp3, audio_en-us.mp3
+
+  # Audio format
+  format: "mp3"  # mp3, wav, ogg
+
+  # Audio quality
+  mp3_bitrate: "192k"  # 128k, 192k, 256k, 320k
+  wav_sample_rate: 24000  # 16000, 22050, 24000, 44100, 48000
+
+  # Normalization
+  normalize_volume: true  # Normalize audio levels across all files
+  target_loudness: -16.0  # LUFS (loudness units)
+
+  # File organization
+  create_backup: false  # Keep backup of previous version when regenerating

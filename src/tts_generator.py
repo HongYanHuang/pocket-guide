@@ -47,6 +47,8 @@ class TTSGenerator:
             return self._generate_google(text, output_path, language, voice)
         elif provider == 'edge':
             return self._generate_edge(text, output_path, language, voice)
+        elif provider == 'qwen':
+            return self._generate_qwen(text, output_path, language, voice)
         else:
             raise ValueError(f"Unsupported TTS provider: {provider}")
 
@@ -216,3 +218,128 @@ class TTSGenerator:
 
         voices = asyncio.run(edge_tts.list_voices())
         return voices
+
+    def _generate_qwen(
+        self,
+        text: str,
+        output_path: Path,
+        language: str = "Chinese",
+        voice: str = None
+    ) -> str:
+        """Generate audio using Qwen3-TTS (free, local model)"""
+        try:
+            from qwen_tts import Qwen3TTSModel
+            import torch
+            import soundfile as sf
+        except ImportError:
+            raise ImportError(
+                "Qwen TTS library not installed. Run: pip install qwen-tts\n"
+                "Note: Requires PyTorch with CUDA support for GPU acceleration"
+            )
+
+        config = self.tts_config.get('qwen', {})
+
+        # Get configuration
+        model_name = config.get('model', 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')
+        mode = config.get('mode', 'custom_voice')  # custom_voice, voice_design, or voice_clone
+        device = config.get('device', 'cuda:0')
+        dtype_str = config.get('dtype', 'bfloat16')
+        speaker = config.get('speaker', voice or 'Vivian')
+        instruction = config.get('instruction', '')
+
+        # Convert dtype string to torch dtype
+        dtype_map = {
+            'float32': torch.float32,
+            'float16': torch.float16,
+            'bfloat16': torch.bfloat16,
+        }
+        dtype = dtype_map.get(dtype_str, torch.bfloat16)
+
+        # Map language locale to Qwen language name
+        qwen_language = self._get_qwen_language(language)
+
+        # Load model (cached after first load)
+        if not hasattr(self, '_qwen_model') or self._qwen_model is None:
+            print(f"Loading Qwen3-TTS model: {model_name}...")
+            self._qwen_model = Qwen3TTSModel.from_pretrained(
+                model_name,
+                device_map=device,
+                dtype=dtype,
+            )
+            print("Model loaded successfully!")
+
+        # Generate audio based on mode
+        if mode == 'custom_voice':
+            wavs, sr = self._qwen_model.generate_custom_voice(
+                text=text,
+                language=qwen_language,
+                speaker=speaker,
+                instruct=instruction
+            )
+        elif mode == 'voice_design':
+            wavs, sr = self._qwen_model.generate_voice_design(
+                text=text,
+                language=qwen_language,
+                instruct=instruction or "Natural, clear voice"
+            )
+        elif mode == 'voice_clone':
+            ref_audio = config.get('ref_audio', '')
+            ref_text = config.get('ref_text', '')
+            if not ref_audio or not ref_text:
+                raise ValueError(
+                    "voice_clone mode requires 'ref_audio' and 'ref_text' in config"
+                )
+            wavs, sr = self._qwen_model.generate_voice_clone(
+                text=text,
+                language=qwen_language,
+                ref_audio=ref_audio,
+                ref_text=ref_text
+            )
+        else:
+            raise ValueError(f"Unsupported Qwen mode: {mode}")
+
+        # Language-specific audio file naming
+        if language:
+            lang_code = language.lower().replace('_', '-')
+            output_file = output_path / f"audio_{lang_code}.mp3"
+        else:
+            output_file = output_path / "audio.mp3"
+
+        # Save audio (convert to mp3 using soundfile + pydub)
+        temp_wav = output_path / "temp_qwen.wav"
+        sf.write(str(temp_wav), wavs[0], sr)
+
+        # Convert WAV to MP3
+        try:
+            from pydub import AudioSegment
+            audio = AudioSegment.from_wav(str(temp_wav))
+            audio.export(str(output_file), format="mp3", bitrate="192k")
+            temp_wav.unlink()  # Remove temp WAV file
+        except ImportError:
+            # If pydub not available, just save as WAV
+            import shutil
+            shutil.move(str(temp_wav), str(output_file.with_suffix('.wav')))
+            output_file = output_file.with_suffix('.wav')
+
+        return str(output_file)
+
+    def _get_qwen_language(self, language: str) -> str:
+        """Convert language code to Qwen3-TTS language name"""
+        # Map language codes to Qwen supported languages
+        language_map = {
+            'en-US': 'English',
+            'en-GB': 'English',
+            'zh-CN': 'Chinese',
+            'zh-TW': 'Chinese',
+            'ja-JP': 'Japanese',
+            'ko-KR': 'Korean',
+            'de-DE': 'German',
+            'fr-FR': 'French',
+            'ru-RU': 'Russian',
+            'pt-PT': 'Portuguese',
+            'pt-BR': 'Portuguese',
+            'es-ES': 'Spanish',
+            'es-MX': 'Spanish',
+            'it-IT': 'Italian',
+        }
+        return language_map.get(language, 'English')

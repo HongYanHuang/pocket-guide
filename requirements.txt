@@ -15,6 +15,9 @@ google-generativeai>=0.3.0,<0.8.0
 edge-tts>=6.1.0,<7.0.0
 google-cloud-texttospeech>=2.14.0,<3.0.0
 pydub>=0.25.0,<1.0.0
+qwen-tts>=0.1.0  # Qwen3-TTS for advanced voice control (requires CUDA)
+soundfile>=0.12.0  # Required for Qwen3-TTS audio I/O
+torch>=2.0.0  # Required for Qwen3-TTS (install with CUDA support: pip install torch --index-url https://download.pytorch.org/whl/cu118)
 
 # Utilities
 requests>=2.31.0,<3.0.0

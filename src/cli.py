@@ -1631,7 +1631,7 @@ def trip_show(ctx, tour_id, city, version, language):
 @click.option('--city', required=True, help='City name')
 @click.option('--poi', help='Specific POI ID to generate TTS for (generates all if not specified)')
 @click.option('--language', help='Tour language (defaults to tour default language)')
-@click.option('--provider', type=click.Choice(['edge', 'openai', 'google']), default='edge', help='TTS provider (default: edge)')
+@click.option('--provider', type=click.Choice(['edge', 'openai', 'google', 'qwen']), default='edge', help='TTS provider (default: edge)')
 @click.option('--force', is_flag=True, help='Regenerate audio even if it already exists')
 @click.pass_context
 def trip_tts(ctx, tour_id, city, poi, language, provider, force):

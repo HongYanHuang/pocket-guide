@@ -160,6 +160,9 @@ class TTSGenerator:
         if voice is None:
             voice = config.get('voice', self._get_default_edge_voice(language))
 
+        # Get speed/rate adjustment from config (if specified)
+        rate = config.get('rate', '+0%')  # Default: normal speed, range: -50% to +100%
+
         # Language-specific audio file naming
         if language:
             lang_code = language.lower().replace('_', '-')
@@ -168,16 +171,17 @@ class TTSGenerator:
             output_file = output_path / "audio.mp3"
 
         # Edge TTS requires async
-        asyncio.run(self._edge_tts_async(text, str(output_file), voice))
+        asyncio.run(self._edge_tts_async(text, str(output_file), voice, rate))
 
         return str(output_file)
 
     @staticmethod
-    async def _edge_tts_async(text: str, output_file: str, voice: str):
+    async def _edge_tts_async(text: str, output_file: str, voice: str, rate: str = "+0%"):
         """Async helper for Edge TTS"""
         import edge_tts
 
-        communicate = edge_tts.Communicate(text, voice)
+        # EdgeTTS supports rate adjustment: -50% to +100%
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
         await communicate.save(output_file)
 
     def _get_default_edge_voice(self, language: str) -> str:

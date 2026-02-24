@@ -390,6 +390,14 @@ trip list --city <city>
 
 # Show tour
 trip show <tour-id> --city <city> [--language LANG]
+
+# Generate TTS audio for tour (all POIs or specific POI)
+trip tts <tour-id> --city <city> [--poi POI_ID] [--language LANG] [--provider edge|openai|google|qwen] [--force]
+
+# Examples:
+trip tts rome-tour-123 --city rome                           # EdgeTTS (free, default)
+trip tts rome-tour-123 --city rome --provider qwen           # Qwen3-TTS (free, local, advanced)
+trip tts rome-tour-123 --city rome --poi colosseum --force   # Specific POI, force regenerate
 ```
 
 ### Utility Scripts

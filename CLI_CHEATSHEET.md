@@ -12,28 +12,69 @@ Quick reference for the Pocket Guide CLI - optimized for readability and quick l
 # 1. Research POIs (AI discovers attractions)
 ./pocket-guide poi research Rome --count 30
 
-# 2. Extract POI names to file
-python3 extract_pois.py Rome > rome_pois.txt
+# 2. Check for duplicates (auto-marks skip: true)
+./pocket-guide poi check-redundancy Rome
 
-# 3. Generate content (5-10 min per POI)
-./pocket-guide poi batch-generate rome_pois.txt --city Rome
+# 3. Extract unique POI names to file
+python3 extract_unique_pois.py rome > unique_pois_rome.txt
 
-# 4. Plan a trip
-./pocket-guide trip plan --city Rome --days 3 --interests history --save
+# 4. Generate content (5-10 min per POI)
+./pocket-guide poi batch-generate unique_pois_rome.txt --city Rome
+
+# 5. Plan a trip (choose optimization mode)
+./pocket-guide trip plan --city Rome --days 3 --interests history --mode simple --save
+
+# 6. Generate audio for tour (optional)
+./pocket-guide trip tts <tour-id> --city Rome --language zh-tw
 ```
 
-**That's it!** You now have a complete tour guide with optimized itinerary.
+**That's it!** You now have a complete tour guide with optimized itinerary and optional audio narration.
 
 ---
 
 ## 📚 Table of Contents
 
+- [Quick Decision Guide](#-quick-decision-guide)
 - [Server Management](#-server-management)
 - [POI Operations](#-poi-operations)
 - [Trip Planning](#-trip-planning)
 - [Common Workflows](#-common-workflows)
 - [Troubleshooting](#-troubleshooting)
 - [Appendix: Workflow Diagrams](#-appendix-workflow-diagrams)
+
+---
+
+## 🎯 Quick Decision Guide
+
+### Which Trip Planning Mode Should I Use?
+
+```bash
+# ✅ MOST USERS: Use Simple Mode (fast, 95-98% optimal)
+./pocket-guide trip plan --city Rome --days 3 --mode simple --save
+
+# 🏆 PERFECTIONISTS: Use ILP Mode (slower, mathematically optimal)
+./pocket-guide trip plan --city Rome --days 5 --mode ilp --save
+```
+
+**Simple Mode** = Greedy algorithm + 2-opt (1-5 seconds)
+**ILP Mode** = Integer Linear Programming (10-60 seconds)
+
+### Which TTS Provider Should I Use?
+
+```bash
+# 🆓 FREE + FAST: EdgeTTS (cloud, may have blocking issues)
+trip tts <tour-id> --city rome --provider edge
+
+# 🆓 FREE + CUSTOMIZABLE: Qwen3-TTS (local, Taiwan accent, emotion control)
+trip tts <tour-id> --city rome --provider qwen
+
+# 💰 PAID: OpenAI (premium quality)
+trip tts <tour-id> --city rome --provider openai
+```
+
+**EdgeTTS** = Free, fast, cloud
+**Qwen3-TTS** = Free, local, natural Taiwan accent (configure in config.yaml)
+**OpenAI/Google** = Paid, premium quality
 
 ---
 
@@ -72,8 +113,9 @@ Discover top attractions using AI.
 **Output:** `poi_research/<City>/research_candidates.json`
 
 **Next steps:**
-1. Extract names: `python3 extract_pois.py <city> > pois.txt`
-2. Generate content: `./pocket-guide poi batch-generate pois.txt --city <city>`
+1. Check duplicates: `./pocket-guide poi check-redundancy <city>`
+2. Extract unique names: `python3 extract_unique_pois.py <city>`
+3. Generate content: `./pocket-guide poi batch-generate unique_pois_<city>.txt --city <city>`
 
 ---
 
@@ -163,21 +205,42 @@ Marks duplicates with `skip: true` in research_candidates.json.
   --days <number> \
   --interests <interest> \
   --language <lang> \
+  --mode <simple|ilp> \
   --save
 
-# Examples
-./pocket-guide trip plan --city Rome --days 3 --interests history --save
-./pocket-guide trip plan --city Athens --days 2 --interests mythology --language zh-tw --save
+# Examples - Simple Mode (Fast, Good Quality)
+./pocket-guide trip plan --city Rome --days 3 --interests history --mode simple --save
+
+# Example - ILP Mode (Slower, Optimal Route)
+./pocket-guide trip plan --city Athens --days 2 --interests mythology --mode ilp --save
+
+# Example - Multilingual with Taiwan accent
+./pocket-guide trip plan --city Rome --days 3 --interests history --language zh-tw --mode simple --save
 ```
 
-**Options:**
-- `--city`: City name (required)
-- `--days`: Trip duration (required)
+**Required Options:**
+- `--city`: City name
+- `--days`: Trip duration
+
+**Optimization Mode (Important!):**
+- `--mode simple`: **Recommended** - Greedy algorithm + 2-opt optimization (fast, 1-5 seconds)
+  - Uses smart heuristics to minimize walking distance
+  - Great for most use cases
+  - Default mode
+- `--mode ilp`: **Advanced** - Integer Linear Programming (slower, 10-60 seconds)
+  - Finds mathematically optimal route
+  - Use for complex multi-day trips or when perfection matters
+  - Requires solver (CBC or similar)
+
+**Other Options:**
 - `--interests`: Multiple allowed (`--interests history --interests art`)
 - `--language`: ISO 639-1 code (default: `en`)
 - `--pace`: `relaxed`, `normal`, `packed`
 - `--walking`: `low`, `moderate`, `high`
-- `--must-see`: POIs to include
+- `--must-see`: POIs to include (multiple allowed)
+- `--start-location`: Starting point (POI name or "lat,lng")
+- `--end-location`: Ending point (POI name or "lat,lng")
+- `--start-date`: Trip start date (YYYY-MM-DD format)
 - `--save`: Save the tour
 
 **What happens:**
@@ -217,39 +280,57 @@ Day 1 (7.5h, 3.2km walking)
 
 ## 🔑 Common Workflows
 
-### Workflow 1: New City Setup
+### Workflow 1: New City Setup (Complete)
 
 ```bash
 # 1. Research POIs
 ./pocket-guide poi research "New York" --count 30
 
-# 2. Extract names
-python3 extract_pois.py "New York" > nyc_pois.txt
+# 2. Check for duplicates
+./pocket-guide poi check-redundancy "New York"
 
-# 3. Generate content
-./pocket-guide poi batch-generate nyc_pois.txt --city "New York"
+# 3. Extract unique POI names
+python3 extract_unique_pois.py "New York"
 
-# 4. Collect metadata (optional - requires Google Maps API)
+# 4. Generate content for all unique POIs
+./pocket-guide poi batch-generate unique_pois_new_york.txt --city "New York"
+
+# 5. Plan a trip with simple mode (fast)
+./pocket-guide trip plan --city "New York" --days 3 --interests culture --mode simple --save
+
+# 6. Collect metadata (optional - requires Google Maps API)
 curl -X POST http://localhost:8000/cities/new-york/collect
 ```
 
 ---
 
-### Workflow 2: Plan Multilanguage Trip
+### Workflow 2: Plan Multilanguage Trip with Audio
 
 ```bash
 # 1. Research POIs (English - always)
 ./pocket-guide poi research Rome --count 50
 
-# 2. Plan trip in Chinese
+# 2. Check duplicates and extract unique
+./pocket-guide poi check-redundancy Rome
+python3 extract_unique_pois.py rome
+
+# 3. Generate content for unique POIs
+./pocket-guide poi batch-generate unique_pois_rome.txt --city Rome
+
+# 4. Plan trip in Chinese (Traditional)
 ./pocket-guide trip plan \
   --city Rome \
   --days 2 \
   --interests history \
   --language zh-tw \
+  --mode simple \
   --save
 
+# 5. Generate audio narration (with Taiwan accent)
+./pocket-guide trip tts <tour-id> --city Rome --language zh-tw --provider qwen
+
 # Auto-generates Chinese transcripts if missing!
+# Qwen3-TTS provides natural Taiwan accent (configure in config.yaml)
 ```
 
 ---
@@ -382,8 +463,14 @@ poi check-redundancy <city>
 ### Trip Commands
 
 ```bash
-# Plan trip
-trip plan --city <city> --days <N> [--interests X] [--language LANG] [--save]
+# Plan trip with optimization mode
+trip plan --city <city> --days <N> --mode <simple|ilp> [--interests X] [--language LANG] [--save]
+
+# Examples - Different optimization modes:
+trip plan --city Rome --days 3 --mode simple --save              # Fast (recommended)
+trip plan --city Rome --days 3 --mode ilp --save                 # Optimal (slower)
+trip plan --city Rome --days 3 --mode simple --interests history # With interests
+trip plan --city Rome --days 3 --language zh-tw --mode simple    # Multilingual
 
 # List tours
 trip list --city <city>
@@ -394,17 +481,22 @@ trip show <tour-id> --city <city> [--language LANG]
 # Generate TTS audio for tour (all POIs or specific POI)
 trip tts <tour-id> --city <city> [--poi POI_ID] [--language LANG] [--provider edge|openai|google|qwen] [--force]
 
-# Examples:
-trip tts rome-tour-123 --city rome                           # EdgeTTS (free, default)
-trip tts rome-tour-123 --city rome --provider qwen           # Qwen3-TTS (free, local, advanced)
-trip tts rome-tour-123 --city rome --poi colosseum --force   # Specific POI, force regenerate
+# TTS Examples:
+trip tts rome-tour-123 --city rome                           # All POIs, EdgeTTS (free, default)
+trip tts rome-tour-123 --city rome --provider qwen           # All POIs, Qwen3-TTS (free, Taiwan accent)
+trip tts rome-tour-123 --city rome --poi colosseum           # Single POI only
+trip tts rome-tour-123 --city rome --language zh-tw --force  # Chinese, force regenerate
 ```
 
 ### Utility Scripts
 
 ```bash
-# Extract POI names
-python3 extract_pois.py <city> [--include-skipped] > output.txt
+# Extract unique POI names (skips duplicates)
+python3 extract_unique_pois.py <city> [output_file]
+
+# Examples:
+python3 extract_unique_pois.py rome                    # Output: unique_pois_rome.txt
+python3 extract_unique_pois.py paris my_pois.txt       # Custom output file
 
 # Generate missing research
 python3 generate_missing_research.py
@@ -426,18 +518,37 @@ python3 generate_missing_research.py
 
 ## 🎓 Tips
 
-### Speed vs Quality
+### Trip Planning: Optimization Mode Comparison
+
+| Feature | Simple Mode (`--mode simple`) | ILP Mode (`--mode ilp`) |
+|---------|------------------------------|------------------------|
+| **Speed** | ⚡ Fast (1-5 seconds) | 🐌 Slower (10-60 seconds) |
+| **Quality** | ✅ Very good (95-98% optimal) | 🏆 Mathematically optimal |
+| **Algorithm** | Greedy + 2-opt heuristic | Integer Linear Programming |
+| **Use Case** | Most trips, quick planning | Complex trips, perfectionist |
+| **When to Use** | Default, everyday use | Multi-day trips, critical routes |
+| **Requirements** | None | Solver (CBC, included) |
+
+**Recommendation:** Start with `simple` mode. Only use `ilp` if you need the absolute best route or have complex constraints.
+
+### POI Generation: Speed vs Quality
 - **With research** (default): Rich content, ~10 min/POI
 - **Without research** (`--skip-research`): Fast, ~2 min/POI, basic content
 - **Re-research** (`--force-research`): Update existing research data
 - **With verification** (`--verify`): Ensures 60-100% coverage, costs more (extra API calls)
 
-### Provider Comparison
+### AI Provider Comparison
 - **Anthropic (Claude)**: Best storytelling, most dramatic
 - **OpenAI (GPT-4)**: Balanced, reliable
 - **Google (Gemini)**: Fast, cost-effective
 
-### File Naming
+### TTS Provider Comparison
+- **EdgeTTS** (free): Fast, cloud-based, may have blocking issues
+- **Qwen3-TTS** (free, local): Natural Taiwan accent, customizable emotion/tone
+- **OpenAI TTS** (paid): High quality, cloud-based
+- **Google TTS** (paid): Good quality, many voices
+
+### File Naming Conventions
 - Content: `kebab-case` (`blue-mosque/`)
 - Research: `snake_case` (`blue_mosque.yaml`)
 - Cities: `TitleCase` in research, `kebab-case` in content

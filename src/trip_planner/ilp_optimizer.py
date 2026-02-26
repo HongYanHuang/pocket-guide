@@ -84,7 +84,7 @@ class ILPOptimizer:
             )
 
             # Add basic TSP constraints
-            self._add_tsp_constraints(model, visit_vars, pois, duration_days)
+            self._add_tsp_constraints(model, visit_vars, pois, duration_days, day_vars)
 
             # Add warm start hint from greedy solution to speed up solving
             self.logger.info("Generating warm start hint from greedy solution...")
@@ -215,7 +215,8 @@ class ILPOptimizer:
         model: cp_model.CpModel,
         visit_vars: Dict,
         pois: List[Dict[str, Any]],
-        duration_days: int
+        duration_days: int,
+        day_vars: Dict = None
     ):
         """
         Add basic TSP constraints to the model.
@@ -225,6 +226,7 @@ class ILPOptimizer:
             visit_vars: Visit decision variables
             pois: List of POIs
             duration_days: Number of days
+            day_vars: Day assignment variables (optional)
         """
         num_pois = len(pois)
         max_pois_per_day = len(list(visit_vars[0][0].keys()))
@@ -238,6 +240,29 @@ class ILPOptimizer:
                     for pos in range(max_pois_per_day)
                 ) == 1
             )
+
+        # Channeling constraint: Link day_vars to visit_vars
+        # day_vars[i] == d  IFF  POI i is visited on day d
+        if day_vars is not None:
+            for i in range(num_pois):
+                # Create boolean for each day: is POI i on day d?
+                day_booleans = []
+                for d in range(duration_days):
+                    poi_on_day_d = model.NewBoolVar(f'poi_{i}_on_day_{d}')
+                    day_booleans.append(poi_on_day_d)
+
+                    # Link boolean to visit_vars
+                    count_on_day_d = sum(visit_vars[i][d][pos] for pos in range(max_pois_per_day))
+                    model.Add(count_on_day_d == 1).OnlyEnforceIf(poi_on_day_d)
+                    model.Add(count_on_day_d == 0).OnlyEnforceIf(poi_on_day_d.Not())
+
+                    # If boolean is true, day_vars[i] must equal d
+                    model.Add(day_vars[i] == d).OnlyEnforceIf(poi_on_day_d)
+
+                # Exactly one day boolean must be true (redundant but helps solver)
+                model.Add(sum(day_booleans) == 1)
+
+            print(f"  [ILP] Added channeling constraints linking day_vars to visit_vars", flush=True)
 
         # Constraint 2: Each position on each day has at most one POI
         for day in range(duration_days):

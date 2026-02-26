@@ -107,7 +107,7 @@ class ILPOptimizer:
 
             self.logger.info("Adding clustered visit constraints...")
             self._add_clustered_visit_constraints(
-                model, visit_vars, pois, duration_days
+                model, visit_vars, pois, duration_days, day_vars
             )
 
             if start_location or end_location:
@@ -595,7 +595,8 @@ class ILPOptimizer:
         model: cp_model.CpModel,
         visit_vars: Dict,
         pois: List[Dict[str, Any]],
-        duration_days: int
+        duration_days: int,
+        day_vars: Dict = None
     ):
         """
         Add clustered visit constraints for combo ticket groups.
@@ -650,32 +651,15 @@ class ILPOptimizer:
             if len(poi_indices) <= 1:
                 continue
 
-            print(f"  [ILP] Enforcing same-day constraint for group '{group_id}' with {len(poi_indices)} POIs", flush=True)
+            poi_names = [pois[i].get('poi') for i in poi_indices]
+            print(f"  [ILP] Enforcing same-day constraint for group '{group_id}': {poi_names}", flush=True)
 
-            # Constraint 1: All POIs in group must be on the same day
-            group_on_day_vars = []  # Track which day the group is on
-
-            for day in range(duration_days):
-                # Create a variable for whether this group is on this day
-                group_on_day = model.NewBoolVar(f'group_{group_id}_day_{day}')
-                group_on_day_vars.append(group_on_day)
-
-                for poi_idx in poi_indices:
-                    # Is this POI on this day?
-                    poi_on_day = model.NewBoolVar(f'poi_{poi_idx}_day_{day}')
-                    model.Add(
-                        sum(visit_vars[poi_idx][day][pos] for pos in range(max_pois_per_day)) >= 1
-                    ).OnlyEnforceIf(poi_on_day)
-                    model.Add(
-                        sum(visit_vars[poi_idx][day][pos] for pos in range(max_pois_per_day)) == 0
-                    ).OnlyEnforceIf(poi_on_day.Not())
-
-                    # All POIs in group must have same on_day status
-                    model.Add(poi_on_day == group_on_day)
-
-            # CRITICAL: Ensure group is scheduled on exactly one day
-            # Without this, solver can set all group_on_day vars to false!
-            model.Add(sum(group_on_day_vars) == 1)
+            # SIMPLE SOLUTION: Use day_vars to directly constrain all POIs to same day
+            # All POIs in group must have the same day assignment
+            first_poi_idx = poi_indices[0]
+            for poi_idx in poi_indices[1:]:
+                model.Add(day_vars[poi_idx] == day_vars[first_poi_idx])
+                print(f"  [ILP]   Constraint: day[{pois[poi_idx].get('poi')}] == day[{pois[first_poi_idx].get('poi')}]", flush=True)
 
             # Constraint 2: POIs in group must be consecutive
             # Find positions of group members and ensure they're consecutive

@@ -72,7 +72,11 @@ class ComboTicketLoader:
         combo_tickets: Dict[str, Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        Enrich POIs with full combo ticket data based on their references.
+        Enrich POIs with combo ticket data by checking if POI names match combo ticket members.
+
+        This works in REVERSE from the old approach:
+        - OLD: Look for combo_tickets references in POI metadata (doesn't exist)
+        - NEW: Check if POI name is in any combo ticket's members list
 
         Args:
             pois: List of POI dictionaries
@@ -82,33 +86,32 @@ class ComboTicketLoader:
             Enriched POI list with combo_ticket_groups added to metadata
         """
         if not combo_tickets:
+            logger.info("No combo tickets to enrich")
             return pois
 
+        # Build reverse lookup: poi_name -> [combo_tickets]
+        poi_to_tickets = defaultdict(list)
+        for ticket_id, ticket in combo_tickets.items():
+            for member in ticket.get('members', []):
+                poi_to_tickets[member].append(ticket)
+
+        logger.info(f"Built reverse lookup for {len(poi_to_tickets)} POIs with combo tickets")
+
+        # Enrich each POI
+        enriched_count = 0
         for poi in pois:
-            metadata = poi.setdefault('metadata', {})
+            poi_name = poi.get('poi')
 
-            # Get combo ticket IDs referenced by this POI
-            ticket_ids = metadata.get('combo_tickets', [])
+            if poi_name in poi_to_tickets:
+                metadata = poi.setdefault('metadata', {})
+                metadata['combo_ticket_groups'] = poi_to_tickets[poi_name]
+                enriched_count += 1
+                logger.info(
+                    f"Enriched '{poi_name}' with {len(poi_to_tickets[poi_name])} combo ticket(s): "
+                    f"{[t.get('id') for t in poi_to_tickets[poi_name]]}"
+                )
 
-            if not ticket_ids:
-                continue
-
-            # Expand IDs to full combo ticket objects
-            combo_ticket_groups = []
-
-            for ticket_id in ticket_ids:
-                if ticket_id in combo_tickets:
-                    combo_ticket_groups.append(combo_tickets[ticket_id])
-                else:
-                    logger.warning(
-                        f"POI '{poi.get('poi', 'unknown')}' references "
-                        f"unknown combo ticket: '{ticket_id}'"
-                    )
-
-            # Store enriched data
-            if combo_ticket_groups:
-                metadata['combo_ticket_groups'] = combo_ticket_groups
-
+        logger.info(f"Enriched {enriched_count}/{len(pois)} POIs with combo ticket data")
         return pois
 
     def validate_combo_tickets(

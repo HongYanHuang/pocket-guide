@@ -287,9 +287,12 @@ class ItineraryOptimizerAgent:
                 enriched.append(poi_copy)
 
         # Enrich with combo ticket data
+        print(f"  [OPTIMIZER] Loading combo tickets for {city}...", flush=True)
         combo_loader = ComboTicketLoader()
         combo_tickets = combo_loader.load_city_combo_tickets(city)
+        print(f"  [OPTIMIZER] Loaded {len(combo_tickets)} combo ticket(s)", flush=True)
         enriched = combo_loader.enrich_pois_with_combo_tickets(enriched, combo_tickets)
+        print(f"  [OPTIMIZER] POI enrichment complete", flush=True)
 
         return enriched
 

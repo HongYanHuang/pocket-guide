@@ -613,9 +613,14 @@ class ILPOptimizer:
         from collections import defaultdict
         groups = defaultdict(list)
 
+        print(f"  [ILP] Checking {len(pois)} POIs for combo ticket constraints...", flush=True)
+
         for i, poi in enumerate(pois):
             # Use enriched combo_ticket_groups from ComboTicketLoader
             combo_groups = poi.get('metadata', {}).get('combo_ticket_groups', [])
+
+            if combo_groups:
+                print(f"  [ILP] POI '{poi.get('poi')}' has {len(combo_groups)} combo ticket(s)", flush=True)
 
             for group in combo_groups:
                 constraints = group.get('constraints', {})
@@ -623,6 +628,7 @@ class ILPOptimizer:
                     group_id = group.get('id')
                     if group_id:
                         groups[group_id].append(i)
+                        print(f"  [ILP] Added '{poi.get('poi')}' to combo group '{group_id}'", flush=True)
 
             # Fallback: support old format for backward compatibility
             old_combo_info = poi.get('metadata', {}).get('combo_ticket', {})
@@ -632,6 +638,14 @@ class ILPOptimizer:
                     groups[group_id].append(i)
 
         # For each group, enforce constraints
+        if groups:
+            print(f"  [ILP] Applying combo ticket constraints for {len(groups)} group(s)", flush=True)
+            for group_id, poi_indices in groups.items():
+                poi_names = [pois[i].get('poi') for i in poi_indices]
+                print(f"  [ILP] Group '{group_id}': {poi_names} (must visit same day)", flush=True)
+        else:
+            print(f"  [ILP] No combo ticket groups found, skipping constraints", flush=True)
+
         for group_id, poi_indices in groups.items():
             if len(poi_indices) <= 1:
                 continue

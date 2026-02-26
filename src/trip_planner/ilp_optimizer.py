@@ -650,10 +650,15 @@ class ILPOptimizer:
             if len(poi_indices) <= 1:
                 continue
 
+            print(f"  [ILP] Enforcing same-day constraint for group '{group_id}' with {len(poi_indices)} POIs", flush=True)
+
             # Constraint 1: All POIs in group must be on the same day
+            group_on_day_vars = []  # Track which day the group is on
+
             for day in range(duration_days):
                 # Create a variable for whether this group is on this day
                 group_on_day = model.NewBoolVar(f'group_{group_id}_day_{day}')
+                group_on_day_vars.append(group_on_day)
 
                 for poi_idx in poi_indices:
                     # Is this POI on this day?
@@ -667,6 +672,10 @@ class ILPOptimizer:
 
                     # All POIs in group must have same on_day status
                     model.Add(poi_on_day == group_on_day)
+
+            # CRITICAL: Ensure group is scheduled on exactly one day
+            # Without this, solver can set all group_on_day vars to false!
+            model.Add(sum(group_on_day_vars) == 1)
 
             # Constraint 2: POIs in group must be consecutive
             # Find positions of group members and ensure they're consecutive

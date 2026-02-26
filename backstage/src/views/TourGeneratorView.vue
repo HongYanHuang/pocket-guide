@@ -81,7 +81,10 @@
           <el-select
             v-model="formData.interests"
             multiple
-            placeholder="Select interests (optional)"
+            filterable
+            allow-create
+            default-first-option
+            placeholder="Select or type interests (optional)"
             style="width: 500px"
           >
             <el-option label="History" value="history" />
@@ -94,9 +97,18 @@
             <el-option label="Museums" value="museums" />
             <el-option label="Religion" value="religion" />
             <el-option label="Ancient Sites" value="ancient" />
+            <el-option label="Painting" value="painting" />
+            <el-option label="Sculpture" value="sculpture" />
+            <el-option label="Medieval" value="medieval" />
+            <el-option label="Renaissance" value="renaissance" />
+            <el-option label="Baroque" value="baroque" />
+            <el-option label="Ancient Rome" value="ancient-rome" />
+            <el-option label="Roman Empire" value="roman-empire" />
+            <el-option label="Byzantine" value="byzantine" />
+            <el-option label="Mythology" value="mythology" />
           </el-select>
           <div style="margin-top: 5px; color: #909399; font-size: 12px">
-            Select topics that interest you (multiple selections allowed)
+            Select from predefined topics or type custom interests (press Enter to add, multiple selections allowed)
           </div>
         </el-form-item>
 

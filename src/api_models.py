@@ -299,7 +299,7 @@ class BackupPOI(BaseModel):
     poi: str = Field(..., description="Backup POI name")
     similarity_score: float = Field(..., description="Similarity score to original POI")
     reason: str = Field(..., description="Why this is a good backup")
-    substitute_scenario: str = Field(..., description="When to use this backup")
+    substitute_scenario: Optional[str] = Field(None, description="When to use this backup")
 
 
 class RejectedPOI(BaseModel):

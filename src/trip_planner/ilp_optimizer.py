@@ -241,24 +241,10 @@ class ILPOptimizer:
                 ) == 1
             )
 
-        # Channeling constraint: Link day_vars to visit_vars
-        # day_vars[i] must equal the day d where POI i is actually visited
+        # NOTE: Channeling constraints disabled - combo tickets now use visit_vars directly
+        # day_vars are no longer needed for combo ticket constraints
         if day_vars is not None:
-            for i in range(num_pois):
-                # For each day, create a boolean: is POI i visited on day d?
-                for d in range(duration_days):
-                    # Create boolean variable
-                    poi_on_day_d = model.NewBoolVar(f'channel_poi{i}_day{d}')
-
-                    # Link boolean to visit count
-                    count_on_day_d = sum(visit_vars[i][d][pos] for pos in range(max_pois_per_day))
-                    model.Add(count_on_day_d >= 1).OnlyEnforceIf(poi_on_day_d)
-                    model.Add(count_on_day_d == 0).OnlyEnforceIf(poi_on_day_d.Not())
-
-                    # If POI is on day d, set day_vars[i] = d
-                    model.Add(day_vars[i] == d).OnlyEnforceIf(poi_on_day_d)
-
-            print(f"  [ILP] Added channeling constraints linking day_vars to visit_vars", flush=True)
+            print(f"  [ILP] day_vars created but channeling disabled (combo tickets use visit_vars directly)", flush=True)
 
         # Constraint 2: Each position on each day has at most one POI
         for day in range(duration_days):
@@ -692,37 +678,24 @@ class ILPOptimizer:
             poi_names = [pois[i].get('poi') for i in poi_indices]
             print(f"  [ILP] Enforcing same-day constraint for group '{group_id}': {poi_names}", flush=True)
 
-            # SIMPLE SOLUTION: Use day_vars to directly constrain all POIs to same day
-            # All POIs in group must have the same day assignment
-            first_poi_idx = poi_indices[0]
-            for poi_idx in poi_indices[1:]:
-                model.Add(day_vars[poi_idx] == day_vars[first_poi_idx])
-                print(f"  [ILP]   Constraint: day[{pois[poi_idx].get('poi')}] == day[{pois[first_poi_idx].get('poi')}]", flush=True)
+            # Apply same-day constraint DIRECTLY on visit_vars (not using day_vars)
+            # For each day, either ALL combo POIs are on that day, or NONE are
+            for d in range(duration_days):
+                # For each POI in group, create boolean: is this POI on day d?
+                pois_on_day_d = []
+                for poi_idx in poi_indices:
+                    on_day = model.NewBoolVar(f'combo_{group_id}_poi{poi_idx}_day{d}')
+                    visits_on_day = sum(visit_vars[poi_idx][d][pos] for pos in range(max_pois_per_day))
+                    model.Add(visits_on_day == 1).OnlyEnforceIf(on_day)
+                    model.Add(visits_on_day == 0).OnlyEnforceIf(on_day.Not())
+                    pois_on_day_d.append(on_day)
 
-            # Constraint 2: POIs in group must be consecutive
-            # Find positions of group members and ensure they're consecutive
-            for day in range(duration_days):
-                for idx_in_group in range(len(poi_indices) - 1):
-                    poi_i = poi_indices[idx_in_group]
-                    poi_j = poi_indices[idx_in_group + 1]
+                # All must be equal: either all on this day, or all not on this day
+                first_poi_on_day = pois_on_day_d[0]
+                for poi_on_day in pois_on_day_d[1:]:
+                    model.Add(poi_on_day == first_poi_on_day)
 
-                    # Find position variables for these POIs on this day
-                    pos_i = model.NewIntVar(0, max_pois_per_day - 1, f'pos_{poi_i}_day_{day}')
-                    pos_j = model.NewIntVar(0, max_pois_per_day - 1, f'pos_{poi_j}_day_{day}')
-
-                    # Link position variables to visit variables
-                    for pos in range(max_pois_per_day):
-                        model.Add(pos_i == pos).OnlyEnforceIf(visit_vars[poi_i][day][pos])
-                        model.Add(pos_j == pos).OnlyEnforceIf(visit_vars[poi_j][day][pos])
-
-                    # If both are on this day, they should be consecutive
-                    both_on_day = model.NewBoolVar(f'both_{poi_i}_{poi_j}_day_{day}')
-                    model.Add(
-                        sum(visit_vars[poi_i][day][pos] for pos in range(max_pois_per_day)) >= 1
-                    ).OnlyEnforceIf(both_on_day)
-
-                    # If both on same day, j should be right after i
-                    model.Add(pos_j == pos_i + 1).OnlyEnforceIf(both_on_day)
+            print(f"  [ILP]   Applied same-day constraint using visit_vars directly", flush=True)
 
     def _add_start_end_constraints(
         self,

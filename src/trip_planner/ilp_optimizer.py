@@ -243,15 +243,20 @@ class ILPOptimizer:
 
         # Channeling constraint: Link day_vars to visit_vars
         # day_vars[i] must equal the day d where POI i is actually visited
-        # Simpler approach: if visit count on day d is 1, force day_vars[i] = d
         if day_vars is not None:
             for i in range(num_pois):
-                # For each day, if POI is visited on that day, day_vars must equal it
+                # For each day, create a boolean: is POI i visited on day d?
                 for d in range(duration_days):
+                    # Create boolean variable
+                    poi_on_day_d = model.NewBoolVar(f'channel_poi{i}_day{d}')
+
+                    # Link boolean to visit count
                     count_on_day_d = sum(visit_vars[i][d][pos] for pos in range(max_pois_per_day))
-                    # If count is 1, day_vars[i] must be d
-                    # (We already have constraint that total count across all days is 1)
-                    model.Add(day_vars[i] == d).OnlyEnforceIf(count_on_day_d >= 1)
+                    model.Add(count_on_day_d >= 1).OnlyEnforceIf(poi_on_day_d)
+                    model.Add(count_on_day_d == 0).OnlyEnforceIf(poi_on_day_d.Not())
+
+                    # If POI is on day d, set day_vars[i] = d
+                    model.Add(day_vars[i] == d).OnlyEnforceIf(poi_on_day_d)
 
             print(f"  [ILP] Added channeling constraints linking day_vars to visit_vars", flush=True)
 

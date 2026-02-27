@@ -478,13 +478,19 @@ class ILPOptimizer:
         if trip_start_date is None:
             trip_start_date = datetime.now()
 
+        pois_with_hours = 0
+        total_constraints_added = 0
+
         for i, poi in enumerate(pois):
             # Get operation hours from Google Maps format
-            operation_hours = poi.get('metadata', {}).get('operation_hours', {})
+            # Note: operation_hours is at top level, not in metadata
+            operation_hours = poi.get('operation_hours', {})
             periods = operation_hours.get('periods', [])
 
             if not periods:
                 continue
+
+            pois_with_hours += 1
 
             # Check if booking is required (stricter enforcement)
             booking_required = poi.get('metadata', {}).get('booking_info', {}).get('required', False)
@@ -551,6 +557,9 @@ class ILPOptimizer:
                         # Just check if open
                         if not is_open:
                             model.Add(visit_vars[i][day][pos] == 0)
+                            total_constraints_added += 1
+
+        print(f"  [ILP] Time window constraints: {pois_with_hours} POIs with hours, {total_constraints_added} position blocks added", flush=True)
 
     def _add_precedence_constraints(
         self,

@@ -481,6 +481,14 @@ class ILPOptimizer:
         pois_with_hours = 0
         total_constraints_added = 0
 
+        # Calculate average POI duration (in minutes) instead of hardcoded 150 min
+        # Add 30 minutes for travel between POIs
+        avg_visit_minutes = sum(poi.get('estimated_hours', 2.0) for poi in pois) / len(pois) * 60
+        avg_travel_minutes = 30  # Average travel time between POIs
+        avg_position_duration = int(avg_visit_minutes + avg_travel_minutes)
+
+        print(f"  [ILP] Average POI duration: {avg_visit_minutes:.0f} min visit + {avg_travel_minutes} min travel = {avg_position_duration} min/position", flush=True)
+
         for i, poi in enumerate(pois):
             # Get operation hours from Google Maps format
             # Note: operation_hours is at top level, not in metadata
@@ -521,8 +529,8 @@ class ILPOptimizer:
                 # For each position in the day
                 for pos in range(max_pois_per_day):
                     # Calculate estimated arrival time at this position
-                    # Simplified: assumes 2.5 hours per POI (2h visit + 30min travel)
-                    estimated_arrival_minutes = start_minutes + (pos * 150)
+                    # Use average POI duration instead of hardcoded 150 min (2.5 hours)
+                    estimated_arrival_minutes = start_minutes + (pos * avg_position_duration)
 
                     # Convert to HHMM format for comparison
                     estimated_hours = estimated_arrival_minutes // 60

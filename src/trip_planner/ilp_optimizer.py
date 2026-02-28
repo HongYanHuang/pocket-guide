@@ -623,6 +623,9 @@ class ILPOptimizer:
         # Get precedence threshold from config
         precedence_threshold = self.config.get('optimization', {}).get('precedence_soft_threshold', 0.7)
 
+        print(f"  [ILP] Precedence threshold: {precedence_threshold}", flush=True)
+        print(f"  [ILP] Analyzing coherence scores for {num_pois} POIs ({num_pois * (num_pois - 1)} pairs)...", flush=True)
+
         # Link sequence variables to visit variables
         for i in range(num_pois):
             for day in range(duration_days):
@@ -631,19 +634,66 @@ class ILPOptimizer:
                     # If POI i is at (day, pos), then its sequence position is global_pos
                     model.Add(sequence_vars[i] == global_pos).OnlyEnforceIf(visit_vars[i][day][pos])
 
-        # Enforce precedence based on high coherence scores
-        for i in range(num_pois):
-            for j in range(num_pois):
-                if i == j:
-                    continue
+        # Collect precedence pairs first
+        precedence_pairs = []
 
+        # Enforce precedence based on high coherence scores
+        # IMPORTANT: Only check i < j to avoid creating cycles from bidirectional coherence
+        for i in range(num_pois):
+            for j in range(i + 1, num_pois):  # Only j > i to avoid cycles
                 poi_i_name = pois[i]['poi']
                 poi_j_name = pois[j]['poi']
-                coherence = coherence_scores.get((poi_i_name, poi_j_name), 0)
 
-                # If coherence is high, enforce that i comes before j
-                if coherence >= precedence_threshold:
-                    model.Add(sequence_vars[i] < sequence_vars[j])
+                # Check coherence in both directions
+                coherence_ij = coherence_scores.get((poi_i_name, poi_j_name), 0)
+                coherence_ji = coherence_scores.get((poi_j_name, poi_i_name), 0)
+
+                # Determine which direction has stronger coherence
+                if coherence_ij >= precedence_threshold or coherence_ji >= precedence_threshold:
+                    # Use the direction with higher coherence
+                    if coherence_ij >= coherence_ji:
+                        model.Add(sequence_vars[i] < sequence_vars[j])
+                        precedence_pairs.append({
+                            'from': poi_i_name,
+                            'to': poi_j_name,
+                            'coherence': coherence_ij
+                        })
+                    else:
+                        model.Add(sequence_vars[j] < sequence_vars[i])
+                        precedence_pairs.append({
+                            'from': poi_j_name,
+                            'to': poi_i_name,
+                            'coherence': coherence_ji
+                        })
+
+        # Log precedence constraints
+        print(f"  [ILP] Added {len(precedence_pairs)} precedence constraints (coherence >= {precedence_threshold})", flush=True)
+
+        if len(precedence_pairs) > 0:
+            print(f"  [ILP] Sample precedence constraints (showing first 20):", flush=True)
+            for idx, pair in enumerate(precedence_pairs[:20]):
+                print(f"  [ILP]   {idx+1}. {pair['from']:40s} → {pair['to']:40s} (coherence: {pair['coherence']:.2f})", flush=True)
+
+            if len(precedence_pairs) > 20:
+                print(f"  [ILP]   ... and {len(precedence_pairs) - 20} more", flush=True)
+
+        # Check if combo ticket POIs are involved in precedence
+        combo_pois = set()
+        for poi in pois:
+            groups = poi.get('metadata', {}).get('combo_ticket_groups', [])
+            if groups:
+                combo_pois.add(poi['poi'])
+
+        if combo_pois:
+            print(f"  [ILP] Combo ticket POIs: {combo_pois}", flush=True)
+            combo_precedence = [p for p in precedence_pairs if p['from'] in combo_pois or p['to'] in combo_pois]
+            print(f"  [ILP] Precedence constraints involving combo POIs: {len(combo_precedence)}", flush=True)
+            if combo_precedence:
+                print(f"  [ILP] Combo POI precedence constraints:", flush=True)
+                for pair in combo_precedence[:10]:
+                    print(f"  [ILP]   - {pair['from']:40s} → {pair['to']:40s} (coherence: {pair['coherence']:.2f})", flush=True)
+                if len(combo_precedence) > 10:
+                    print(f"  [ILP]   ... and {len(combo_precedence) - 10} more", flush=True)
 
         # Also check for explicit precedence constraints in metadata
         for i, poi in enumerate(pois):

@@ -283,6 +283,10 @@ class TourPOI(BaseModel):
     date_built: Optional[str] = Field(None, description="Construction date")
     walking_time_to_next: Optional[str] = Field(None, description="Walking time to next POI")
     distance_to_next_km: Optional[float] = Field(None, description="Distance to next POI in km")
+    # Runtime-only fields for visit tracking (not stored in tour files)
+    visited: Optional[bool] = Field(None, description="Whether POI has been visited (runtime only)")
+    visited_at: Optional[str] = Field(None, description="Visit timestamp (runtime only)")
+    visit_notes: Optional[str] = Field(None, description="Visit notes (runtime only)")
 
 
 class TourDay(BaseModel):
@@ -404,3 +408,54 @@ class POIReplacementResponse(BaseModel):
     mode_used: str = Field(..., description="Save mode that was used")
     optimization_scores: Optional[OptimizationScores] = Field(None, description="New optimization scores (if reoptimized)")
     message: str = Field(..., description="Success message")
+
+
+# ==== Visit Tracking Models ====
+
+class POIVisitStatus(BaseModel):
+    """Visit status for a single POI"""
+    poi: str = Field(..., description="POI name")
+    visited: bool = Field(False, description="Whether POI has been visited")
+    visited_at: Optional[str] = Field(None, description="ISO timestamp when marked visited")
+    notes: Optional[str] = Field(None, description="User notes about the visit")
+
+
+class TourVisitStatus(BaseModel):
+    """Visit tracking for an entire tour"""
+    tour_id: str
+    language: str
+    created_at: str
+    updated_at: str
+    visits: Dict[str, POIVisitStatus] = Field(default_factory=dict)
+
+
+class MarkVisitedRequest(BaseModel):
+    """Request to mark POI as visited"""
+    poi: str = Field(..., description="POI name to mark")
+    visited: bool = Field(True, description="Visit status")
+    notes: Optional[str] = Field(None, description="Optional visit notes")
+
+
+class MarkVisitedResponse(BaseModel):
+    """Response after marking POI as visited"""
+    success: bool
+    tour_id: str
+    poi: str
+    visited: bool
+    visited_at: Optional[str] = None
+    message: str
+
+
+class BulkMarkVisitedRequest(BaseModel):
+    """Request to mark multiple POIs as visited"""
+    pois: List[str] = Field(..., min_items=1)
+    visited: bool = Field(True)
+
+
+class BulkMarkVisitedResponse(BaseModel):
+    """Response after bulk marking"""
+    success: bool
+    tour_id: str
+    updated_count: int
+    pois: List[str]
+    message: str

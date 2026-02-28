@@ -278,6 +278,74 @@ Day 1 (7.5h, 3.2km walking)
 
 ---
 
+### Visit Tracking API
+
+Track which POIs you've visited during your tour.
+
+#### Mark Single POI as Visited
+```bash
+# Mark POI as visited
+curl -X POST "http://localhost:8000/tours/{tour_id}/visit?language=en" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "poi": "Colosseum",
+    "visited": true,
+    "notes": "Amazing experience!"
+  }'
+
+# Mark POI as not visited
+curl -X POST "http://localhost:8000/tours/{tour_id}/visit?language=en" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "poi": "Colosseum",
+    "visited": false
+  }'
+```
+
+#### Mark Multiple POIs (Bulk)
+```bash
+# Mark all POIs from a day as visited
+curl -X POST "http://localhost:8000/tours/{tour_id}/visit-bulk?language=en" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pois": ["Colosseum", "Roman Forum", "Palatine Hill"],
+    "visited": true
+  }'
+```
+
+#### Reset All Visits
+```bash
+# Clear all visit status
+curl -X DELETE "http://localhost:8000/tours/{tour_id}/visit?language=en"
+```
+
+#### Get Tour with Visit Status
+```bash
+# Visit status is automatically included when fetching a tour
+curl "http://localhost:8000/tours/{tour_id}?language=en"
+
+# Returns tour data with visited/visited_at/visit_notes fields on each POI
+```
+
+**Features:**
+- ✅ Language-specific tracking (independent per language)
+- ✅ Lightweight storage (separate JSON file per tour/language)
+- ✅ Optional visit notes
+- ✅ Timestamp tracking
+- ✅ Persistent across sessions
+- ✅ No versioning (user state, not tour content)
+
+**Storage:**
+```
+tours/{city}/{tour_id}/
+├── tour_en.json                    # Tour data (unchanged)
+├── visit_status_en.json            # Visit tracking (English)
+├── visit_status_zh-tw.json         # Visit tracking (Chinese)
+└── metadata.json                   # Tour metadata (unchanged)
+```
+
+---
+
 ## 🔑 Common Workflows
 
 ### Workflow 1: New City Setup (Complete)

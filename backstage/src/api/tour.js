@@ -44,5 +44,52 @@ export default {
    */
   generateTour(params) {
     return apiClient.post('/tour/generate', params)
+  },
+
+  /**
+   * Mark a POI as visited or not visited
+   *
+   * @param {string} tourId - Tour identifier
+   * @param {string} poiName - POI name to mark
+   * @param {boolean} visited - Visit status (default: true)
+   * @param {string} notes - Optional visit notes
+   * @param {string} language - Language code (default: 'en')
+   * @returns {Promise<Object>} Response with success status
+   */
+  markVisited(tourId, poiName, visited = true, notes = null, language = 'en') {
+    return apiClient.post(`/tours/${tourId}/visit`, {
+      poi: poiName,
+      visited: visited,
+      notes: notes
+    }, { params: { language } })
+  },
+
+  /**
+   * Mark multiple POIs as visited/not visited in bulk
+   *
+   * @param {string} tourId - Tour identifier
+   * @param {Array<string>} poiNames - Array of POI names
+   * @param {boolean} visited - Visit status (default: true)
+   * @param {string} language - Language code (default: 'en')
+   * @returns {Promise<Object>} Response with success status
+   */
+  bulkMarkVisited(tourId, poiNames, visited = true, language = 'en') {
+    return apiClient.post(`/tours/${tourId}/visit-bulk`, {
+      pois: poiNames,
+      visited: visited
+    }, { params: { language } })
+  },
+
+  /**
+   * Reset all visit status for a tour
+   *
+   * @param {string} tourId - Tour identifier
+   * @param {string} language - Language code (default: 'en')
+   * @returns {Promise<Object>} Response with success message
+   */
+  resetVisitStatus(tourId, language = 'en') {
+    return apiClient.delete(`/tours/${tourId}/visit`, {
+      params: { language }
+    })
   }
 }

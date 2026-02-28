@@ -24,7 +24,9 @@ from api_models import (
     TourSummary, TourDetail, TourMetadata, TourDay, TourPOI,
     BackupPOI, RejectedPOI, OptimizationScores,
     POIReplacementRequest, POIReplacementResponse,
-    BatchPOIReplacementRequest, BatchPOIReplacementResponse, POIReplacementItem
+    BatchPOIReplacementRequest, BatchPOIReplacementResponse, POIReplacementItem,
+    POIVisitStatus, TourVisitStatus, MarkVisitedRequest, MarkVisitedResponse,
+    BulkMarkVisitedRequest, BulkMarkVisitedResponse
 )
 from poi_metadata_agent import POIMetadataAgent
 from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
@@ -1146,6 +1148,10 @@ def get_tour(tour_id: str, language: str = "en"):
         with open(tour_file, 'r', encoding='utf-8') as f:
             tour_data = json.load(f)
 
+        # Load and merge visit status
+        visit_status = load_tour_visit_status(tour_path, language)
+        tour_data = merge_visit_status_into_tour(tour_data, visit_status)
+
         # Load generation record with language-specific pattern
         gen_record_pattern = f"generation_record_*_{language}.json"
         gen_record_files = list(tour_path.glob(gen_record_pattern))
@@ -1544,6 +1550,66 @@ def reoptimize_with_replacement(tour_data: dict, gen_record: dict, original_poi:
 
     logger.info(f"Re-optimization complete using {result['strategy_used']} strategy. New score: {result['optimization_scores'].get('overall_score', 0):.2f}")
 
+    return tour_data
+
+
+# ==== Visit Tracking Helper Functions ====
+
+def get_visit_status_path(tour_path: Path, language: str) -> Path:
+    """Get path to visit status file"""
+    return tour_path / f"visit_status_{language}.json"
+
+
+def load_tour_visit_status(tour_path: Path, language: str) -> dict:
+    """Load visit status, return empty structure if file doesn't exist"""
+    import json
+
+    visit_file = get_visit_status_path(tour_path, language)
+    if visit_file.exists():
+        try:
+            with open(visit_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading visit status: {e}")
+
+    return {
+        'tour_id': tour_path.name,
+        'language': language,
+        'created_at': datetime.now().isoformat(),
+        'updated_at': datetime.now().isoformat(),
+        'visits': {}
+    }
+
+
+def save_tour_visit_status(tour_path: Path, visit_data: dict, language: str):
+    """Save visit status to file"""
+    import json
+
+    visit_data['updated_at'] = datetime.now().isoformat()
+    visit_file = get_visit_status_path(tour_path, language)
+    try:
+        with open(visit_file, 'w', encoding='utf-8') as f:
+            json.dump(visit_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error saving visit status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error saving visit status: {str(e)}")
+
+
+def merge_visit_status_into_tour(tour_data: dict, visit_status: dict) -> dict:
+    """Merge visit status into tour POIs for display"""
+    visits = visit_status.get('visits', {})
+    for day in tour_data.get('itinerary', []):
+        for poi_obj in day['pois']:
+            poi_name = poi_obj['poi']
+            if poi_name in visits:
+                visit_info = visits[poi_name]
+                poi_obj['visited'] = visit_info.get('visited', False)
+                poi_obj['visited_at'] = visit_info.get('visited_at')
+                poi_obj['visit_notes'] = visit_info.get('notes')
+            else:
+                poi_obj['visited'] = False
+                poi_obj['visited_at'] = None
+                poi_obj['visit_notes'] = None
     return tour_data
 
 
@@ -2032,6 +2098,280 @@ def batch_replace_pois_in_tour(tour_id: str, request: BatchPOIReplacementRequest
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error batch replacing POIs: {str(e)}"
+        )
+
+
+# ==== Visit Tracking Endpoints ====
+
+@app.post("/tours/{tour_id}/visit", response_model=MarkVisitedResponse)
+def mark_poi_visited(tour_id: str, request: MarkVisitedRequest, language: str = "en"):
+    """
+    Mark a POI as visited or unvisited.
+
+    Args:
+        tour_id: Tour identifier
+        request: Mark visited request with POI name and status
+        language: ISO 639-1 language code (e.g., 'en', 'zh-tw')
+
+    Returns:
+        Mark visited response with success status
+    """
+    import json
+
+    try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(language)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # Find tour directory
+        tours_dir = Path("tours")
+        tour_path = None
+
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir():
+                continue
+            potential_path = city_dir / tour_id
+            if potential_path.exists():
+                tour_path = potential_path
+                break
+
+        if not tour_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour not found: {tour_id}"
+            )
+
+        # Load tour data to verify POI exists
+        tour_file = tour_path / get_tour_filename('tour', language)
+        if not tour_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour file not found for language '{language}'"
+            )
+
+        with open(tour_file, 'r', encoding='utf-8') as f:
+            tour_data = json.load(f)
+
+        # Verify POI exists in tour
+        poi_found = False
+        for day in tour_data.get('itinerary', []):
+            for poi_obj in day.get('pois', []):
+                if poi_obj['poi'] == request.poi:
+                    poi_found = True
+                    break
+            if poi_found:
+                break
+
+        if not poi_found:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"POI '{request.poi}' not found in tour"
+            )
+
+        # Load visit status
+        visit_status = load_tour_visit_status(tour_path, language)
+
+        # Update visit status for this POI
+        visited_at = datetime.now().isoformat() if request.visited else None
+
+        visit_status['visits'][request.poi] = {
+            'poi': request.poi,
+            'visited': request.visited,
+            'visited_at': visited_at,
+            'notes': request.notes
+        }
+
+        # Save updated visit status
+        save_tour_visit_status(tour_path, visit_status, language)
+
+        return MarkVisitedResponse(
+            success=True,
+            tour_id=tour_id,
+            poi=request.poi,
+            visited=request.visited,
+            visited_at=visited_at,
+            message=f"Marked '{request.poi}' as {'visited' if request.visited else 'not visited'}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking POI visited in tour {tour_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating visit status: {str(e)}"
+        )
+
+
+@app.post("/tours/{tour_id}/visit-bulk", response_model=BulkMarkVisitedResponse)
+def bulk_mark_visited(tour_id: str, request: BulkMarkVisitedRequest, language: str = "en"):
+    """
+    Mark multiple POIs as visited/unvisited in bulk.
+
+    Use case: Mark all POIs on a day as visited.
+
+    Args:
+        tour_id: Tour identifier
+        request: Bulk mark visited request with list of POI names
+        language: ISO 639-1 language code (e.g., 'en', 'zh-tw')
+
+    Returns:
+        Bulk mark visited response with success status
+    """
+    import json
+
+    try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(language)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # Find tour directory
+        tours_dir = Path("tours")
+        tour_path = None
+
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir():
+                continue
+            potential_path = city_dir / tour_id
+            if potential_path.exists():
+                tour_path = potential_path
+                break
+
+        if not tour_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour not found: {tour_id}"
+            )
+
+        # Load tour data to verify POIs exist
+        tour_file = tour_path / get_tour_filename('tour', language)
+        if not tour_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour file not found for language '{language}'"
+            )
+
+        with open(tour_file, 'r', encoding='utf-8') as f:
+            tour_data = json.load(f)
+
+        # Verify all POIs exist in tour
+        tour_pois = set()
+        for day in tour_data.get('itinerary', []):
+            for poi_obj in day.get('pois', []):
+                tour_pois.add(poi_obj['poi'])
+
+        missing_pois = [poi for poi in request.pois if poi not in tour_pois]
+        if missing_pois:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"POIs not found in tour: {', '.join(missing_pois)}"
+            )
+
+        # Load visit status
+        visit_status = load_tour_visit_status(tour_path, language)
+
+        # Update visit status for all POIs
+        visited_at = datetime.now().isoformat() if request.visited else None
+
+        for poi_name in request.pois:
+            visit_status['visits'][poi_name] = {
+                'poi': poi_name,
+                'visited': request.visited,
+                'visited_at': visited_at,
+                'notes': None
+            }
+
+        # Save updated visit status
+        save_tour_visit_status(tour_path, visit_status, language)
+
+        return BulkMarkVisitedResponse(
+            success=True,
+            tour_id=tour_id,
+            updated_count=len(request.pois),
+            pois=request.pois,
+            message=f"Marked {len(request.pois)} POI(s) as {'visited' if request.visited else 'not visited'}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk marking POIs visited in tour {tour_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating visit status: {str(e)}"
+        )
+
+
+@app.delete("/tours/{tour_id}/visit")
+def reset_visit_status(tour_id: str, language: str = "en"):
+    """
+    Reset all visit status (deletes visit_status file).
+
+    Args:
+        tour_id: Tour identifier
+        language: ISO 639-1 language code (e.g., 'en', 'zh-tw')
+
+    Returns:
+        Success response
+    """
+    try:
+        # Validate and normalize language code
+        try:
+            language = normalize_language_code(language)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # Find tour directory
+        tours_dir = Path("tours")
+        tour_path = None
+
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir():
+                continue
+            potential_path = city_dir / tour_id
+            if potential_path.exists():
+                tour_path = potential_path
+                break
+
+        if not tour_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tour not found: {tour_id}"
+            )
+
+        # Delete visit status file
+        visit_file = get_visit_status_path(tour_path, language)
+        if visit_file.exists():
+            visit_file.unlink()
+            logger.info(f"Deleted visit status file: {visit_file}")
+            return SuccessResponse(
+                message=f"Visit status reset successfully for tour {tour_id}"
+            )
+        else:
+            return SuccessResponse(
+                message=f"No visit status to reset for tour {tour_id}"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resetting visit status for tour {tour_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error resetting visit status: {str(e)}"
         )
 
 

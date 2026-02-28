@@ -9,6 +9,10 @@
           <el-tag v-if="tour" size="small">
             {{ tour.itinerary.length }} days
           </el-tag>
+          <el-tag v-if="tour && tourProgress.visited > 0" type="success" size="small">
+            <el-icon style="margin-right: 3px"><Select /></el-icon>
+            {{ tourProgress.visited }} / {{ tourProgress.total }} visited ({{ tourProgress.percentage }}%)
+          </el-tag>
         </div>
       </template>
     </el-page-header>
@@ -290,6 +294,7 @@
                     shadow="hover"
                     :body-style="{ padding: '15px' }"
                     style="margin-bottom: 15px"
+                    :class="{ 'poi-visited': poi.visited }"
                   >
                     <div style="display: flex; justify-content: space-between; align-items: start">
                       <div style="flex: 1">
@@ -309,7 +314,10 @@
                             {{ index + 1 }}
                           </span>
                           <span style="font-weight: 600; font-size: 15px">
-                            <span :style="{ textDecoration: hasPendingReplacement(poi.poi) ? 'line-through' : 'none', opacity: hasPendingReplacement(poi.poi) ? 0.5 : 1 }">
+                            <span :style="{
+                              textDecoration: (hasPendingReplacement(poi.poi) || poi.visited) ? 'line-through' : 'none',
+                              opacity: (hasPendingReplacement(poi.poi) || poi.visited) ? 0.6 : 1
+                            }">
                               {{ poi.poi }}
                             </span>
                             <span v-if="hasPendingReplacement(poi.poi)" style="color: #67C23A; font-weight: 600">
@@ -318,6 +326,10 @@
                           </span>
                           <el-tag size="small" :type="getPriorityType(poi.priority)">
                             {{ poi.priority }}
+                          </el-tag>
+                          <el-tag v-if="poi.visited" size="small" type="success">
+                            <el-icon style="margin-right: 3px"><Select /></el-icon>
+                            Visited
                           </el-tag>
                           <el-tag v-if="hasPendingReplacement(poi.poi)" size="small" type="success">
                             Pending
@@ -337,8 +349,8 @@
                           </el-tag>
                         </div>
 
-                        <!-- Transcript Toggle -->
-                        <div style="margin-top: 12px; padding-left: 34px">
+                        <!-- Transcript Toggle & Visit Button -->
+                        <div style="margin-top: 12px; padding-left: 34px; display: flex; gap: 10px">
                           <el-button
                             size="small"
                             @click="toggleTranscript(poi.poi)"
@@ -349,6 +361,15 @@
                                 ? 'Hide Transcript'
                                 : 'View Transcript'
                             }}
+                          </el-button>
+                          <el-button
+                            :type="poi.visited ? 'default' : 'success'"
+                            size="small"
+                            @click="toggleVisited(poi.poi, poi.visited)"
+                            :loading="markingVisited[poi.poi]"
+                          >
+                            <el-icon style="margin-right: 3px"><CircleCheck /></el-icon>
+                            {{ poi.visited ? 'Mark as Not Visited' : 'Mark as Visited' }}
                           </el-button>
 
                           <!-- Expanded Transcript -->
@@ -586,10 +607,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loading, ArrowDown, LocationInformation, Location, Guide, Right } from '@element-plus/icons-vue'
+import { Loading, ArrowDown, LocationInformation, Location, Guide, Right, Select, CircleCheck } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import TourMap from '../components/TourMap.vue'
+import tourApi from '../api/tour.js'
 
 const route = useRoute()
 const loading = ref(true)
@@ -602,6 +624,9 @@ const transcriptLoading = ref({})
 // POI Replacement state
 const pendingReplacements = ref({}) // Map: original_poi -> { replacement_poi, day }
 const savingReplacements = ref(false)
+
+// Visit tracking state
+const markingVisited = ref({}) // Track loading state per POI
 
 // Computed total POIs
 const totalPOIs = computed(() => {
@@ -658,6 +683,25 @@ const getPendingReplacement = (poiName) => {
 // Count of pending replacements
 const pendingReplacementsCount = computed(() => {
   return Object.keys(pendingReplacements.value).length
+})
+
+// Tour progress (visit tracking)
+const tourProgress = computed(() => {
+  if (!tour.value) return { visited: 0, total: 0, percentage: 0 }
+
+  let visited = 0
+  let total = 0
+
+  for (const day of tour.value.itinerary) {
+    for (const poi of day.pois) {
+      total++
+      if (poi.visited) visited++
+    }
+  }
+
+  const percentage = total > 0 ? Math.round((visited / total) * 100) : 0
+
+  return { visited, total, percentage }
 })
 
 // Load tour details
@@ -833,6 +877,42 @@ const saveAllReplacements = async () => {
   }
 }
 
+// Toggle POI visited status
+const toggleVisited = async (poiName, currentlyVisited) => {
+  try {
+    markingVisited.value[poiName] = true
+    const newStatus = !currentlyVisited
+    const language = tour.value.input_parameters?.language || 'en'
+    const tourId = route.params.tourId
+
+    await tourApi.markVisited(tourId, poiName, newStatus, null, language)
+
+    // Update local tour data
+    for (const day of tour.value.itinerary) {
+      for (const poi of day.pois) {
+        if (poi.poi === poiName) {
+          poi.visited = newStatus
+          poi.visited_at = newStatus ? new Date().toISOString() : null
+          break
+        }
+      }
+    }
+
+    ElMessage.success({
+      message: `Marked '${poiName}' as ${newStatus ? 'visited' : 'not visited'}`,
+      duration: 2000
+    })
+  } catch (err) {
+    console.error('Error updating visit status:', err)
+    ElMessage.error({
+      message: err.message || 'Failed to update visit status',
+      duration: 3000
+    })
+  } finally {
+    markingVisited.value[poiName] = false
+  }
+}
+
 onMounted(() => {
   loadTour()
 })
@@ -881,5 +961,12 @@ onMounted(() => {
 
 .end-icon {
   background: linear-gradient(135deg, #e6a23c, #f0c78a);
+}
+
+/* Visit tracking styles */
+.poi-visited {
+  opacity: 0.85;
+  background: #f0f9ff !important;
+  border-left: 3px solid #67c23a;
 }
 </style>

@@ -84,31 +84,41 @@ class ILPOptimizer:
             )
 
             # Add basic TSP constraints
+            print(f"\n  [ILP] ===== STEP 1: TSP CONSTRAINTS =====", flush=True)
             self._add_tsp_constraints(model, visit_vars, pois, duration_days, day_vars)
+            print(f"  [ILP] Constraints after TSP: {len(model.Proto().constraints)}", flush=True)
 
             # Add warm start hint from greedy solution to speed up solving
+            print(f"\n  [ILP] ===== STEP 2: WARM START HINT =====", flush=True)
             self.logger.info("Generating warm start hint from greedy solution...")
             self._add_warm_start_hint(
                 model, visit_vars, pois, distance_matrix, coherence_scores,
                 duration_days, preferences
             )
+            print(f"  [ILP] Constraints after warm start: {len(model.Proto().constraints)}", flush=True)
 
             # Add advanced constraints
+            print(f"\n  [ILP] ===== STEP 3: TIME WINDOW CONSTRAINTS =====", flush=True)
             self.logger.info("Adding time window constraints...")
             self._add_time_window_constraints(
                 model, visit_vars, pois, duration_days, start_time="09:00",
                 trip_start_date=trip_start_date
             )
+            print(f"  [ILP] Constraints after time windows: {len(model.Proto().constraints)}", flush=True)
 
+            print(f"\n  [ILP] ===== STEP 4: PRECEDENCE CONSTRAINTS =====", flush=True)
             self.logger.info("Adding precedence constraints...")
             self._add_precedence_constraints(
                 model, visit_vars, sequence_vars, pois, coherence_scores, duration_days
             )
+            print(f"  [ILP] Constraints after precedence: {len(model.Proto().constraints)}", flush=True)
 
+            print(f"\n  [ILP] ===== STEP 5: COMBO TICKET CONSTRAINTS =====", flush=True)
             self.logger.info("Adding clustered visit constraints...")
             self._add_clustered_visit_constraints(
                 model, visit_vars, pois, duration_days, day_vars
             )
+            print(f"  [ILP] Constraints after combo tickets: {len(model.Proto().constraints)}", flush=True)
 
             if start_location or end_location:
                 self.logger.info("Adding start/end location constraints...")
@@ -130,16 +140,33 @@ class ILPOptimizer:
                 model.Add(visit_vars[0][0][0] == 1)
                 self.logger.info("Added symmetry breaking constraint")
 
+            # Print model statistics before solving
+            print(f"\n  [ILP] ===== MODEL STATISTICS =====", flush=True)
+            print(f"  [ILP] Variables: {len(model.Proto().variables)}", flush=True)
+            print(f"  [ILP] Constraints: {len(model.Proto().constraints)}", flush=True)
+            print(f"  [ILP] Boolean variables: {sum(1 for v in model.Proto().variables if v.domain == [0, 1])}", flush=True)
+            print(f"  [ILP] Integer variables: {sum(1 for v in model.Proto().variables if v.domain != [0, 1])}", flush=True)
+            print(f"  [ILP] =================================\n", flush=True)
+
+            # Validate model
+            model_str = model.Validate()
+            if model_str:
+                print(f"  [ILP] ⚠️  MODEL VALIDATION ISSUES: {model_str}", flush=True)
+            else:
+                print(f"  [ILP] ✓ Model validation passed", flush=True)
+
             # Solve the model
             solver = cp_model.CpSolver()
             solver.parameters.max_time_in_seconds = self.max_seconds
             solver.parameters.num_search_workers = 4  # Parallel search
-            solver.parameters.log_search_progress = False  # Quiet mode
+            solver.parameters.log_search_progress = True  # Enable logging to see progress
             solver.parameters.cp_model_presolve = True  # Enable presolve
             solver.parameters.relative_gap_limit = 0.05  # Stop if within 5% of optimal
 
             self.logger.info(f"Solving ILP model (timeout: {self.max_seconds}s, gap limit: 5%)...")
+            print(f"  [ILP] Starting solver...", flush=True)
             status = solver.Solve(model)
+            print(f"  [ILP] Solver finished with status: {solver.StatusName(status)}", flush=True)
 
             # Extract solution
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
@@ -155,6 +182,21 @@ class ILPOptimizer:
                 self.logger.info(f"ILP optimization completed: {solver.StatusName(status)} in {solver.WallTime():.2f}s")
                 return result
             else:
+                # Detailed failure logging
+                print(f"\n  [ILP] ===== SOLVER FAILURE DETAILS =====", flush=True)
+                print(f"  [ILP] Status: {solver.StatusName(status)}", flush=True)
+                print(f"  [ILP] Wall time: {solver.WallTime():.2f}s", flush=True)
+                print(f"  [ILP] Branches: {solver.NumBranches()}", flush=True)
+                print(f"  [ILP] Conflicts: {solver.NumConflicts()}", flush=True)
+                print(f"  [ILP] =======================================\n", flush=True)
+
+                # Export model to file for manual inspection
+                import os
+                model_file = "ilp_model_debug.txt"
+                with open(model_file, 'w') as f:
+                    f.write(str(model.Proto()))
+                print(f"  [ILP] Model exported to: {model_file}", flush=True)
+
                 raise Exception(f"Solver failed with status: {solver.StatusName(status)}")
 
         except Exception as e:
@@ -680,22 +722,34 @@ class ILPOptimizer:
 
             # Apply same-day constraint DIRECTLY on visit_vars (not using day_vars)
             # For each day, either ALL combo POIs are on that day, or NONE are
+            print(f"  [ILP]   Applying same-day constraint for {len(poi_indices)} POIs across {duration_days} days", flush=True)
+
             for d in range(duration_days):
+                print(f"  [ILP]     Day {d}:", flush=True)
                 # For each POI in group, create boolean: is this POI on day d?
                 pois_on_day_d = []
                 for poi_idx in poi_indices:
+                    poi_name = pois[poi_idx].get('poi')
                     on_day = model.NewBoolVar(f'combo_{group_id}_poi{poi_idx}_day{d}')
                     visits_on_day = sum(visit_vars[poi_idx][d][pos] for pos in range(max_pois_per_day))
+
+                    # This POI is on day d if exactly 1 position is used on that day
                     model.Add(visits_on_day == 1).OnlyEnforceIf(on_day)
                     model.Add(visits_on_day == 0).OnlyEnforceIf(on_day.Not())
+
                     pois_on_day_d.append(on_day)
+                    print(f"  [ILP]       {poi_name}: on_day_{d} = (sum(visit[{poi_idx}][{d}][pos]) == 1)", flush=True)
 
                 # All must be equal: either all on this day, or all not on this day
                 first_poi_on_day = pois_on_day_d[0]
-                for poi_on_day in pois_on_day_d[1:]:
-                    model.Add(poi_on_day == first_poi_on_day)
+                first_poi_name = pois[poi_indices[0]].get('poi')
 
-            print(f"  [ILP]   Applied same-day constraint using visit_vars directly", flush=True)
+                for idx, poi_on_day in enumerate(pois_on_day_d[1:], 1):
+                    poi_name = pois[poi_indices[idx]].get('poi')
+                    model.Add(poi_on_day == first_poi_on_day)
+                    print(f"  [ILP]       Constraint: on_day_{d}[{poi_name}] == on_day_{d}[{first_poi_name}]", flush=True)
+
+            print(f"  [ILP]   ✓ Same-day constraint applied for {group_id}", flush=True)
 
     def _add_start_end_constraints(
         self,

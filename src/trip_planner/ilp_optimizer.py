@@ -203,6 +203,9 @@ class ILPOptimizer:
             self.logger.error(f"ILP optimization failed: {e}")
             if self.fallback_enabled:
                 self.logger.info("Falling back to greedy algorithm")
+                print(f"\n⚠️  [FALLBACK] ILP optimization failed - switching to greedy mode", flush=True)
+                print(f"  [FALLBACK] Reason: {str(e)}", flush=True)
+                print(f"  [FALLBACK] Using greedy algorithm for itinerary generation...\n", flush=True)
                 return self._fallback_to_greedy(
                     pois, distance_matrix, coherence_scores, duration_days, preferences
                 )
@@ -1107,6 +1110,9 @@ class ILPOptimizer:
         max_possible_distance = len(sequence) * 3.0
         distance_score = max(0, 1 - (total_distance / max_possible_distance))
         coherence_score = coherence_sum / coherence_count if coherence_count > 0 else 0.5
+
+        print(f"✓ [FALLBACK] Greedy mode completed successfully", flush=True)
+        print(f"  [FALLBACK] Distance score: {distance_score:.2f}, Coherence: {coherence_score:.2f}\n", flush=True)
 
         return {
             'sequence': sequence,

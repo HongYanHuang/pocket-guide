@@ -99,13 +99,23 @@ class POISelectorAgent:
         # Calculate dynamic max_tokens based on POI count
         # Formula: poi_count * tokens_per_poi + base_tokens
         # - Each POI needs tokens for: starting selection (~150), backups (~250), or rejection (~30)
-        # - Average per POI: ~150 tokens
-        # - Base tokens: 1000 (for structure, reasoning_summary, metadata)
-        tokens_per_poi = 150
-        base_tokens = 1000
+        # - Average per POI: ~150 tokens for English, ~250 for Chinese (more verbose)
+        # - Base tokens: 1500 (for structure, reasoning_summary, metadata)
+
+        # Adjust for language - Chinese/Japanese/Korean use more tokens
+        if language and language.lower() in ['zh', 'zh-cn', 'zh-tw', 'ja', 'ko']:
+            tokens_per_poi = 250  # Chinese responses are more verbose
+            base_tokens = 2000
+        else:
+            tokens_per_poi = 150
+            base_tokens = 1000
+
         max_tokens = len(available_pois) * tokens_per_poi + base_tokens
 
-        print(f"  [POI SELECTOR] Calculated max_tokens: {max_tokens} (for {len(available_pois)} POIs)", flush=True)
+        # Safety cap to avoid excessive costs (max 20k tokens)
+        max_tokens = min(max_tokens, 20000)
+
+        print(f"  [POI SELECTOR] Calculated max_tokens: {max_tokens} (for {len(available_pois)} POIs, language={language})", flush=True)
 
         # Call AI based on provider
         print(f"  [POI SELECTOR] Calling {self.provider} API for selection...", flush=True)
@@ -427,7 +437,18 @@ Generate the POI selection now:"""
         try:
             selection = json.loads(json_str)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse AI response as JSON: {e}\nResponse: {json_str[:500]}")
+            # Check if response looks truncated
+            if not json_str.rstrip().endswith('}'):
+                error_msg = (
+                    f"AI response appears truncated (doesn't end with '}}').\n"
+                    f"This usually means max_tokens was too low.\n"
+                    f"Error: {e}\n"
+                    f"Last 200 chars: ...{json_str[-200:]}\n"
+                    f"Try reducing --count or the response will be truncated."
+                )
+                raise ValueError(error_msg)
+            else:
+                raise ValueError(f"Failed to parse AI response as JSON: {e}\nResponse: {json_str[:500]}")
 
         # Validate structure
         if 'starting_pois' not in selection:

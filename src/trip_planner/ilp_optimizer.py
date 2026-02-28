@@ -84,31 +84,41 @@ class ILPOptimizer:
             )
 
             # Add basic TSP constraints
-            self._add_tsp_constraints(model, visit_vars, pois, duration_days)
+            print(f"\n  [ILP] ===== STEP 1: TSP CONSTRAINTS =====", flush=True)
+            self._add_tsp_constraints(model, visit_vars, pois, duration_days, day_vars)
+            print(f"  [ILP] Constraints after TSP: {len(model.Proto().constraints)}", flush=True)
 
             # Add warm start hint from greedy solution to speed up solving
+            print(f"\n  [ILP] ===== STEP 2: WARM START HINT =====", flush=True)
             self.logger.info("Generating warm start hint from greedy solution...")
             self._add_warm_start_hint(
                 model, visit_vars, pois, distance_matrix, coherence_scores,
                 duration_days, preferences
             )
+            print(f"  [ILP] Constraints after warm start: {len(model.Proto().constraints)}", flush=True)
 
             # Add advanced constraints
+            print(f"\n  [ILP] ===== STEP 3: TIME WINDOW CONSTRAINTS =====", flush=True)
             self.logger.info("Adding time window constraints...")
             self._add_time_window_constraints(
                 model, visit_vars, pois, duration_days, start_time="09:00",
                 trip_start_date=trip_start_date
             )
+            print(f"  [ILP] Constraints after time windows: {len(model.Proto().constraints)}", flush=True)
 
+            print(f"\n  [ILP] ===== STEP 4: PRECEDENCE CONSTRAINTS =====", flush=True)
             self.logger.info("Adding precedence constraints...")
             self._add_precedence_constraints(
                 model, visit_vars, sequence_vars, pois, coherence_scores, duration_days
             )
+            print(f"  [ILP] Constraints after precedence: {len(model.Proto().constraints)}", flush=True)
 
+            print(f"\n  [ILP] ===== STEP 5: COMBO TICKET CONSTRAINTS =====", flush=True)
             self.logger.info("Adding clustered visit constraints...")
             self._add_clustered_visit_constraints(
-                model, visit_vars, pois, duration_days
+                model, visit_vars, pois, duration_days, day_vars
             )
+            print(f"  [ILP] Constraints after combo tickets: {len(model.Proto().constraints)}", flush=True)
 
             if start_location or end_location:
                 self.logger.info("Adding start/end location constraints...")
@@ -130,16 +140,33 @@ class ILPOptimizer:
                 model.Add(visit_vars[0][0][0] == 1)
                 self.logger.info("Added symmetry breaking constraint")
 
+            # Print model statistics before solving
+            print(f"\n  [ILP] ===== MODEL STATISTICS =====", flush=True)
+            print(f"  [ILP] Variables: {len(model.Proto().variables)}", flush=True)
+            print(f"  [ILP] Constraints: {len(model.Proto().constraints)}", flush=True)
+            print(f"  [ILP] Boolean variables: {sum(1 for v in model.Proto().variables if v.domain == [0, 1])}", flush=True)
+            print(f"  [ILP] Integer variables: {sum(1 for v in model.Proto().variables if v.domain != [0, 1])}", flush=True)
+            print(f"  [ILP] =================================\n", flush=True)
+
+            # Validate model
+            model_str = model.Validate()
+            if model_str:
+                print(f"  [ILP] ⚠️  MODEL VALIDATION ISSUES: {model_str}", flush=True)
+            else:
+                print(f"  [ILP] ✓ Model validation passed", flush=True)
+
             # Solve the model
             solver = cp_model.CpSolver()
             solver.parameters.max_time_in_seconds = self.max_seconds
             solver.parameters.num_search_workers = 4  # Parallel search
-            solver.parameters.log_search_progress = False  # Quiet mode
+            solver.parameters.log_search_progress = True  # Enable logging to see progress
             solver.parameters.cp_model_presolve = True  # Enable presolve
             solver.parameters.relative_gap_limit = 0.05  # Stop if within 5% of optimal
 
             self.logger.info(f"Solving ILP model (timeout: {self.max_seconds}s, gap limit: 5%)...")
+            print(f"  [ILP] Starting solver...", flush=True)
             status = solver.Solve(model)
+            print(f"  [ILP] Solver finished with status: {solver.StatusName(status)}", flush=True)
 
             # Extract solution
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
@@ -155,12 +182,30 @@ class ILPOptimizer:
                 self.logger.info(f"ILP optimization completed: {solver.StatusName(status)} in {solver.WallTime():.2f}s")
                 return result
             else:
+                # Detailed failure logging
+                print(f"\n  [ILP] ===== SOLVER FAILURE DETAILS =====", flush=True)
+                print(f"  [ILP] Status: {solver.StatusName(status)}", flush=True)
+                print(f"  [ILP] Wall time: {solver.WallTime():.2f}s", flush=True)
+                print(f"  [ILP] Branches: {solver.NumBranches()}", flush=True)
+                print(f"  [ILP] Conflicts: {solver.NumConflicts()}", flush=True)
+                print(f"  [ILP] =======================================\n", flush=True)
+
+                # Export model to file for manual inspection
+                import os
+                model_file = "ilp_model_debug.txt"
+                with open(model_file, 'w') as f:
+                    f.write(str(model.Proto()))
+                print(f"  [ILP] Model exported to: {model_file}", flush=True)
+
                 raise Exception(f"Solver failed with status: {solver.StatusName(status)}")
 
         except Exception as e:
             self.logger.error(f"ILP optimization failed: {e}")
             if self.fallback_enabled:
                 self.logger.info("Falling back to greedy algorithm")
+                print(f"\n⚠️  [FALLBACK] ILP optimization failed - switching to greedy mode", flush=True)
+                print(f"  [FALLBACK] Reason: {str(e)}", flush=True)
+                print(f"  [FALLBACK] Using greedy algorithm for itinerary generation...\n", flush=True)
                 return self._fallback_to_greedy(
                     pois, distance_matrix, coherence_scores, duration_days, preferences
                 )
@@ -215,7 +260,8 @@ class ILPOptimizer:
         model: cp_model.CpModel,
         visit_vars: Dict,
         pois: List[Dict[str, Any]],
-        duration_days: int
+        duration_days: int,
+        day_vars: Dict = None
     ):
         """
         Add basic TSP constraints to the model.
@@ -225,6 +271,7 @@ class ILPOptimizer:
             visit_vars: Visit decision variables
             pois: List of POIs
             duration_days: Number of days
+            day_vars: Day assignment variables (optional)
         """
         num_pois = len(pois)
         max_pois_per_day = len(list(visit_vars[0][0].keys()))
@@ -238,6 +285,11 @@ class ILPOptimizer:
                     for pos in range(max_pois_per_day)
                 ) == 1
             )
+
+        # NOTE: Channeling constraints disabled - combo tickets now use visit_vars directly
+        # day_vars are no longer needed for combo ticket constraints
+        if day_vars is not None:
+            print(f"  [ILP] day_vars created but channeling disabled (combo tickets use visit_vars directly)", flush=True)
 
         # Constraint 2: Each position on each day has at most one POI
         for day in range(duration_days):
@@ -457,13 +509,27 @@ class ILPOptimizer:
         if trip_start_date is None:
             trip_start_date = datetime.now()
 
+        pois_with_hours = 0
+        total_constraints_added = 0
+
+        # Calculate average POI duration (in minutes) instead of hardcoded 150 min
+        # Add 30 minutes for travel between POIs
+        avg_visit_minutes = sum(poi.get('estimated_hours', 2.0) for poi in pois) / len(pois) * 60
+        avg_travel_minutes = 30  # Average travel time between POIs
+        avg_position_duration = int(avg_visit_minutes + avg_travel_minutes)
+
+        print(f"  [ILP] Average POI duration: {avg_visit_minutes:.0f} min visit + {avg_travel_minutes} min travel = {avg_position_duration} min/position", flush=True)
+
         for i, poi in enumerate(pois):
             # Get operation hours from Google Maps format
-            operation_hours = poi.get('metadata', {}).get('operation_hours', {})
+            # Note: operation_hours is at top level, not in metadata
+            operation_hours = poi.get('operation_hours', {})
             periods = operation_hours.get('periods', [])
 
             if not periods:
                 continue
+
+            pois_with_hours += 1
 
             # Check if booking is required (stricter enforcement)
             booking_required = poi.get('metadata', {}).get('booking_info', {}).get('required', False)
@@ -494,8 +560,8 @@ class ILPOptimizer:
                 # For each position in the day
                 for pos in range(max_pois_per_day):
                     # Calculate estimated arrival time at this position
-                    # Simplified: assumes 2.5 hours per POI (2h visit + 30min travel)
-                    estimated_arrival_minutes = start_minutes + (pos * 150)
+                    # Use average POI duration instead of hardcoded 150 min (2.5 hours)
+                    estimated_arrival_minutes = start_minutes + (pos * avg_position_duration)
 
                     # Convert to HHMM format for comparison
                     estimated_hours = estimated_arrival_minutes // 60
@@ -530,6 +596,9 @@ class ILPOptimizer:
                         # Just check if open
                         if not is_open:
                             model.Add(visit_vars[i][day][pos] == 0)
+                            total_constraints_added += 1
+
+        print(f"  [ILP] Time window constraints: {pois_with_hours} POIs with hours, {total_constraints_added} position blocks added", flush=True)
 
     def _add_precedence_constraints(
         self,
@@ -557,6 +626,9 @@ class ILPOptimizer:
         # Get precedence threshold from config
         precedence_threshold = self.config.get('optimization', {}).get('precedence_soft_threshold', 0.7)
 
+        print(f"  [ILP] Precedence threshold: {precedence_threshold}", flush=True)
+        print(f"  [ILP] Analyzing coherence scores for {num_pois} POIs ({num_pois * (num_pois - 1)} pairs)...", flush=True)
+
         # Link sequence variables to visit variables
         for i in range(num_pois):
             for day in range(duration_days):
@@ -565,19 +637,66 @@ class ILPOptimizer:
                     # If POI i is at (day, pos), then its sequence position is global_pos
                     model.Add(sequence_vars[i] == global_pos).OnlyEnforceIf(visit_vars[i][day][pos])
 
-        # Enforce precedence based on high coherence scores
-        for i in range(num_pois):
-            for j in range(num_pois):
-                if i == j:
-                    continue
+        # Collect precedence pairs first
+        precedence_pairs = []
 
+        # Enforce precedence based on high coherence scores
+        # IMPORTANT: Only check i < j to avoid creating cycles from bidirectional coherence
+        for i in range(num_pois):
+            for j in range(i + 1, num_pois):  # Only j > i to avoid cycles
                 poi_i_name = pois[i]['poi']
                 poi_j_name = pois[j]['poi']
-                coherence = coherence_scores.get((poi_i_name, poi_j_name), 0)
 
-                # If coherence is high, enforce that i comes before j
-                if coherence >= precedence_threshold:
-                    model.Add(sequence_vars[i] < sequence_vars[j])
+                # Check coherence in both directions
+                coherence_ij = coherence_scores.get((poi_i_name, poi_j_name), 0)
+                coherence_ji = coherence_scores.get((poi_j_name, poi_i_name), 0)
+
+                # Determine which direction has stronger coherence
+                if coherence_ij >= precedence_threshold or coherence_ji >= precedence_threshold:
+                    # Use the direction with higher coherence
+                    if coherence_ij >= coherence_ji:
+                        model.Add(sequence_vars[i] < sequence_vars[j])
+                        precedence_pairs.append({
+                            'from': poi_i_name,
+                            'to': poi_j_name,
+                            'coherence': coherence_ij
+                        })
+                    else:
+                        model.Add(sequence_vars[j] < sequence_vars[i])
+                        precedence_pairs.append({
+                            'from': poi_j_name,
+                            'to': poi_i_name,
+                            'coherence': coherence_ji
+                        })
+
+        # Log precedence constraints
+        print(f"  [ILP] Added {len(precedence_pairs)} precedence constraints (coherence >= {precedence_threshold})", flush=True)
+
+        if len(precedence_pairs) > 0:
+            print(f"  [ILP] Sample precedence constraints (showing first 20):", flush=True)
+            for idx, pair in enumerate(precedence_pairs[:20]):
+                print(f"  [ILP]   {idx+1}. {pair['from']:40s} → {pair['to']:40s} (coherence: {pair['coherence']:.2f})", flush=True)
+
+            if len(precedence_pairs) > 20:
+                print(f"  [ILP]   ... and {len(precedence_pairs) - 20} more", flush=True)
+
+        # Check if combo ticket POIs are involved in precedence
+        combo_pois = set()
+        for poi in pois:
+            groups = poi.get('metadata', {}).get('combo_ticket_groups', [])
+            if groups:
+                combo_pois.add(poi['poi'])
+
+        if combo_pois:
+            print(f"  [ILP] Combo ticket POIs: {combo_pois}", flush=True)
+            combo_precedence = [p for p in precedence_pairs if p['from'] in combo_pois or p['to'] in combo_pois]
+            print(f"  [ILP] Precedence constraints involving combo POIs: {len(combo_precedence)}", flush=True)
+            if combo_precedence:
+                print(f"  [ILP] Combo POI precedence constraints:", flush=True)
+                for pair in combo_precedence[:10]:
+                    print(f"  [ILP]   - {pair['from']:40s} → {pair['to']:40s} (coherence: {pair['coherence']:.2f})", flush=True)
+                if len(combo_precedence) > 10:
+                    print(f"  [ILP]   ... and {len(combo_precedence) - 10} more", flush=True)
 
         # Also check for explicit precedence constraints in metadata
         for i, poi in enumerate(pois):
@@ -595,7 +714,8 @@ class ILPOptimizer:
         model: cp_model.CpModel,
         visit_vars: Dict,
         pois: List[Dict[str, Any]],
-        duration_days: int
+        duration_days: int,
+        day_vars: Dict = None
     ):
         """
         Add clustered visit constraints for combo ticket groups.
@@ -613,9 +733,14 @@ class ILPOptimizer:
         from collections import defaultdict
         groups = defaultdict(list)
 
+        print(f"  [ILP] Checking {len(pois)} POIs for combo ticket constraints...", flush=True)
+
         for i, poi in enumerate(pois):
             # Use enriched combo_ticket_groups from ComboTicketLoader
             combo_groups = poi.get('metadata', {}).get('combo_ticket_groups', [])
+
+            if combo_groups:
+                print(f"  [ILP] POI '{poi.get('poi')}' has {len(combo_groups)} combo ticket(s)", flush=True)
 
             for group in combo_groups:
                 constraints = group.get('constraints', {})
@@ -623,6 +748,7 @@ class ILPOptimizer:
                     group_id = group.get('id')
                     if group_id:
                         groups[group_id].append(i)
+                        print(f"  [ILP] Added '{poi.get('poi')}' to combo group '{group_id}'", flush=True)
 
             # Fallback: support old format for backward compatibility
             old_combo_info = poi.get('metadata', {}).get('combo_ticket', {})
@@ -632,52 +758,51 @@ class ILPOptimizer:
                     groups[group_id].append(i)
 
         # For each group, enforce constraints
+        if groups:
+            print(f"  [ILP] Applying combo ticket constraints for {len(groups)} group(s)", flush=True)
+            for group_id, poi_indices in groups.items():
+                poi_names = [pois[i].get('poi') for i in poi_indices]
+                print(f"  [ILP] Group '{group_id}': {poi_names} (must visit same day)", flush=True)
+        else:
+            print(f"  [ILP] No combo ticket groups found, skipping constraints", flush=True)
+
         for group_id, poi_indices in groups.items():
             if len(poi_indices) <= 1:
                 continue
 
-            # Constraint 1: All POIs in group must be on the same day
-            for day in range(duration_days):
-                # Create a variable for whether this group is on this day
-                group_on_day = model.NewBoolVar(f'group_{group_id}_day_{day}')
+            poi_names = [pois[i].get('poi') for i in poi_indices]
+            print(f"  [ILP] Enforcing same-day constraint for group '{group_id}': {poi_names}", flush=True)
 
+            # Apply same-day constraint DIRECTLY on visit_vars (not using day_vars)
+            # For each day, either ALL combo POIs are on that day, or NONE are
+            print(f"  [ILP]   Applying same-day constraint for {len(poi_indices)} POIs across {duration_days} days", flush=True)
+
+            for d in range(duration_days):
+                print(f"  [ILP]     Day {d}:", flush=True)
+                # For each POI in group, create boolean: is this POI on day d?
+                pois_on_day_d = []
                 for poi_idx in poi_indices:
-                    # Is this POI on this day?
-                    poi_on_day = model.NewBoolVar(f'poi_{poi_idx}_day_{day}')
-                    model.Add(
-                        sum(visit_vars[poi_idx][day][pos] for pos in range(max_pois_per_day)) >= 1
-                    ).OnlyEnforceIf(poi_on_day)
-                    model.Add(
-                        sum(visit_vars[poi_idx][day][pos] for pos in range(max_pois_per_day)) == 0
-                    ).OnlyEnforceIf(poi_on_day.Not())
+                    poi_name = pois[poi_idx].get('poi')
+                    on_day = model.NewBoolVar(f'combo_{group_id}_poi{poi_idx}_day{d}')
+                    visits_on_day = sum(visit_vars[poi_idx][d][pos] for pos in range(max_pois_per_day))
 
-                    # All POIs in group must have same on_day status
-                    model.Add(poi_on_day == group_on_day)
+                    # This POI is on day d if exactly 1 position is used on that day
+                    model.Add(visits_on_day == 1).OnlyEnforceIf(on_day)
+                    model.Add(visits_on_day == 0).OnlyEnforceIf(on_day.Not())
 
-            # Constraint 2: POIs in group must be consecutive
-            # Find positions of group members and ensure they're consecutive
-            for day in range(duration_days):
-                for idx_in_group in range(len(poi_indices) - 1):
-                    poi_i = poi_indices[idx_in_group]
-                    poi_j = poi_indices[idx_in_group + 1]
+                    pois_on_day_d.append(on_day)
+                    print(f"  [ILP]       {poi_name}: on_day_{d} = (sum(visit[{poi_idx}][{d}][pos]) == 1)", flush=True)
 
-                    # Find position variables for these POIs on this day
-                    pos_i = model.NewIntVar(0, max_pois_per_day - 1, f'pos_{poi_i}_day_{day}')
-                    pos_j = model.NewIntVar(0, max_pois_per_day - 1, f'pos_{poi_j}_day_{day}')
+                # All must be equal: either all on this day, or all not on this day
+                first_poi_on_day = pois_on_day_d[0]
+                first_poi_name = pois[poi_indices[0]].get('poi')
 
-                    # Link position variables to visit variables
-                    for pos in range(max_pois_per_day):
-                        model.Add(pos_i == pos).OnlyEnforceIf(visit_vars[poi_i][day][pos])
-                        model.Add(pos_j == pos).OnlyEnforceIf(visit_vars[poi_j][day][pos])
+                for idx, poi_on_day in enumerate(pois_on_day_d[1:], 1):
+                    poi_name = pois[poi_indices[idx]].get('poi')
+                    model.Add(poi_on_day == first_poi_on_day)
+                    print(f"  [ILP]       Constraint: on_day_{d}[{poi_name}] == on_day_{d}[{first_poi_name}]", flush=True)
 
-                    # If both are on this day, they should be consecutive
-                    both_on_day = model.NewBoolVar(f'both_{poi_i}_{poi_j}_day_{day}')
-                    model.Add(
-                        sum(visit_vars[poi_i][day][pos] for pos in range(max_pois_per_day)) >= 1
-                    ).OnlyEnforceIf(both_on_day)
-
-                    # If both on same day, j should be right after i
-                    model.Add(pos_j == pos_i + 1).OnlyEnforceIf(both_on_day)
+            print(f"  [ILP]   ✓ Same-day constraint applied for {group_id}", flush=True)
 
     def _add_start_end_constraints(
         self,
@@ -985,6 +1110,9 @@ class ILPOptimizer:
         max_possible_distance = len(sequence) * 3.0
         distance_score = max(0, 1 - (total_distance / max_possible_distance))
         coherence_score = coherence_sum / coherence_count if coherence_count > 0 else 0.5
+
+        print(f"✓ [FALLBACK] Greedy mode completed successfully", flush=True)
+        print(f"  [FALLBACK] Distance score: {distance_score:.2f}, Coherence: {coherence_score:.2f}\n", flush=True)
 
         return {
             'sequence': sequence,

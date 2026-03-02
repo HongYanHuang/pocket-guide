@@ -11,7 +11,7 @@ from datetime import datetime
 import logging
 
 from trip_planner import POISelectorAgent, ItineraryOptimizerAgent, TourManager
-from utils import load_config
+from utils import load_config, get_language_name
 
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ class TourGenerationResponse(BaseModel):
     duration_days: int
     total_pois: int
     message: str
+    title_display: Optional[str] = None
     itinerary: Optional[List[Dict[str, Any]]] = None
     optimization_scores: Optional[Dict[str, float]] = None
 
@@ -66,6 +67,87 @@ def get_config():
             detail="Configuration not loaded. Check config.yaml."
         )
     return config
+
+
+# ==== Helper Functions (continued) ====
+
+def generate_tour_title(
+    city: str,
+    duration_days: int,
+    interests: List[str],
+    selected_pois: List[Dict[str, Any]],
+    language: str,
+    conf: Dict[str, Any]
+) -> str:
+    """
+    Generate a human-readable display title for the tour using AI.
+
+    The title is language-aware: if the tour language is Chinese, the title
+    will be generated in Chinese. Examples:
+      - English: "Ancient Rome History · 3 Days"
+      - Chinese: "古羅馬歷史之旅 · 3天"
+
+    Falls back to a simple formatted title if AI call fails.
+
+    Args:
+        city: City name
+        duration_days: Number of tour days
+        interests: User interest tags
+        selected_pois: List of selected POI dicts with 'poi' and 'reason' keys
+        language: ISO 639-1 language code
+        conf: Application config (for AI provider credentials)
+
+    Returns:
+        Generated title string
+    """
+    # Build fallback title first (used if AI fails)
+    interests_str = ", ".join(interests[:2]) if interests else "Sightseeing"
+    fallback_title = f"{city.title()} {interests_str} · {duration_days} {'Day' if duration_days == 1 else 'Days'}"
+
+    try:
+        ai_config = conf.get('ai_providers', {})
+        provider_conf = ai_config.get('anthropic', {})
+        api_key = provider_conf.get('api_key')
+
+        if not api_key:
+            return fallback_title
+
+        poi_names = [p.get('poi', '') for p in selected_pois[:8]]
+        language_name = get_language_name(language)
+
+        language_instruction = ""
+        if language != 'en':
+            language_instruction = f"IMPORTANT: Write the title in {language_name}. Do NOT use English.\n\n"
+
+        prompt = (
+            f"{language_instruction}"
+            f"Create a short, evocative tour title (max 8 words) for a {duration_days}-day tour in {city}.\n\n"
+            f"Selected highlights: {', '.join(poi_names)}\n"
+            f"Visitor interests: {', '.join(interests) if interests else 'general sightseeing'}\n\n"
+            f"The title should capture the essence/theme of the tour (e.g. historical era, cultural focus).\n"
+            f"Append ' · {duration_days} {'Day' if duration_days == 1 else 'Days'}' at the end.\n"
+            f"Output ONLY the title, nothing else."
+        )
+
+        import anthropic as anthropic_sdk
+        client = anthropic_sdk.Anthropic(api_key=api_key)
+        model = provider_conf.get('model', 'claude-3-5-haiku-20241022')
+
+        response = client.messages.create(
+            model=model,
+            max_tokens=60,
+            temperature=0.7,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        title = response.content[0].text.strip().strip('"').strip("'")
+        if title:
+            return title
+
+    except Exception as e:
+        logger.warning(f"Failed to generate AI tour title: {e}. Using fallback.")
+
+    return fallback_title
 
 
 # ==== Endpoints ====
@@ -135,6 +217,18 @@ async def generate_tour(request: TourGenerationRequest):
 
         logger.info(f"Selected {len(starting_pois)} POIs")
 
+        # Generate display title (language-aware)
+        logger.info("Generating tour display title...")
+        title_display = generate_tour_title(
+            city=request.city,
+            duration_days=request.days,
+            interests=request.interests,
+            selected_pois=starting_pois,
+            language=request.language,
+            conf=conf
+        )
+        logger.info(f"Generated title: {title_display}")
+
         # Step 2: Optimize itinerary
         logger.info("Step 2: Optimizing itinerary...")
         optimizer = ItineraryOptimizerAgent(conf)
@@ -176,6 +270,11 @@ async def generate_tour(request: TourGenerationRequest):
                 'generated_via': 'backstage_ui'
             }
 
+            # Attach title to metadata for persistence
+            if 'metadata' not in tour_data:
+                tour_data['metadata'] = {}
+            tour_data['metadata']['title_display'] = title_display
+
             # Build tour data structure
             tour_data = {
                 'itinerary': itinerary,
@@ -188,7 +287,8 @@ async def generate_tour(request: TourGenerationRequest):
                 city=request.city,
                 input_parameters=input_parameters,
                 selection_result=selection_result,
-                language=request.language
+                language=request.language,
+                title_display=title_display
             )
 
             tour_id = result['tour_id']
@@ -204,6 +304,7 @@ async def generate_tour(request: TourGenerationRequest):
             duration_days=request.days,
             total_pois=len(starting_pois),
             message=f"Tour generated successfully with {len(starting_pois)} POIs",
+            title_display=title_display,
             itinerary=itinerary,
             optimization_scores=optimization_scores
         )

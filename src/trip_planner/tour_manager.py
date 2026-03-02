@@ -90,7 +90,8 @@ class TourManager:
         user_info: Dict[str, Any] = None,
         tour_id: str = None,
         selection_result: Dict[str, Any] = None,
-        language: str = 'en'
+        language: str = 'en',
+        title_display: str = None
     ) -> Dict[str, Any]:
         """
         Save tour with full versioning and metadata tracking.
@@ -207,6 +208,12 @@ class TourManager:
         metadata['city'] = city
         metadata['created_at'] = metadata.get('created_at', timestamp)
         metadata['updated_at'] = timestamp
+
+        # Persist title_display in metadata (set on first save, keep existing on updates)
+        if title_display:
+            metadata['title_display'] = title_display
+        elif 'title_display' not in metadata:
+            metadata['title_display'] = None
 
         # Save updated metadata
         save_tour_metadata(tour_path, metadata)

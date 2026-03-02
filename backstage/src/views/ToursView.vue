@@ -62,11 +62,14 @@
                 <div style="padding: 20px">
                   <div style="display: flex; justify-content: space-between; align-items: start">
                     <div style="flex: 1">
-                      <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px">
-                        {{ formatDate(tour.created_at) }}
+                      <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px; color: #303133; line-height: 1.3">
+                        {{ tour.title_display || formatDate(tour.created_at) }}
                       </div>
-                      <div style="color: #909399; font-size: 12px; margin-bottom: 12px">
-                        {{ tour.tour_id.substring(tour.tour_id.length - 6) }}
+                      <div style="color: #909399; font-size: 11px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px">
+                        <el-tag size="small" type="info" effect="plain" style="font-size: 10px; padding: 0 4px">
+                          ID: {{ tour.tour_id.substring(tour.tour_id.length - 8) }}
+                        </el-tag>
+                        <span>{{ formatDate(tour.created_at) }}</span>
                       </div>
                     </div>
                     <el-tag

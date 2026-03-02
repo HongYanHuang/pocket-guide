@@ -2,10 +2,15 @@
   <div>
     <el-page-header @back="$router.push('/tours')">
       <template #content>
-        <div style="display: flex; align-items: center; gap: 12px">
-          <span style="font-size: 18px; font-weight: 600">
-            {{ tour?.metadata?.city }} Tour
-          </span>
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 18px; font-weight: 700; color: #303133">
+              {{ tour?.metadata?.title_display || (tour?.metadata?.city + ' Tour') }}
+            </span>
+            <span v-if="tour?.metadata?.title_display" style="font-size: 11px; color: #909399">
+              ID: {{ tour.metadata.tour_id }}
+            </span>
+          </div>
           <el-tag v-if="tour" size="small">
             {{ tour.itinerary.length }} days
           </el-tag>
@@ -120,11 +125,14 @@
           </template>
 
           <el-descriptions :column="2" border>
+            <el-descriptions-item v-if="tour.metadata.title_display" label="Title" :span="2">
+              <span style="font-weight: 600; font-size: 15px; color: #303133">{{ tour.metadata.title_display }}</span>
+            </el-descriptions-item>
             <el-descriptions-item label="Created">
               {{ formatDate(tour.metadata.created_at) }}
             </el-descriptions-item>
             <el-descriptions-item label="Tour ID">
-              <el-text type="info" size="small">{{ tour.metadata.tour_id }}</el-text>
+              <el-text type="info" size="small" style="font-size: 11px; opacity: 0.75">{{ tour.metadata.tour_id }}</el-text>
             </el-descriptions-item>
             <el-descriptions-item label="Duration">
               {{ tour.itinerary.length }} days

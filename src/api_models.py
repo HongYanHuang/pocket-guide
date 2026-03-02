@@ -327,6 +327,7 @@ class TourMetadata(BaseModel):
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
     languages: List[str] = Field(default_factory=lambda: ["en"], description="Available language codes")
+    title_display: Optional[str] = Field(None, description="Human-readable display title for the tour (e.g., 'Ancient Rome History · 3 Days')")
 
     # Legacy fields (for backward compatibility with old tours)
     current_version: Optional[int] = Field(None, description="Current version number (legacy)")
@@ -345,6 +346,7 @@ class TourSummary(BaseModel):
     interests: List[str] = Field(default_factory=list, description="User interests")
     created_at: str = Field(..., description="Creation timestamp")
     optimization_score: Optional[float] = Field(None, description="Overall optimization score")
+    title_display: Optional[str] = Field(None, description="Human-readable display title for the tour")
 
 
 class TourDetail(BaseModel):

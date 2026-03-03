@@ -368,9 +368,9 @@ class ItineraryOptimizerAgent:
         """
         Calculate storytelling coherence between POI pairs.
 
-        Considers:
-        - Chronological order (earlier → later in history)
-        - Thematic similarity (same period, related people/events)
+        SIMPLIFIED: Returns default neutral scores since complex manual rules
+        have been removed. Coherence optimization is handled by distance-based
+        clustering instead.
 
         Args:
             pois: List of POIs
@@ -383,120 +383,14 @@ class ItineraryOptimizerAgent:
         for i, poi1 in enumerate(pois):
             for j, poi2 in enumerate(pois):
                 if i == j:
+                    # Same POI = perfect coherence
                     scores[(poi1['poi'], poi2['poi'])] = 1.0
                 else:
-                    score = self._calculate_pair_coherence(poi1, poi2)
-                    scores[(poi1['poi'], poi2['poi'])] = score
+                    # All different POIs get neutral score
+                    # Distance optimization will handle clustering
+                    scores[(poi1['poi'], poi2['poi'])] = 0.5
 
         return scores
-
-    def _calculate_pair_coherence(
-        self,
-        poi1: Dict[str, Any],
-        poi2: Dict[str, Any]
-    ) -> float:
-        """
-        Calculate coherence score between two POIs.
-
-        Returns:
-            Score 0.0-1.0 (higher = better storytelling flow)
-        """
-        score = 0.0
-
-        # 1. Chronological order bonus (40%)
-        period1 = poi1.get('period', '')
-        period2 = poi2.get('period', '')
-
-        chronological_order = self._get_chronological_order(period1, period2)
-        if chronological_order > 0:  # poi1 comes before poi2
-            score += 0.4
-        elif chronological_order == 0:  # same period
-            score += 0.3
-
-        # 2. Same period bonus (30%)
-        if period1 and period2 and period1 == period2:
-            score += 0.3
-
-        # 3. Date proximity (30%)
-        date1 = self._extract_year(poi1.get('date_built', ''))
-        date2 = self._extract_year(poi2.get('date_built', ''))
-
-        if date1 and date2:
-            year_diff = abs(date1 - date2)
-            if year_diff < 50:
-                score += 0.3
-            elif year_diff < 200:
-                score += 0.2
-            elif year_diff < 500:
-                score += 0.1
-
-        return min(score, 1.0)
-
-    def _get_chronological_order(self, period1: str, period2: str) -> int:
-        """
-        Compare two historical periods.
-
-        Returns:
-            -1 if period1 < period2, 0 if equal, 1 if period1 > period2
-        """
-        period_order = {
-            'Classical Greece': 1,
-            'Hellenistic': 2,
-            'Roman Empire': 3,
-            'Byzantine': 4,
-            'Ottoman': 5,
-            'Modern': 6
-        }
-
-        order1 = period_order.get(period1, 0)
-        order2 = period_order.get(period2, 0)
-
-        if order1 < order2:
-            return 1  # poi1 comes before poi2
-        elif order1 > order2:
-            return -1
-        else:
-            return 0
-
-    def _extract_year(self, date_str: str) -> int:
-        """
-        Extract year from date string.
-
-        Examples: "447-432 BC", "131-132 AD", "1687"
-
-        Returns:
-            Year as integer (negative for BC), or None if not parseable
-        """
-        if not date_str:
-            return None
-
-        # Handle BC dates
-        if 'BC' in date_str.upper():
-            # Extract first number
-            import re
-            match = re.search(r'(\d+)', date_str)
-            if match:
-                return -int(match.group(1))
-
-        # Handle AD dates
-        if 'AD' in date_str.upper():
-            import re
-            match = re.search(r'(\d+)', date_str)
-            if match:
-                return int(match.group(1))
-
-        # Handle plain years
-        if date_str.isdigit():
-            return int(date_str)
-
-        # Handle ranges (take midpoint)
-        import re
-        match = re.search(r'(\d+)-(\d+)', date_str)
-        if match:
-            year1, year2 = int(match.group(1)), int(match.group(2))
-            return (year1 + year2) // 2
-
-        return None
 
     def _optimize_sequence(
         self,

@@ -297,7 +297,10 @@ class POISelectorAgent:
             walking_buffer = 1.0
             pace_note = "Balanced number of POIs with reasonable time at each location."
 
-        total_visit_hours = duration_days * hours_per_day
+        # Use 85% of time budget to leave room for scheduling constraints
+        # (combo tickets, time windows, TSP sequencing create inefficiency)
+        scheduling_efficiency = 0.85
+        total_visit_hours = duration_days * hours_per_day * scheduling_efficiency
         total_walking_hours = duration_days * walking_buffer
 
         # Build language instruction block

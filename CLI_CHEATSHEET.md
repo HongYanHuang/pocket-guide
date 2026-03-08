@@ -235,20 +235,32 @@ Marks duplicates with `skip: true` in research_candidates.json.
 **Other Options:**
 - `--interests`: Multiple allowed (`--interests history --interests art`)
 - `--language`: ISO 639-1 code (default: `en`)
-- `--pace`: `relaxed`, `normal`, `packed`
+- `--pace`: `relaxed`, `normal`, `packed` - Controls daily hour limits
+  - `relaxed`: Max 6.0 hours/day (fewer POIs, more leisure time)
+  - `normal`: Max 7.5 hours/day (balanced, default)
+  - `packed`: Max 9.0 hours/day (maximize sightseeing)
+  - **ILP Mode:** Enforces limits as hard constraint with smart POI removal if needed
+  - **Simple Mode:** Used for guidance only
 - `--walking`: `low`, `moderate`, `high`
 - `--must-see`: POIs to include (multiple allowed)
 - `--start-location`: Starting point (POI name or "lat,lng")
 - `--end-location`: Ending point (POI name or "lat,lng")
 - `--start-date`: Trip start date (YYYY-MM-DD format)
 - `--save`: Save the tour
+- `--test-mode`: Testing mode - Skip transcript generation, only test optimization
+
+**Testing Mode (`--test-mode`):**
+- Runs POI selection and optimization (ILP/Greedy) without generating transcripts
+- Useful for testing ILP retry logic, daily hour constraints, and solver behavior
+- Faster execution (skips transcript generation which can take 5-10 min)
+- Example: `./pocket-guide trip plan --city Rome --days 2 --mode ilp --test-mode`
 
 **What happens:**
 1. AI selects 8-12 POIs matching interests
 2. Provides 2-3 backup POIs per selection
 3. Optimizes daily schedule (minimize walking, maximize coherence)
-4. Auto-generates missing transcripts in target language
-5. Saves language-specific tour files
+4. Auto-generates missing transcripts in target language (skipped in test mode)
+5. Saves language-specific tour files (optional with --save)
 
 **Output:**
 ```

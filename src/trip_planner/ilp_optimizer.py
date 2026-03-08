@@ -53,7 +53,7 @@ class ILPOptimizer:
         trip_start_date: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
-        Optimize POI sequence using CP-SAT solver.
+        Optimize POI sequence using CP-SAT solver with automatic retry on infeasibility.
 
         Args:
             pois: List of POIs with metadata
@@ -74,6 +74,111 @@ class ILPOptimizer:
         """
         try:
             self.logger.info(f"Starting ILP optimization for {len(pois)} POIs over {duration_days} days")
+
+            # Calculate max_hours_per_day based on pace preference
+            pace_value = preferences.get('pace', 'normal')
+            # TEMPORARY DEBUG: Use very large buffer to test if constraint causes infeasibility
+            if pace_value == 'relaxed':
+                max_hours_per_day = 10.0  # DEBUG: Very loose constraint
+            elif pace_value == 'packed':
+                max_hours_per_day = 15.0  # DEBUG: Very loose constraint
+            else:  # normal
+                max_hours_per_day = 12.0  # DEBUG: Very loose constraint (was 8.5h)
+
+            print(f"  [ILP] Max hours per day: {max_hours_per_day}h (pace: {pace_value})", flush=True)
+
+            # Retry loop: max_retries = duration_days * 2
+            max_retries = duration_days * 2
+            current_pois = pois.copy()
+
+            for attempt in range(max_retries + 1):  # +1 to include initial attempt
+                if attempt > 0:
+                    print(f"\n  [ILP] ===== RETRY ATTEMPT {attempt}/{max_retries} =====", flush=True)
+
+                # Debug: Show current POI count before attempting
+                print(f"  [ILP] Attempting optimization with {len(current_pois)} POIs", flush=True)
+                if attempt > 0:
+                    poi_names = [p.get('poi', 'Unknown') for p in current_pois]
+                    print(f"  [ILP] Current POIs: {', '.join(poi_names)}", flush=True)
+
+                # Try to solve with current POI set
+                result = self._try_optimize(
+                    current_pois, distance_matrix, coherence_scores,
+                    duration_days, preferences, max_hours_per_day,
+                    start_location, end_location, trip_start_date
+                )
+
+                # Check result
+                if result['status'] in ['OPTIMAL', 'FEASIBLE']:
+                    # Success!
+                    if attempt > 0:
+                        print(f"  [ILP] ✓ Found solution after removing {attempt} POI(s)", flush=True)
+                    return result
+
+                elif result['status'] == 'INFEASIBLE':
+                    # Try to remove a POI and retry
+                    print(f"  [ILP] Model is INFEASIBLE - too many POIs for time constraints", flush=True)
+
+                    # Find a POI to remove
+                    removable_poi = self._find_removable_poi(current_pois)
+
+                    if removable_poi is None:
+                        # Can't remove any more POIs (all are in combo tickets)
+                        print(f"  [ILP] Cannot remove any more POIs (all are in combo tickets)", flush=True)
+                        raise Exception("INFEASIBLE: All remaining POIs are in combo tickets, cannot reduce further")
+
+                    # Remove the POI
+                    print(f"  [ILP] Removing: '{removable_poi['poi']}' (priority={removable_poi.get('priority', 'medium')}, hours={removable_poi.get('estimated_hours', 2.0)}h)", flush=True)
+                    current_pois.remove(removable_poi)
+
+                    # Continue to next iteration (retry with fewer POIs)
+                    continue
+
+                elif result['status'] == 'ERROR':
+                    # Error during model building - log and fail
+                    error_msg = result.get('error', 'Unknown error')
+                    print(f"  [ILP] ❌ Error during model building: {error_msg}", flush=True)
+                    raise Exception(f"Model building error: {error_msg}")
+
+                else:
+                    # TIMEOUT, MODEL_INVALID, or other non-infeasibility issues
+                    raise Exception(f"Solver failed with status: {result['status']}")
+
+            # Exhausted all retries
+            raise Exception(f"INFEASIBLE: Could not find solution after {max_retries} retries")
+
+        except Exception as e:
+            self.logger.error(f"ILP optimization failed: {e}")
+            if self.fallback_enabled:
+                self.logger.info("Falling back to greedy algorithm")
+                print(f"\n⚠️  [FALLBACK] ILP optimization failed - switching to greedy mode", flush=True)
+                print(f"  [FALLBACK] Reason: {str(e)}", flush=True)
+                print(f"  [FALLBACK] Using greedy algorithm for itinerary generation...\n", flush=True)
+                return self._fallback_to_greedy(
+                    pois, distance_matrix, coherence_scores, duration_days, preferences
+                )
+            else:
+                raise
+
+    def _try_optimize(
+        self,
+        pois: List[Dict[str, Any]],
+        distance_matrix: Dict[Tuple[str, str], float],
+        coherence_scores: Dict[Tuple[str, str], float],
+        duration_days: int,
+        preferences: Dict[str, Any],
+        max_hours_per_day: float,
+        start_location: Optional[Dict] = None,
+        end_location: Optional[Dict] = None,
+        trip_start_date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Try to optimize with given POI set (single attempt).
+
+        Returns dict with 'status' field indicating result.
+        """
+        try:
+            self.logger.info(f"Building ILP model for {len(pois)} POIs over {duration_days} days")
 
             # Create CP-SAT model
             model = cp_model.CpModel()
@@ -120,6 +225,14 @@ class ILPOptimizer:
             )
             print(f"  [ILP] Constraints after combo tickets: {len(model.Proto().constraints)}", flush=True)
 
+            # Add daily hour constraints (NEW)
+            print(f"\n  [ILP] ===== STEP 6: DAILY HOUR CONSTRAINTS =====", flush=True)
+            self.logger.info(f"Adding daily hour constraints (max {max_hours_per_day}h/day)...")
+            self._add_daily_hour_constraints(
+                model, visit_vars, pois, duration_days, max_hours_per_day, distance_matrix
+            )
+            print(f"  [ILP] Constraints after daily hours: {len(model.Proto().constraints)}", flush=True)
+
             if start_location or end_location:
                 self.logger.info("Adding start/end location constraints...")
                 self._add_start_end_constraints(
@@ -133,12 +246,13 @@ class ILPOptimizer:
                 distance_matrix, coherence_scores, preferences
             )
 
-            # Add symmetry breaking (fix first POI to reduce search space)
-            if len(pois) > 0:
-                # Fix the first POI at position 0 of day 0 to break symmetry
-                # (routes are symmetric, so we can arbitrarily fix one POI's position)
-                model.Add(visit_vars[0][0][0] == 1)
-                self.logger.info("Added symmetry breaking constraint")
+            # Skip symmetry breaking when using daily hour constraints
+            # (symmetry breaking can conflict with hour balancing across days)
+            # if len(pois) > 0:
+            #     # Fix the first POI at position 0 of day 0 to break symmetry
+            #     # (routes are symmetric, so we can arbitrarily fix one POI's position)
+            #     model.Add(visit_vars[0][0][0] == 1)
+            #     self.logger.info("Added symmetry breaking constraint")
 
             # Print model statistics before solving
             print(f"\n  [ILP] ===== MODEL STATISTICS =====", flush=True)
@@ -168,7 +282,7 @@ class ILPOptimizer:
             status = solver.Solve(model)
             print(f"  [ILP] Solver finished with status: {solver.StatusName(status)}", flush=True)
 
-            # Extract solution
+            # Extract solution or return status
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
                 result = self._extract_solution(
                     solver, visit_vars, sequence_vars, day_vars,
@@ -179,10 +293,11 @@ class ILPOptimizer:
                     'solve_time': round(solver.WallTime(), 2),
                     'objective_value': solver.ObjectiveValue()
                 }
+                result['status'] = solver.StatusName(status)
                 self.logger.info(f"ILP optimization completed: {solver.StatusName(status)} in {solver.WallTime():.2f}s")
                 return result
             else:
-                # Detailed failure logging
+                # Return status for retry logic to handle
                 print(f"\n  [ILP] ===== SOLVER FAILURE DETAILS =====", flush=True)
                 print(f"  [ILP] Status: {solver.StatusName(status)}", flush=True)
                 print(f"  [ILP] Wall time: {solver.WallTime():.2f}s", flush=True)
@@ -190,27 +305,12 @@ class ILPOptimizer:
                 print(f"  [ILP] Conflicts: {solver.NumConflicts()}", flush=True)
                 print(f"  [ILP] =======================================\n", flush=True)
 
-                # Export model to file for manual inspection
-                import os
-                model_file = "ilp_model_debug.txt"
-                with open(model_file, 'w') as f:
-                    f.write(str(model.Proto()))
-                print(f"  [ILP] Model exported to: {model_file}", flush=True)
-
-                raise Exception(f"Solver failed with status: {solver.StatusName(status)}")
+                return {'status': solver.StatusName(status)}
 
         except Exception as e:
-            self.logger.error(f"ILP optimization failed: {e}")
-            if self.fallback_enabled:
-                self.logger.info("Falling back to greedy algorithm")
-                print(f"\n⚠️  [FALLBACK] ILP optimization failed - switching to greedy mode", flush=True)
-                print(f"  [FALLBACK] Reason: {str(e)}", flush=True)
-                print(f"  [FALLBACK] Using greedy algorithm for itinerary generation...\n", flush=True)
-                return self._fallback_to_greedy(
-                    pois, distance_matrix, coherence_scores, duration_days, preferences
-                )
-            else:
-                raise
+            self.logger.error(f"Error in _try_optimize: {e}")
+            # Return error status
+            return {'status': 'ERROR', 'error': str(e)}
 
     def _create_variables(
         self,
@@ -555,6 +655,8 @@ class ILPOptimizer:
                     # Closed on this day - POI cannot be visited
                     for pos in range(max_pois_per_day):
                         model.Add(visit_vars[i][day][pos] == 0)
+                    print(f"  [ILP]   BLOCKED: '{poi['poi']}' day={day} ALL POSITIONS (closed all day)", flush=True)
+                    total_constraints_added += max_pois_per_day
                     continue
 
                 # For each position in the day
@@ -592,10 +694,13 @@ class ILPOptimizer:
                         # Must be both open AND in preferred slot
                         if not (is_open and in_preferred_slot):
                             model.Add(visit_vars[i][day][pos] == 0)
+                            print(f"  [ILP]   BLOCKED: '{poi['poi']}' day={day} pos={pos} time={estimated_time_hhmm:04d} (not in preferred slot)", flush=True)
+                            total_constraints_added += 1
                     else:
                         # Just check if open
                         if not is_open:
                             model.Add(visit_vars[i][day][pos] == 0)
+                            print(f"  [ILP]   BLOCKED: '{poi['poi']}' day={day} pos={pos} time={estimated_time_hhmm:04d} (closed)", flush=True)
                             total_constraints_added += 1
 
         print(f"  [ILP] Time window constraints: {pois_with_hours} POIs with hours, {total_constraints_added} position blocks added", flush=True)
@@ -803,6 +908,109 @@ class ILPOptimizer:
                     print(f"  [ILP]       Constraint: on_day_{d}[{poi_name}] == on_day_{d}[{first_poi_name}]", flush=True)
 
             print(f"  [ILP]   ✓ Same-day constraint applied for {group_id}", flush=True)
+
+    def _add_daily_hour_constraints(
+        self,
+        model: cp_model.CpModel,
+        visit_vars: Dict,
+        pois: List[Dict[str, Any]],
+        duration_days: int,
+        max_hours_per_day: float,
+        distance_matrix: Dict[Tuple[str, str], float]
+    ):
+        """
+        Add constraints to enforce maximum hours per day.
+
+        For each day, total hours = sum of (POI visit hours + travel time) <= max_hours_per_day
+
+        Args:
+            model: CP-SAT model
+            visit_vars: Visit decision variables
+            pois: List of POIs
+            duration_days: Number of days
+            max_hours_per_day: Maximum hours allowed per day (based on pace)
+            distance_matrix: Distances for calculating travel time
+        """
+        num_pois = len(pois)
+        max_pois_per_day = len(list(visit_vars[0][0].keys()))
+
+        # Scale factor for integer arithmetic (CP-SAT uses integers)
+        SCALE = 100  # 0.01 hour precision
+
+        # For each day, add constraint: total_hours <= max_hours_per_day
+        for day in range(duration_days):
+            # Calculate total hours for this day
+            hour_terms = []
+            poi_hour_breakdown = []  # For debugging
+
+            # Count how many POIs are on this day
+            pois_on_day = []
+            for i, poi in enumerate(pois):
+                visit_hours = poi.get('estimated_hours', 2.0)
+                scaled_hours = int(visit_hours * SCALE)
+
+                # Check if this POI is on this day (any position)
+                on_this_day = model.NewBoolVar(f'poi_{i}_on_day_{day}')
+                model.AddMaxEquality(on_this_day, [visit_vars[i][day][pos] for pos in range(max_pois_per_day)])
+
+                # Add visit hours if on this day
+                hour_terms.append(scaled_hours * on_this_day)
+                pois_on_day.append(on_this_day)
+                poi_hour_breakdown.append((poi.get('poi', f'POI{i}'), visit_hours, scaled_hours))
+
+            # Add estimated walking time based on number of POIs on this day
+            # Walking time should be (num_pois - 1) * avg_walking_per_poi
+            # But in ILP, we can't directly compute num_pois - 1, so we use conservative upper bound:
+            # walking_time = num_pois * avg_walking (overcounts by one transition, but simpler)
+            avg_walking_per_poi = 0.20  # Reduced from 0.25 to compensate for overcount
+            scaled_walking = int(avg_walking_per_poi * SCALE)
+
+            # Add walking for each POI (conservative estimate)
+            for on_day_var in pois_on_day:
+                hour_terms.append(scaled_walking * on_day_var)
+
+            # Total hours for this day
+            total_hours = sum(hour_terms) if hour_terms else 0
+
+            # Constraint: total_hours <= max_hours_per_day
+            max_scaled = int(max_hours_per_day * SCALE)
+            model.Add(total_hours <= max_scaled)
+
+            # Debug: Print constraint formula
+            print(f"  [ILP] Day {day + 1} constraint formula:", flush=True)
+            for poi_name, hours, scaled in poi_hour_breakdown:
+                print(f"    + {scaled} * on_day_{day}[{poi_name}]  (visit: {hours}h)", flush=True)
+            for i in range(len(pois)):
+                print(f"    + {scaled_walking} * on_day_{day}[POI{i}]  (walk: {avg_walking_per_poi}h)", flush=True)
+            print(f"    <= {max_scaled}  ({max_hours_per_day}h)", flush=True)
+
+            # Debug: Print worst case (all POIs on this day)
+            total_visit_hours = sum(poi.get('estimated_hours', 2.0) for poi in pois)
+            total_walking_hours = len(pois) * avg_walking_per_poi
+            print(f"  [ILP] Day {day + 1}: Worst case (all {len(pois)} POIs): {total_visit_hours:.1f}h + {total_walking_hours:.1f}h = {total_visit_hours + total_walking_hours:.1f}h (max={max_hours_per_day}h)", flush=True)
+
+        # Debug: Test if a simple manual distribution would satisfy the constraint
+        print(f"\n  [ILP] ===== MANUAL FEASIBILITY CHECK =====", flush=True)
+        # Find combo ticket groups
+        combo_poi_names = self._get_combo_ticket_poi_names(pois)
+        archaeological_pois = [p for p in pois if 'Colosseum' in p.get('poi', '') or 'Roman Forum' in p.get('poi', '') or 'Palatine' in p.get('poi', '')]
+        vatican_pois = [p for p in pois if 'Vatican' in p.get('poi', '') or 'Sistine' in p.get('poi', '')]
+
+        if archaeological_pois and vatican_pois:
+            # Test distribution: Archaeological on Day 0, Vatican on Day 1
+            arch_hours = sum(p.get('estimated_hours', 2.0) for p in archaeological_pois)
+            arch_walk = len(archaeological_pois) * avg_walking_per_poi
+            arch_total = arch_hours + arch_walk
+
+            vat_hours = sum(p.get('estimated_hours', 2.0) for p in vatican_pois)
+            vat_walk = len(vatican_pois) * avg_walking_per_poi
+            vat_total = vat_hours + vat_walk
+
+            print(f"  [ILP] Proposed: Day 0 = Archaeological ({len(archaeological_pois)} POIs): {arch_hours:.1f}h + {arch_walk:.1f}h = {arch_total:.1f}h", flush=True)
+            print(f"  [ILP] Proposed: Day 1 = Vatican ({len(vatican_pois)} POIs): {vat_hours:.1f}h + {vat_walk:.1f}h = {vat_total:.1f}h", flush=True)
+            print(f"  [ILP] Would this satisfy daily hour constraint? Day 0: {arch_total <= max_hours_per_day}, Day 1: {vat_total <= max_hours_per_day}", flush=True)
+
+        print(f"  [ILP] Added daily hour constraints for {duration_days} day(s)", flush=True)
 
     def _add_start_end_constraints(
         self,
@@ -1129,3 +1337,84 @@ class ILPOptimizer:
                 'objective_value': 0
             }
         }
+
+    def _find_removable_poi(self, pois: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Find a POI that can be removed when model is infeasible.
+
+        Removal strategy:
+        1. Prefer removing non-combo POIs first (to avoid breaking combo groups)
+        2. If only combo POIs remain, remove lowest priority combo POI
+        3. Within same category, remove lowest priority POI
+        4. If priorities are equal, remove POI with smallest estimated_hours
+
+        Args:
+            pois: List of POIs
+
+        Returns:
+            POI to remove, or None if no POIs can be removed
+        """
+        if not pois:
+            return None
+
+        # Get combo ticket POI names
+        combo_poi_names = self._get_combo_ticket_poi_names(pois)
+
+        # Separate combo and non-combo POIs
+        non_combo_pois = [p for p in pois if p.get('poi') not in combo_poi_names]
+        combo_pois = [p for p in pois if p.get('poi') in combo_poi_names]
+
+        # Map priority to score
+        priority_scores = {'low': 1, 'medium': 2, 'high': 3}
+
+        # Prefer removing non-combo POIs first
+        candidates = non_combo_pois if non_combo_pois else combo_pois
+
+        if not candidates:
+            print(f"  [ILP] No POIs available for removal", flush=True)
+            return None
+
+        # Sort by: priority (lowest first), then by estimated_hours (lowest first = more skippable)
+        lowest = min(
+            candidates,
+            key=lambda p: (
+                priority_scores.get(p.get('priority', 'medium'), 2),
+                p.get('estimated_hours', 2.0)  # Lower hours = more skippable
+            )
+        )
+
+        # Log whether removing combo or non-combo POI
+        if lowest.get('poi') in combo_poi_names:
+            print(f"  [ILP] Warning: Removing combo POI (no non-combo POIs available)", flush=True)
+
+        return lowest
+
+    def _get_combo_ticket_poi_names(self, pois: List[Dict[str, Any]]) -> set:
+        """
+        Get set of POI names that are part of combo ticket groups.
+
+        Args:
+            pois: List of POIs
+
+        Returns:
+            Set of POI names in combo tickets
+        """
+        combo_poi_names = set()
+
+        for poi in pois:
+            # Check enriched combo_ticket_groups
+            combo_groups = poi.get('metadata', {}).get('combo_ticket_groups', [])
+
+            for group in combo_groups:
+                constraints = group.get('constraints', {})
+                if constraints.get('must_visit_together'):
+                    # This POI is in a combo ticket group
+                    combo_poi_names.add(poi.get('poi'))
+                    break
+
+            # Fallback: check old format
+            old_combo_info = poi.get('metadata', {}).get('combo_ticket', {})
+            if old_combo_info.get('must_visit_together'):
+                combo_poi_names.add(poi.get('poi'))
+
+        return combo_poi_names

@@ -1057,7 +1057,8 @@ def list_tours():
                         total_pois=total_pois,
                         interests=interests,
                         created_at=metadata['created_at'],
-                        optimization_score=optimization_score
+                        optimization_score=optimization_score,
+                        title_display=metadata.get('title_display')
                     ))
 
                 except Exception as e:

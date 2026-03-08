@@ -7,3 +7,8 @@
 	- Always push commits to remote feature branch regularly. This will avoid any recover issue.
 	- Never directly commit any code to main branch. Always create a new branch and then merge to main. This will keep production clean.
 	- Always wait for explicit instruction before merging to main. This will keep production clean.
+- ILP Debug Principles                                                                                                                                                                
+        - #1: Always reduce to minimal test case FIRST (2-5 entities, not 10+) - complexity hides bugs                                                                                  
+        - #2: Add constraints incrementally to find exact failure point - don't binary search, linear search                                                                            
+        - #3: Print variable domains before debugging constraints - domain bugs hide as INFEASIBLE                                                                                      
+        - #4: If manual solution exists but solver says INFEASIBLE → encoding bug, not logic bug

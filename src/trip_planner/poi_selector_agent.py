@@ -297,6 +297,7 @@ class POISelectorAgent:
             walking_buffer = 1.0
             pace_note = "Balanced number of POIs with reasonable time at each location."
 
+        # Calculate total time budget
         total_visit_hours = duration_days * hours_per_day
         total_walking_hours = duration_days * walking_buffer
 

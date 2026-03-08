@@ -1224,8 +1224,9 @@ def ensure_poi_transcripts(
 @click.option('--end-location', help='Ending point (POI name or "lat,lng" coordinates)')
 @click.option('--start-date', help='Trip start date (YYYY-MM-DD format, e.g., 2026-03-15). Used to check opening hours.')
 @click.option('--save', is_flag=True, help='Save the generated tour')
+@click.option('--test-mode', is_flag=True, help='Testing mode: Skip transcript generation, only run POI selection and optimization')
 @click.pass_context
-def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, language, mode, start_location, end_location, start_date, save):
+def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, language, mode, start_location, end_location, start_date, save, test_mode):
     """
     Generate an optimized trip itinerary for a city.
 
@@ -1255,6 +1256,8 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
         console.print(f"[dim]Interests: {', '.join(interests_list) if interests_list else 'General tourism'}[/dim]")
         console.print(f"[dim]Pace: {pace} | Walking: {walking} | Language: {language_name}[/dim]")
         console.print(f"[dim]Optimization mode: {mode}[/dim]")
+        if test_mode:
+            console.print(f"[yellow]🧪 TEST MODE: Skipping transcript generation[/yellow]")
         if must_see_list:
             console.print(f"[dim]Must-see: {', '.join(must_see_list)}[/dim]")
         if start_location:
@@ -1413,8 +1416,8 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
 
             console.print()
 
-        # Step 3: Ensure POI transcripts exist (if saving)
-        if save:
+        # Step 3: Ensure POI transcripts exist (if saving and not in test mode)
+        if save and not test_mode:
             console.print("[bold cyan]Step 3: Checking POI transcripts...[/bold cyan]")
 
             # Extract all POI names from itinerary
@@ -1440,10 +1443,13 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
                 console.print(f"\n[green]✓ Generated {generated_count} new transcripts in {language_name}[/green]\n")
             else:
                 console.print(f"\n[green]✓ All transcripts already exist[/green]\n")
+        elif save and test_mode:
+            console.print("[yellow]🧪 Skipping transcript generation (test mode)[/yellow]\n")
 
         # Step 4: Save tour (optional)
         if save:
-            console.print("[bold cyan]Step 4: Saving tour...[/bold cyan]")
+            step_num = 4 if not test_mode else 3
+            console.print(f"[bold cyan]Step {step_num}: Saving tour...[/bold cyan]")
             tour_manager = TourManager(config, content_dir=content_dir)
 
             input_parameters = {
@@ -1470,7 +1476,10 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
         else:
             console.print("[dim]💡 Tip: Use --save to save this itinerary for later[/dim]")
 
-        console.print(f"\n[green]✓ Trip planning complete![/green]")
+        if test_mode:
+            console.print(f"\n[green]✓ Test mode complete! (Optimization tested, transcripts skipped)[/green]")
+        else:
+            console.print(f"\n[green]✓ Trip planning complete![/green]")
 
     except Exception as e:
         console.print(f"[red]Error planning trip: {e}[/red]")

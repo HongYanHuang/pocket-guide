@@ -77,13 +77,13 @@ class ILPOptimizer:
 
             # Calculate max_hours_per_day based on pace preference
             pace_value = preferences.get('pace', 'normal')
-            # TEMPORARY DEBUG: Use very large buffer to test if constraint causes infeasibility
+            # Set max hours per day based on pace
             if pace_value == 'relaxed':
-                max_hours_per_day = 10.0  # DEBUG: Very loose constraint
+                max_hours_per_day = 6.0  # Relaxed: fewer POIs, more leisure time
             elif pace_value == 'packed':
-                max_hours_per_day = 15.0  # DEBUG: Very loose constraint
+                max_hours_per_day = 9.0  # Packed: maximize sightseeing
             else:  # normal
-                max_hours_per_day = 12.0  # DEBUG: Very loose constraint (was 8.5h)
+                max_hours_per_day = 7.5  # Normal: balanced schedule
 
             print(f"  [ILP] Max hours per day: {max_hours_per_day}h (pace: {pace_value})", flush=True)
 
@@ -344,9 +344,19 @@ class ILPOptimizer:
                     )
 
         # Sequence variables: track global order
+        # BUG FIX (2026-03-08): Domain must be [0, duration_days * max_pois_per_day - 1]
+        # OLD CODE (kept for easy revert if fix is incorrect):
+        #   sequence_vars[i] = model.NewIntVar(0, num_pois - 1, f'seq_{i}')
+        # PROBLEM: With 5 POIs, 2 days, 4 positions/day:
+        #   - Old domain: [0, 4] (only 5 values)
+        #   - Needed domain: [0, 7] (8 positions: Day0{0,1,2,3}, Day1{4,5,6,7})
+        #   - Channeling constraint: sequence = day * max_pois_per_day + pos
+        #   - Day 1, Position 1: sequence = 1*4+1 = 5 → OUT OF RANGE [0,4] → INFEASIBLE!
+        # FIX: Use total positions across all days as max domain
         sequence_vars = {}
+        max_sequence_value = duration_days * max_pois_per_day - 1
         for i in range(num_pois):
-            sequence_vars[i] = model.NewIntVar(0, num_pois - 1, f'seq_{i}')
+            sequence_vars[i] = model.NewIntVar(0, max_sequence_value, f'seq_{i}')
 
         # Day assignment variables
         day_vars = {}
@@ -655,7 +665,6 @@ class ILPOptimizer:
                     # Closed on this day - POI cannot be visited
                     for pos in range(max_pois_per_day):
                         model.Add(visit_vars[i][day][pos] == 0)
-                    print(f"  [ILP]   BLOCKED: '{poi['poi']}' day={day} ALL POSITIONS (closed all day)", flush=True)
                     total_constraints_added += max_pois_per_day
                     continue
 
@@ -694,13 +703,11 @@ class ILPOptimizer:
                         # Must be both open AND in preferred slot
                         if not (is_open and in_preferred_slot):
                             model.Add(visit_vars[i][day][pos] == 0)
-                            print(f"  [ILP]   BLOCKED: '{poi['poi']}' day={day} pos={pos} time={estimated_time_hhmm:04d} (not in preferred slot)", flush=True)
                             total_constraints_added += 1
                     else:
                         # Just check if open
                         if not is_open:
                             model.Add(visit_vars[i][day][pos] == 0)
-                            print(f"  [ILP]   BLOCKED: '{poi['poi']}' day={day} pos={pos} time={estimated_time_hhmm:04d} (closed)", flush=True)
                             total_constraints_added += 1
 
         print(f"  [ILP] Time window constraints: {pois_with_hours} POIs with hours, {total_constraints_added} position blocks added", flush=True)
@@ -941,7 +948,6 @@ class ILPOptimizer:
         for day in range(duration_days):
             # Calculate total hours for this day
             hour_terms = []
-            poi_hour_breakdown = []  # For debugging
 
             # Count how many POIs are on this day
             pois_on_day = []
@@ -956,7 +962,6 @@ class ILPOptimizer:
                 # Add visit hours if on this day
                 hour_terms.append(scaled_hours * on_this_day)
                 pois_on_day.append(on_this_day)
-                poi_hour_breakdown.append((poi.get('poi', f'POI{i}'), visit_hours, scaled_hours))
 
             # Add estimated walking time based on number of POIs on this day
             # Walking time should be (num_pois - 1) * avg_walking_per_poi
@@ -976,41 +981,7 @@ class ILPOptimizer:
             max_scaled = int(max_hours_per_day * SCALE)
             model.Add(total_hours <= max_scaled)
 
-            # Debug: Print constraint formula
-            print(f"  [ILP] Day {day + 1} constraint formula:", flush=True)
-            for poi_name, hours, scaled in poi_hour_breakdown:
-                print(f"    + {scaled} * on_day_{day}[{poi_name}]  (visit: {hours}h)", flush=True)
-            for i in range(len(pois)):
-                print(f"    + {scaled_walking} * on_day_{day}[POI{i}]  (walk: {avg_walking_per_poi}h)", flush=True)
-            print(f"    <= {max_scaled}  ({max_hours_per_day}h)", flush=True)
-
-            # Debug: Print worst case (all POIs on this day)
-            total_visit_hours = sum(poi.get('estimated_hours', 2.0) for poi in pois)
-            total_walking_hours = len(pois) * avg_walking_per_poi
-            print(f"  [ILP] Day {day + 1}: Worst case (all {len(pois)} POIs): {total_visit_hours:.1f}h + {total_walking_hours:.1f}h = {total_visit_hours + total_walking_hours:.1f}h (max={max_hours_per_day}h)", flush=True)
-
-        # Debug: Test if a simple manual distribution would satisfy the constraint
-        print(f"\n  [ILP] ===== MANUAL FEASIBILITY CHECK =====", flush=True)
-        # Find combo ticket groups
-        combo_poi_names = self._get_combo_ticket_poi_names(pois)
-        archaeological_pois = [p for p in pois if 'Colosseum' in p.get('poi', '') or 'Roman Forum' in p.get('poi', '') or 'Palatine' in p.get('poi', '')]
-        vatican_pois = [p for p in pois if 'Vatican' in p.get('poi', '') or 'Sistine' in p.get('poi', '')]
-
-        if archaeological_pois and vatican_pois:
-            # Test distribution: Archaeological on Day 0, Vatican on Day 1
-            arch_hours = sum(p.get('estimated_hours', 2.0) for p in archaeological_pois)
-            arch_walk = len(archaeological_pois) * avg_walking_per_poi
-            arch_total = arch_hours + arch_walk
-
-            vat_hours = sum(p.get('estimated_hours', 2.0) for p in vatican_pois)
-            vat_walk = len(vatican_pois) * avg_walking_per_poi
-            vat_total = vat_hours + vat_walk
-
-            print(f"  [ILP] Proposed: Day 0 = Archaeological ({len(archaeological_pois)} POIs): {arch_hours:.1f}h + {arch_walk:.1f}h = {arch_total:.1f}h", flush=True)
-            print(f"  [ILP] Proposed: Day 1 = Vatican ({len(vatican_pois)} POIs): {vat_hours:.1f}h + {vat_walk:.1f}h = {vat_total:.1f}h", flush=True)
-            print(f"  [ILP] Would this satisfy daily hour constraint? Day 0: {arch_total <= max_hours_per_day}, Day 1: {vat_total <= max_hours_per_day}", flush=True)
-
-        print(f"  [ILP] Added daily hour constraints for {duration_days} day(s)", flush=True)
+        print(f"  [ILP] Added daily hour constraints for {duration_days} day(s) (max {max_hours_per_day}h/day)", flush=True)
 
     def _add_start_end_constraints(
         self,

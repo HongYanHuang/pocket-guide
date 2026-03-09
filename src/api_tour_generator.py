@@ -270,12 +270,8 @@ async def generate_tour(request: TourGenerationRequest):
                 'generated_via': 'backstage_ui'
             }
 
-            # Attach title to metadata for persistence
-            if 'metadata' not in tour_data:
-                tour_data['metadata'] = {}
-            tour_data['metadata']['title_display'] = title_display
-
             # Build tour data structure
+            # Note: title_display is passed separately to save_tour()
             tour_data = {
                 'itinerary': itinerary,
                 'optimization_scores': optimization_scores

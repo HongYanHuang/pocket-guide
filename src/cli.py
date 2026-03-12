@@ -1143,7 +1143,8 @@ def ensure_poi_transcripts(
     language: str,
     content_dir: str,
     config: dict,
-    provider: str
+    provider: str,
+    force: bool = False
 ) -> dict:
     """
     Ensure all POI transcripts exist in the target language.
@@ -1156,6 +1157,7 @@ def ensure_poi_transcripts(
         content_dir: Content directory path
         config: Application config
         provider: AI provider for generation
+        force: Force regeneration even if transcript exists (default: False)
 
     Returns:
         Dict mapping POI name to generation status (True if generated, False if existed)
@@ -1168,18 +1170,19 @@ def ensure_poi_transcripts(
     for poi in pois:
         poi_path = get_poi_path(content_dir, city, poi)
 
-        # Check if transcript exists
+        # Check if transcript exists (skip check if force=True)
         available_langs = []
         if poi_path.exists():
             available_langs = list_available_languages(poi_path)
 
-        if language in available_langs:
+        if language in available_langs and not force:
             console.print(f"  ✓ {poi} - transcript exists")
             generation_status[poi] = False
             continue
 
-        # Generate missing transcript
-        console.print(f"  ⚡ {poi} - generating transcript in {language}...")
+        # Generate transcript (or regenerate if force=True)
+        action = "regenerating" if (language in available_langs and force) else "generating"
+        console.print(f"  ⚡ {poi} - {action} transcript in {language}...")
 
         try:
             # Ensure POI directory exists
@@ -1259,8 +1262,9 @@ def ensure_poi_transcripts(
 @click.option('--start-date', help='Trip start date (YYYY-MM-DD format, e.g., 2026-03-15). Used to check opening hours.')
 @click.option('--save', is_flag=True, help='Save the generated tour')
 @click.option('--test-mode', is_flag=True, help='Testing mode: Skip transcript generation, only run POI selection and optimization')
+@click.option('--force-transcripts', is_flag=True, help='Force regeneration of all POI transcripts (ignores existing)')
 @click.pass_context
-def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, language, mode, start_location, end_location, start_date, save, test_mode):
+def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, language, mode, start_location, end_location, start_date, save, test_mode, force_transcripts):
     """
     Generate an optimized trip itinerary for a city.
 
@@ -1468,7 +1472,8 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
                 language=language,
                 content_dir=content_dir,
                 config=config,
-                provider=provider
+                provider=provider,
+                force=force_transcripts
             )
 
             # Count how many were generated

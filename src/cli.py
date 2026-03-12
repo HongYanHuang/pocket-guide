@@ -1191,13 +1191,22 @@ def ensure_poi_transcripts(
             # Load existing metadata for versioning
             existing_metadata = load_metadata(poi_path)
 
-            # Generate transcript
+            # Check if research already exists for this POI
+            from pathlib import Path
+            research_dir = Path("poi_research")
+            if city:
+                research_dir = research_dir / city.lower()
+            safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in poi).replace(' ', '_').lower()
+            research_file = research_dir / f"{safe_name}.yaml"
+            research_exists = research_file.exists()
+
+            # Generate transcript (skip research if it already exists to save time/cost)
             transcript, summary_points, gen_metadata = generator.generate(
                 poi_name=poi,
                 city=city,
                 provider=provider,
                 language=language,
-                skip_research=False,  # Use research for quality
+                skip_research=research_exists,  # Skip research if already cached
                 verify=False  # Skip verification to reduce cost during tour generation
             )
 

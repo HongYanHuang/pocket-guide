@@ -305,6 +305,9 @@ class ContentGenerator:
         transcript = result[0]
         summary_points = result[1]
 
+        # NEW: Also parse sectioned format
+        sectioned_data = self._parse_sectioned_response(raw_content)
+
         # Verification and refinement loop (if enabled by parameter and we have research data)
         verification_metadata = {}
         if verify and use_research and research_data:
@@ -339,10 +342,61 @@ class ContentGenerator:
             'filtered_research': filtered_research if use_research else None,
             'entities_before_filter': len(research_data.get('entities', {})) if research_data else 0,
             'entities_after_filter': len(filtered_research.get('entities', {})) if filtered_research else 0,
-            'verification': verification_metadata
+            'verification': verification_metadata,
+            'sectioned_data': sectioned_data  # NEW: Include sectioned data
         }
 
         return (transcript, summary_points, generation_metadata)
+
+    def _save_sectioned_transcript(
+        self,
+        poi_path: Path,
+        sectioned_data: Dict,
+        poi_name: str,
+        language: str,
+        version_string: str
+    ) -> None:
+        """
+        Save sectioned transcript as JSON.
+
+        Args:
+            poi_path: Path to POI directory
+            sectioned_data: Parsed sections and summary
+            poi_name: POI name
+            language: Language code
+            version_string: Version string (e.g., 'v1_2026-03-09')
+        """
+        import json
+        from datetime import datetime
+
+        # Add audio_file field to each section
+        for section in sectioned_data['sections']:
+            section_num = section['section_number']
+            section['audio_file'] = f"audio_section_{section_num}_{language}.mp3"
+
+        # Build structured JSON
+        sectioned_json = {
+            'poi': poi_name,
+            'language': language,
+            'generated_at': datetime.now().isoformat(),
+            'version': version_string,
+            'total_sections': len(sectioned_data['sections']),
+            'estimated_duration_seconds': sum(s['estimated_duration_seconds'] for s in sectioned_data['sections']),
+            'sections': sectioned_data['sections'],
+            'summary_points': sectioned_data['summary_points']
+        }
+
+        # Save current version
+        current_file = poi_path / f"sectioned_transcript_{language}.json"
+        with open(current_file, 'w', encoding='utf-8') as f:
+            json.dump(sectioned_json, f, indent=2, ensure_ascii=False)
+
+        # Save versioned copy
+        versioned_file = poi_path / f"sectioned_transcript_{version_string}_{language}.json"
+        with open(versioned_file, 'w', encoding='utf-8') as f:
+            json.dump(sectioned_json, f, indent=2, ensure_ascii=False)
+
+        print(f"✓ Saved sectioned transcript: {current_file}")
 
     def _verify_and_refine(
         self,
@@ -835,21 +889,46 @@ class ContentGenerator:
         if module_content:
             prompt_parts.append(module_content)
 
-        # Request both transcript and summary points
+        # Request sectioned transcript and summary points
         prompt_parts.extend([
             "=" * 60,
-            "OUTPUT FORMAT",
+            "OUTPUT FORMAT - SECTIONED NARRATIVE",
             "=" * 60,
             "",
-            "Your response MUST include TWO sections:",
+            "Break your narrative into 2-5 SECTIONS. Each section should:",
+            "- Be 60-150 seconds when spoken (100-250 words)",
+            "- Have a clear, evocative title (3-8 words)",
+            "- Teach ONE specific knowledge point",
+            "- Tell a complete mini-story with beginning, middle, end",
             "",
+            "Format your response EXACTLY like this:",
+            "",
+            "SECTION 1:",
+            "TITLE: The Humiliation",
+            "KNOWLEDGE: Why Rome built walls after 800 years without them",
             "TRANSCRIPT:",
-            "[Your engaging narration here - use the research findings above]",
+            "Close your eyes and imagine this: You're the biggest, toughest empire...",
+            "[full narration for section 1]",
+            "",
+            "SECTION 2:",
+            "TITLE: The Panic Build",
+            "KNOWLEDGE: How 50,000 workers built 19 km of walls in 5 years",
+            "TRANSCRIPT:",
+            "Picture this construction site: 50,000 workers running day and night...",
+            "[full narration for section 2]",
+            "",
+            "...(continue for all sections)...",
             "",
             "SUMMARY POINTS:",
             "- Key learning point 1",
             "- Key learning point 2",
             "- Key learning point 3",
+            "",
+            "GUIDELINES:",
+            "- Each section should feel complete on its own",
+            "- Titles should intrigue (not just 'Part 1', 'Part 2')",
+            "- Knowledge points answer: 'What will I learn from this section?'",
+            "- Total narrative should still be 300-750 words (2-5 minutes)",
             "",
             "Now create the tour guide script using the research findings above."
         ])
@@ -912,6 +991,84 @@ class ContentGenerator:
             ]
 
         return transcript, summary_points
+
+    def _parse_sectioned_response(self, raw_content: str) -> Dict[str, Any]:
+        """
+        Parse AI response into structured sections.
+
+        Args:
+            raw_content: Raw AI response with SECTION N: blocks
+
+        Returns:
+            Dictionary with sections array and summary_points
+        """
+        sections = []
+
+        # Regex pattern to match SECTION blocks with optional markdown formatting
+        # Handles both:
+        # - Plain: SECTION 1: TITLE: ... KNOWLEDGE: ... TRANSCRIPT: ...
+        # - Markdown: ## SECTION 1: **TITLE:** ... **KNOWLEDGE:** ... **TRANSCRIPT:** ...
+        section_pattern = r'#{0,3}\s*SECTION\s+(\d+):\s*\*{0,2}\s*TITLE:\s*\*{0,2}\s*(.+?)\s*\*{0,2}\s*KNOWLEDGE:\s*\*{0,2}\s*(.+?)\s*\*{0,2}\s*TRANSCRIPT:\s*\*{0,2}\s*(.+?)(?=#{0,3}\s*SECTION\s+\d+:|#{0,3}\s*SUMMARY POINTS:|$)'
+
+        matches = re.finditer(section_pattern, raw_content, re.DOTALL | re.IGNORECASE)
+
+        for match in matches:
+            section_num = int(match.group(1))
+            title = match.group(2).strip()
+            knowledge = match.group(3).strip()
+            transcript_text = match.group(4).strip()
+
+            # Clean up markdown formatting from extracted text
+            title = re.sub(r'\*{1,2}', '', title).strip()  # Remove ** bold markers
+            knowledge = re.sub(r'\*{1,2}', '', knowledge).strip()
+            transcript_text = re.sub(r'\*{1,2}', '', transcript_text).strip()
+
+            # Estimate duration (assume 150 words per minute speaking rate)
+            word_count = len(transcript_text.split())
+            estimated_seconds = int((word_count / 150) * 60)
+
+            sections.append({
+                'section_number': section_num,
+                'title': title,
+                'knowledge_point': knowledge,
+                'transcript': transcript_text,
+                'estimated_duration_seconds': estimated_seconds,
+                'word_count': word_count
+            })
+
+        # Parse summary points (handle markdown formatting)
+        summary_points = []
+        summary_match = re.search(r'#{0,3}\s*SUMMARY POINTS?:\s*(.+?)$', raw_content, re.DOTALL | re.IGNORECASE)
+        if summary_match:
+            summary_text = summary_match.group(1).strip()
+            for line in summary_text.split('\n'):
+                # Remove markdown bullet points, asterisks, numbers, etc.
+                cleaned = re.sub(r'^[-*•]\s*|\d+[.)]\s*', '', line.strip())
+                cleaned = re.sub(r'\*{1,2}', '', cleaned).strip()  # Remove bold markers
+                if cleaned and not cleaned.startswith('#'):  # Skip markdown headers
+                    summary_points.append(cleaned)
+
+        # Fallback if no sections found - treat entire transcript as one section
+        if not sections:
+            # Use existing parsing logic as fallback
+            transcript_match = re.search(r'TRANSCRIPT:\s*(.*?)\s*(?=SUMMARY POINTS:|$)',
+                                         raw_content, re.DOTALL | re.IGNORECASE)
+            if transcript_match:
+                full_text = transcript_match.group(1).strip()
+                word_count = len(full_text.split())
+                sections.append({
+                    'section_number': 1,
+                    'title': 'Full Narrative',
+                    'knowledge_point': 'Complete tour guide narrative',
+                    'transcript': full_text,
+                    'estimated_duration_seconds': int((word_count / 150) * 60),
+                    'word_count': word_count
+                })
+
+        return {
+            'sections': sections,
+            'summary_points': summary_points
+        }
 
     def _generate_openai(self, prompt: str) -> str:
         """Generate content using OpenAI"""

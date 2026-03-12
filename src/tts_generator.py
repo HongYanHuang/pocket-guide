@@ -340,6 +340,84 @@ class TTSGenerator:
 
         return str(output_file)
 
+    def generate_sectioned_audio(
+        self,
+        sections: list,
+        poi_path: Path,
+        language: str = "en",
+        provider: str = "edge"
+    ) -> list:
+        """
+        Generate separate audio file for each section.
+
+        Args:
+            sections: List of section dicts with 'transcript' field
+            poi_path: Path to POI directory
+            language: Language code
+            provider: TTS provider (edge, openai, google, qwen)
+
+        Returns:
+            List of generated audio file paths
+        """
+        audio_files = []
+
+        for section in sections:
+            section_num = section['section_number']
+            section_text = section['transcript']
+
+            # Audio filename: audio_section_1_en.mp3
+            audio_filename = f"audio_section_{section_num}_{language}.mp3"
+            output_path = poi_path / audio_filename
+
+            print(f"  Generating audio for Section {section_num}: {section['title']}...")
+
+            # Generate audio using selected provider
+            if provider == "edge":
+                self._generate_edge(section_text, poi_path, language)
+                # Rename the generated file
+                generated_file = poi_path / f"audio_{language}.mp3"
+                if generated_file.exists():
+                    generated_file.rename(output_path)
+            elif provider == "openai":
+                self._generate_openai(section_text, poi_path)
+                # Rename the generated file
+                generated_file = poi_path / f"audio_{language}.mp3"
+                if generated_file.exists():
+                    generated_file.rename(output_path)
+            elif provider == "google":
+                self._generate_google(section_text, poi_path, language)
+                # Rename the generated file
+                generated_file = poi_path / f"audio_{language}.mp3"
+                if generated_file.exists():
+                    generated_file.rename(output_path)
+            elif provider == "qwen":
+                self._generate_qwen(section_text, poi_path, language)
+                # Rename the generated file
+                generated_file = poi_path / f"audio_{language}.mp3"
+                if generated_file.exists():
+                    generated_file.rename(output_path)
+
+            audio_files.append(audio_filename)
+            print(f"    ✓ Saved: {audio_filename}")
+
+        # Also generate concatenated full audio for backward compatibility
+        full_transcript = "\n\n".join(s['transcript'] for s in sections)
+        full_audio_path = poi_path / f"audio_{language}.mp3"
+        print(f"  Generating full audio (concatenated)...")
+
+        if provider == "edge":
+            self._generate_edge(full_transcript, poi_path, language)
+        elif provider == "openai":
+            self._generate_openai(full_transcript, poi_path)
+        elif provider == "google":
+            self._generate_google(full_transcript, poi_path, language)
+        elif provider == "qwen":
+            self._generate_qwen(full_transcript, poi_path, language)
+
+        print(f"    ✓ Saved: audio_{language}.mp3 (full)")
+
+        return audio_files
+
     def _get_qwen_language(self, language: str) -> str:
         """Convert language code to Qwen3-TTS language name"""
         # Map language codes to Qwen supported languages

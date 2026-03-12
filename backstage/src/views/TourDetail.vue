@@ -383,7 +383,92 @@
                           <!-- Expanded Transcript -->
                           <el-collapse-transition>
                             <div v-if="expandedTranscripts[poi.poi]" style="margin-top: 10px">
-                              <el-card :body-style="{ padding: '15px', background: '#f5f7fa' }">
+                              <!-- Sectioned transcript view -->
+                              <el-card v-if="sectionedTranscripts[poi.poi]" :body-style="{ padding: '15px', background: '#f5f7fa' }">
+                                <!-- Section count and duration header -->
+                                <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                                  <div>
+                                    <el-tag type="info" size="small">
+                                      {{ sectionedTranscripts[poi.poi].total_sections }} Sections
+                                    </el-tag>
+                                    <el-tag type="success" size="small" style="margin-left: 10px;">
+                                      ~{{ Math.ceil(sectionedTranscripts[poi.poi].estimated_duration_seconds / 60) }} min
+                                    </el-tag>
+                                  </div>
+                                </div>
+
+                                <!-- Sections accordion -->
+                                <el-collapse v-model="activeSections[poi.poi]">
+                                  <el-collapse-item
+                                    v-for="section in sectionedTranscripts[poi.poi].sections"
+                                    :key="section.section_number"
+                                    :name="section.section_number"
+                                  >
+                                    <!-- Section header -->
+                                    <template #title>
+                                      <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                                        <el-tag size="small" type="primary">{{ section.section_number }}</el-tag>
+                                        <strong style="flex: 1;">{{ section.title }}</strong>
+                                        <span style="font-size: 12px; color: #909399;">
+                                          ~{{ Math.ceil(section.estimated_duration_seconds / 60) }} min
+                                        </span>
+                                      </div>
+                                    </template>
+
+                                    <!-- Section content -->
+                                    <div>
+                                      <!-- Knowledge point highlight -->
+                                      <div style="background: #e6f7ff; padding: 10px; border-left: 3px solid #1890ff; margin-bottom: 15px;">
+                                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">What you'll learn:</div>
+                                        <div style="font-weight: 500; color: #1890ff;">{{ section.knowledge_point }}</div>
+                                      </div>
+
+                                      <!-- Audio player for this section -->
+                                      <div v-if="section.audio_file" style="margin-bottom: 15px;">
+                                        <audio
+                                          controls
+                                          style="width: 100%;"
+                                          :src="`http://localhost:8000/pois/${tour.metadata?.city || poi.city || 'unknown'}/${getPoiId(poi.poi)}/audio/${section.audio_file}`"
+                                        >
+                                          Your browser does not support the audio element.
+                                        </audio>
+                                      </div>
+
+                                      <!-- Transcript text -->
+                                      <div style="white-space: pre-wrap; line-height: 1.6; font-size: 13px; color: #333;">
+                                        {{ section.transcript }}
+                                      </div>
+
+                                      <!-- Word count -->
+                                      <div style="margin-top: 10px; font-size: 11px; color: #999;">
+                                        {{ section.word_count }} words
+                                      </div>
+                                    </div>
+                                  </el-collapse-item>
+                                </el-collapse>
+
+                                <!-- Summary points at bottom -->
+                                <div v-if="sectionedTranscripts[poi.poi].summary_points.length > 0"
+                                     style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd;">
+                                  <div style="font-weight: 600; margin-bottom: 10px; color: #333;">Key Takeaways:</div>
+                                  <ul style="margin: 0; padding-left: 20px;">
+                                    <li v-for="(point, idx) in sectionedTranscripts[poi.poi].summary_points"
+                                        :key="idx"
+                                        style="margin-bottom: 5px; line-height: 1.5;">
+                                      {{ point }}
+                                    </li>
+                                  </ul>
+                                </div>
+                              </el-card>
+
+                              <!-- Loading state -->
+                              <el-card v-else-if="transcriptLoading[poi.poi]" :body-style="{ padding: '20px', textAlign: 'center' }">
+                                <el-icon class="is-loading"><Loading /></el-icon>
+                                <div style="margin-top: 10px;">Loading transcript sections...</div>
+                              </el-card>
+
+                              <!-- Legacy plain text transcript (fallback) -->
+                              <el-card v-else :body-style="{ padding: '15px', background: '#f5f7fa' }">
                                 <div
                                   v-if="transcripts[poi.poi]"
                                   style="white-space: pre-wrap; font-size: 13px; line-height: 1.6"
@@ -629,6 +714,10 @@ const expandedTranscripts = ref({})
 const transcripts = ref({})
 const transcriptLoading = ref({})
 
+// NEW: Sectioned transcript state
+const sectionedTranscripts = ref({})  // Store sectioned data
+const activeSections = ref({})        // Track which sections are expanded
+
 // POI Replacement state
 const pendingReplacements = ref({}) // Map: original_poi -> { replacement_poi, day }
 const savingReplacements = ref(false)
@@ -738,9 +827,9 @@ const toggleTranscript = async (poiName) => {
     return
   }
 
-  // Expand and load if needed
-  if (!transcripts.value[poiName]) {
-    await loadTranscript(poiName)
+  // Expand and load if needed (prioritize sectioned format)
+  if (!sectionedTranscripts.value[poiName] && !transcripts.value[poiName]) {
+    await loadSectionedTranscript(poiName)
   }
 
   expandedTranscripts.value[poiName] = true
@@ -771,6 +860,39 @@ const loadTranscript = async (poiName) => {
   } finally {
     transcriptLoading.value[poiName] = false
   }
+}
+
+// NEW: Load sectioned transcript
+const loadSectionedTranscript = async (poiName) => {
+  try {
+    transcriptLoading.value[poiName] = true
+    const city = tour.value.metadata?.city
+    const language = tour.value.input_parameters?.language || 'en'
+    const tourId = route.params.tourId
+
+    const poiId = getPoiId(poiName)
+
+    const response = await axios.get(
+      `http://localhost:8000/pois/${city}/${poiId}/sectioned-transcript`,
+      { params: { language, tour_id: tourId } }
+    )
+
+    sectionedTranscripts.value[poiName] = response.data
+
+    // Auto-expand first section
+    activeSections.value[poiName] = [1]
+  } catch (error) {
+    console.error('Error loading sectioned transcript:', error)
+    // Fallback to plain transcript
+    await loadTranscript(poiName)
+  } finally {
+    transcriptLoading.value[poiName] = false
+  }
+}
+
+// Helper to get POI ID from name
+const getPoiId = (poiName) => {
+  return poiName.toLowerCase().replace(/\s+/g, '-').replace(/[()]/g, '')
 }
 
 // Format date

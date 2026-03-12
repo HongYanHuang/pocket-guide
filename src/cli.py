@@ -238,6 +238,17 @@ def generate(ctx, city, poi, provider, description, interests, custom_prompt, la
         ssml_content = text_to_ssml(transcript, language=f"{language}-US" if language == "en" else language)
         save_versioned_transcript(poi_path, ssml_content, version_string, format='ssml', language=language)
 
+        # NEW: Save sectioned transcript if available
+        sectioned_data = generation_metadata.get('sectioned_data')
+        if sectioned_data and sectioned_data.get('sections'):
+            generator._save_sectioned_transcript(
+                poi_path=poi_path,
+                sectioned_data=sectioned_data,
+                poi_name=poi,
+                language=language,
+                version_string=version_string
+            )
+
         # Build version history entry
         version_entry = {
             'version': version_num,
@@ -1028,6 +1039,17 @@ def poi_batch_generate(ctx, input_file, city, provider, language, skip_research,
                 save_transcript(poi_path, transcript, format='txt', language=language)
                 save_metadata(poi_path, existing_metadata)
 
+                # NEW: Save sectioned transcript if available
+                sectioned_data = metadata.get('sectioned_data')
+                if sectioned_data and sectioned_data.get('sections'):
+                    generator._save_sectioned_transcript(
+                        poi_path=poi_path,
+                        sectioned_data=sectioned_data,
+                        poi_name=poi_name,
+                        language=language,
+                        version_string=version_string
+                    )
+
                 # Save generation record
                 generation_record = {
                     'version': version_num,
@@ -1184,6 +1206,17 @@ def ensure_poi_transcripts(
             # Convert to SSML if needed (simple wrapper)
             ssml_content = text_to_ssml(transcript, language)
             save_versioned_transcript(poi_path, ssml_content, version_string, 'ssml', language)
+
+            # NEW: Save sectioned transcript if available
+            sectioned_data = gen_metadata.get('sectioned_data')
+            if sectioned_data and sectioned_data.get('sections'):
+                generator._save_sectioned_transcript(
+                    poi_path=poi_path,
+                    sectioned_data=sectioned_data,
+                    poi_name=poi,
+                    language=language,
+                    version_string=version_string
+                )
 
             # Update metadata with new version
             existing_metadata['current_version'] = version_num
@@ -1764,24 +1797,42 @@ def trip_tts(ctx, tour_id, city, poi, language, provider, force):
                         progress.advance(task)
                         continue
 
-                    # Load transcript
-                    with open(transcript_file, 'r', encoding='utf-8') as f:
-                        transcript_text = f.read().strip()
+                    # Check if sectioned transcript exists
+                    sectioned_file = poi_dir / f'sectioned_transcript_{target_language}.json'
 
-                    if not transcript_text:
-                        failed.append((poi_name, "Empty transcript"))
-                        progress.advance(task)
-                        continue
+                    if sectioned_file.exists():
+                        # Use sectioned audio generation
+                        import json
+                        with open(sectioned_file, 'r', encoding='utf-8') as f:
+                            sectioned_data = json.load(f)
 
-                    # Generate TTS audio
-                    tts_generator.generate(
-                        text=transcript_text,
-                        output_path=poi_dir,
-                        language=tts_locale,
-                        provider=provider
-                    )
+                        audio_files = tts_generator.generate_sectioned_audio(
+                            sections=sectioned_data['sections'],
+                            poi_path=poi_dir,
+                            language=target_language,
+                            provider=provider
+                        )
+                        succeeded.append(poi_name)
+                    else:
+                        # Fallback to traditional single audio file
+                        # Load transcript
+                        with open(transcript_file, 'r', encoding='utf-8') as f:
+                            transcript_text = f.read().strip()
 
-                    succeeded.append(poi_name)
+                        if not transcript_text:
+                            failed.append((poi_name, "Empty transcript"))
+                            progress.advance(task)
+                            continue
+
+                        # Generate TTS audio
+                        tts_generator.generate(
+                            text=transcript_text,
+                            output_path=poi_dir,
+                            language=tts_locale,
+                            provider=provider
+                        )
+
+                        succeeded.append(poi_name)
 
                 except Exception as e:
                     failed.append((poi_name, str(e)))

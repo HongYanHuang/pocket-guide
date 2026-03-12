@@ -7,6 +7,7 @@ including coordinates, operation hours, and distance matrices.
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pathlib import Path
 from typing import List, Optional
 import logging
@@ -18,6 +19,7 @@ from api_models import (
     DistanceMatrix, CollectionResult, VerificationReport,
     ErrorResponse, SuccessResponse,
     TranscriptData, TranscriptUpdate, TranscriptLink, TranscriptLinks,
+    TranscriptSection, SectionedTranscriptData,
     ResearchData,
     ResearchBasicInfo, ResearchPerson, ResearchEvent,
     ResearchLocation, ResearchConcept,
@@ -861,6 +863,110 @@ async def update_transcript(city: str, poi_id: str, update: TranscriptUpdate):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating transcript: {str(e)}"
         )
+
+
+@app.get("/pois/{city}/{poi_id}/sectioned-transcript", response_model=SectionedTranscriptData)
+async def get_sectioned_transcript(
+    city: str,
+    poi_id: str,
+    language: str = "en",
+    tour_id: Optional[str] = None
+):
+    """
+    Get sectioned transcript with knowledge points and titles.
+
+    Args:
+        city: City name
+        poi_id: POI identifier
+        language: Language code (default: en)
+        tour_id: Optional tour ID for tour-specific transcripts
+
+    Returns:
+        Sectioned transcript data with sections array
+    """
+    import json
+
+    # Normalize inputs
+    city_slug = city.lower().replace(' ', '-')
+    poi_slug = poi_id.lower().replace(' ', '-')
+    lang_code = normalize_language_code(language)
+
+    # Get POI path
+    poi_path = Path(config.get('content_dir', 'content')) / city_slug / poi_slug
+
+    if not poi_path.exists():
+        raise HTTPException(status_code=404, detail=f"POI not found: {poi_id}")
+
+    # Try to load sectioned transcript
+    sectioned_file = poi_path / f"sectioned_transcript_{lang_code}.json"
+
+    if not sectioned_file.exists():
+        # Fallback: Create sectioned format from plain transcript
+        plain_transcript_file = poi_path / f"transcript_{lang_code}.txt"
+        if plain_transcript_file.exists():
+            with open(plain_transcript_file, 'r', encoding='utf-8') as f:
+                plain_text = f.read()
+
+            # Return as single section
+            word_count = len(plain_text.split())
+            return SectionedTranscriptData(
+                poi=poi_id,
+                language=lang_code,
+                generated_at=datetime.now().isoformat(),
+                version="legacy",
+                total_sections=1,
+                estimated_duration_seconds=int((word_count / 150) * 60),
+                sections=[
+                    TranscriptSection(
+                        section_number=1,
+                        title="Full Narrative",
+                        knowledge_point="Complete tour guide narrative",
+                        transcript=plain_text,
+                        estimated_duration_seconds=int((word_count / 150) * 60),
+                        word_count=word_count,
+                        audio_file=f"audio_{lang_code}.mp3"
+                    )
+                ],
+                summary_points=[],
+                has_sectioned_transcript=False
+            )
+        else:
+            raise HTTPException(status_code=404, detail=f"No transcript found for language: {language}")
+
+    # Load sectioned transcript
+    with open(sectioned_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    return SectionedTranscriptData(**data, has_sectioned_transcript=True)
+
+
+@app.get("/pois/{city}/{poi_id}/audio/{filename}")
+async def get_poi_audio(city: str, poi_id: str, filename: str):
+    """
+    Serve audio file for POI section or full audio.
+
+    Args:
+        city: City name
+        poi_id: POI identifier
+        filename: Audio filename (e.g., audio_section_1_en.mp3 or audio_en.mp3)
+
+    Returns:
+        MP3 audio file
+    """
+    city_slug = city.lower().replace(' ', '-')
+    poi_slug = poi_id.lower().replace(' ', '-')
+
+    poi_path = Path(config.get('content_dir', 'content')) / city_slug / poi_slug
+    audio_file = poi_path / filename
+
+    if not audio_file.exists():
+        raise HTTPException(status_code=404, detail=f"Audio file not found: {filename}")
+
+    return FileResponse(
+        audio_file,
+        media_type="audio/mpeg",
+        filename=filename
+    )
 
 
 # ==== Research Endpoints ====

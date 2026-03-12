@@ -191,6 +191,30 @@ class TranscriptUpdate(BaseModel):
     language: Optional[str] = Field("en", description="ISO 639-1 language code (e.g., 'en', 'fr', 'es')")
 
 
+class TranscriptSection(BaseModel):
+    """Single section of a transcript"""
+    section_number: int = Field(..., description="Section number (1-indexed)")
+    title: str = Field(..., description="Section title (3-8 words)")
+    knowledge_point: str = Field(..., description="What this section teaches")
+    transcript: str = Field(..., description="Narration text for this section")
+    estimated_duration_seconds: int = Field(..., description="Estimated playback duration")
+    word_count: int = Field(..., description="Word count of transcript")
+    audio_file: Optional[str] = Field(None, description="Audio filename for this section (e.g., audio_section_1_en.mp3)")
+
+
+class SectionedTranscriptData(BaseModel):
+    """Sectioned transcript with multiple parts"""
+    poi: str = Field(..., description="POI name")
+    language: str = Field(..., description="Language code")
+    generated_at: str = Field(..., description="Generation timestamp")
+    version: str = Field(..., description="Version string")
+    total_sections: int = Field(..., description="Number of sections")
+    estimated_duration_seconds: int = Field(..., description="Total duration")
+    sections: list[TranscriptSection] = Field(..., description="Array of sections")
+    summary_points: list[str] = Field(..., description="Key learning points")
+    has_sectioned_transcript: bool = Field(True, description="Always true for this model")
+
+
 class TranscriptLink(BaseModel):
     """Link from tour to transcript file"""
     poi: str = Field(..., description="POI name")

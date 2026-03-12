@@ -26,6 +26,7 @@ from tts_generator import TTSGenerator
 from poi_metadata_agent import POIMetadataAgent
 from poi_research_agent import POIResearchAgent
 from trip_planner import POISelectorAgent, ItineraryOptimizerAgent, TourManager
+from api_tour_generator import generate_tour_title
 
 console = Console()
 
@@ -1495,12 +1496,25 @@ def trip_plan(ctx, city, days, interests, provider, must_see, pace, walking, lan
                 'language': language
             }
 
+            # Generate human-readable tour title
+            console.print(f"\n[bold]Generating tour title...[/bold]")
+            title_display = generate_tour_title(
+                city=city,
+                duration_days=days,
+                interests=interests_list,
+                selected_pois=selection_result.get('selected_pois', []),
+                language=language,
+                conf=config
+            )
+            console.print(f"[green]✓ Tour title: {title_display}[/green]")
+
             save_result = tour_manager.save_tour(
                 tour_data=optimized_result,
                 city=city,
                 input_parameters=input_parameters,
                 selection_result=selection_result,
-                language=language
+                language=language,
+                title_display=title_display
             )
 
             console.print(f"[green]✓ Tour saved with ID: {save_result['tour_id']}[/green]")

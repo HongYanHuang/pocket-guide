@@ -8,6 +8,7 @@ Vue.js-based backstage website for managing POI metadata including coordinates, 
 - 📝 **POI Editing** - Edit coordinates, visit info, operation hours
 - 🗺️ **Interactive Map** - View POIs on Leaflet map with OpenStreetMap
 - 📊 **Distance Matrix** - View/recalculate travel times (walking, transit, driving)
+- 📖 **Sectioned Transcripts** - View tour narratives broken into sections with knowledge points and audio playback
 - ✅ **Data Validation** - Form validation and error handling
 - 🔄 **Real-time Sync** - Direct API integration with FastAPI backend
 
@@ -76,7 +77,8 @@ backstage/
 │   │   └── DistanceMatrix.vue   # Distance matrix table
 │   ├── views/
 │   │   ├── Dashboard.vue        # Main dashboard
-│   │   └── POIDetail.vue        # POI detail page
+│   │   ├── POIDetail.vue        # POI detail page
+│   │   └── TourDetail.vue       # Tour detail with sectioned transcripts
 │   ├── router/
 │   │   └── index.js             # Vue Router config
 │   ├── App.vue                  # Root component
@@ -127,6 +129,26 @@ backstage/
 - See duration and distance for each pair
 - Click "Recalculate" to refresh from Google Maps API
 
+### 5. Tour Management
+
+**Tours Tab:**
+- View all generated tours with titles and metadata
+- Click on a tour to see itinerary details
+- View POI transcripts with sectioned content
+- Play audio narration for each section
+
+**Viewing Sectioned Transcripts:**
+- Click "View Transcript" on any POI in the tour
+- See sections with evocative titles (e.g., "The Pee Tax Palace")
+- Each section shows:
+  - Knowledge point (what you'll learn)
+  - Estimated duration
+  - HTML5 audio player for narration
+  - Full transcript text
+  - Word count
+- Expand/collapse sections as needed
+- Summary points displayed at the bottom
+
 ## API Integration
 
 The frontend communicates with the FastAPI backend via these endpoints:
@@ -140,6 +162,11 @@ The frontend communicates with the FastAPI backend via these endpoints:
 - `GET /api/pois/{city}/{poi_id}` - Get POI details
 - `PUT /api/pois/{city}/{poi_id}/metadata` - Update metadata
 - `POST /api/pois/{city}/{poi_id}/recollect` - Re-collect from Google Maps
+
+### Transcripts
+- `GET /pois/{city}/{poi_id}/transcript` - Get plain text transcript (legacy)
+- `GET /pois/{city}/{poi_id}/sectioned-transcript` - Get sectioned transcript with titles, knowledge points, and sections
+- `GET /pois/{city}/{poi_id}/audio/{filename}` - Stream audio file (section or full)
 
 ### Distance Matrix
 - `GET /api/distances/{city}` - Get distance matrix

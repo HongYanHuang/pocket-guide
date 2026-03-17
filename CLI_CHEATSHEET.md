@@ -1,5 +1,54 @@
 # Pocket Guide CLI Cheatsheet
 
+## Authentication Setup
+
+### Google OAuth Configuration
+
+1. **Create OAuth Credentials**:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   - Create OAuth 2.0 Client ID (Web Application)
+   - Add authorized origins: `http://localhost:5173`, `http://localhost:8000`
+   - Add redirect URI: `http://localhost:8000/auth/google/callback`
+   - Save CLIENT_ID and CLIENT_SECRET
+
+2. **Environment Setup**:
+   ```bash
+   # Copy example environment file
+   cp .env.example .env
+
+   # Generate JWT secret
+   openssl rand -hex 32
+
+   # Edit .env and fill in:
+   # - GOOGLE_CLIENT_ID
+   # - GOOGLE_CLIENT_SECRET
+   # - JWT_SECRET_KEY (from openssl command above)
+   ```
+
+3. **Configure User Roles** (in `config.yaml`):
+   ```yaml
+   authentication:
+     user_roles:
+       your-email@gmail.com:
+         role: backstage_admin
+         scopes: [backstage, read_tours, write_tours]
+   ```
+
+4. **Start API Server**:
+   ```bash
+   uvicorn src.api_server:app --reload --port 8000
+   ```
+
+### Authentication Endpoints
+
+- `GET /auth/google/login` - Initiate Google OAuth
+- `GET /auth/google/callback` - OAuth callback
+- `POST /auth/refresh` - Refresh access token
+- `POST /auth/logout` - Logout user
+- `GET /auth/me` - Get current user info
+
+---
+
 Quick reference for the Pocket Guide CLI - optimized for readability and quick lookup.
 
 ---

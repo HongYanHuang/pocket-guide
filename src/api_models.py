@@ -485,3 +485,27 @@ class BulkMarkVisitedResponse(BaseModel):
     updated_count: int
     pois: List[str]
     message: str
+
+
+# ==== Authentication Models ====
+
+class AuthTokenResponse(BaseModel):
+    """Response with authentication tokens"""
+    access_token: str = Field(..., description="JWT access token (15 min)")
+    refresh_token: str = Field(..., description="Refresh token (7 days)")
+    token_type: str = Field(default="bearer", description="Token type")
+    expires_in: int = Field(default=900, description="Token expiration in seconds")
+
+
+class UserInfo(BaseModel):
+    """User information from authentication"""
+    email: str = Field(..., description="User email address")
+    name: str = Field(..., description="User display name")
+    picture: Optional[str] = Field(None, description="User profile picture URL")
+    role: str = Field(default="client_user", description="User role (backstage_admin, client_user, etc.)")
+    scopes: List[str] = Field(default_factory=list, description="User scopes (backstage, read_tours, write_tours, etc.)")
+
+
+class RefreshTokenRequest(BaseModel):
+    """Request to refresh access token"""
+    refresh_token: str = Field(..., description="Refresh token from login")

@@ -193,7 +193,12 @@ def language_to_tts_locale(language_code: str) -> str:
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
-    """Load configuration from YAML file"""
+    """Load configuration from YAML file with environment variable substitution"""
+    from dotenv import load_dotenv
+
+    # Load environment variables from .env file
+    load_dotenv()
+
     if not os.path.exists(config_path):
         raise FileNotFoundError(
             f"Config file not found: {config_path}\n"
@@ -201,7 +206,16 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
         )
 
     with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+        config_text = f.read()
+
+    # Replace ${VAR_NAME} with environment variable values
+    def replace_env_var(match):
+        var_name = match.group(1)
+        return os.environ.get(var_name, '')
+
+    config_text = re.sub(r'\$\{(\w+)\}', replace_env_var, config_text)
+
+    return yaml.safe_load(config_text)
 
 
 def get_city_path(content_dir: str, city: str) -> Path:

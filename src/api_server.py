@@ -34,6 +34,10 @@ from poi_metadata_agent import POIMetadataAgent
 from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
 from api_combo_tickets import router as combo_tickets_router
 from api_tour_generator import router as tour_generator_router
+from api_auth import router as auth_router
+from auth.jwt_handler import JWTHandler
+from auth.session_manager import SessionManager
+from auth.oauth_handler import GoogleOAuthHandler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,28 +52,61 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Include routers
-app.include_router(combo_tickets_router)
-app.include_router(tour_generator_router)
-
-# Load configuration
+# Load configuration first (needed for CORS and auth)
 try:
     config = load_config()
     metadata_agent = POIMetadataAgent(config)
-    logger.info("API server initialized successfully")
+    logger.info("Configuration loaded successfully")
 except Exception as e:
-    logger.error(f"Failed to initialize API server: {e}")
-    config = None
+    logger.error(f"Failed to load configuration: {e}")
+    config = {}
     metadata_agent = None
+
+# Initialize authentication handlers
+auth_config = config.get('authentication', {})
+if auth_config.get('enabled', False):
+    try:
+        jwt_handler = JWTHandler(
+            secret_key=auth_config.get('jwt', {}).get('secret_key')
+        )
+
+        session_manager = SessionManager(
+            refresh_token_expire_days=auth_config.get('session', {}).get('refresh_token_expire_days', 7)
+        )
+
+        oauth_config = auth_config.get('google_oauth', {})
+        oauth_handler = GoogleOAuthHandler(
+            client_id=oauth_config.get('client_id'),
+            client_secret=oauth_config.get('client_secret'),
+            redirect_uri=oauth_config.get('redirect_uri')
+        )
+
+        logger.info("Authentication handlers initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize authentication: {e}")
+        jwt_handler = None
+        session_manager = None
+        oauth_handler = None
+else:
+    logger.info("Authentication is disabled in config")
+    jwt_handler = None
+    session_manager = None
+    oauth_handler = None
+
+# Configure CORS
+cors_origins = auth_config.get('cors', {}).get('allowed_origins', ['*'])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+# Include routers
+app.include_router(auth_router)
+app.include_router(combo_tickets_router)
+app.include_router(tour_generator_router)
 
 
 # ==== Helper Functions ====

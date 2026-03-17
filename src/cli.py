@@ -1830,7 +1830,6 @@ def trip_tts(ctx, tour_id, city, poi, language, provider, force):
 
                     if sectioned_file.exists():
                         # Use sectioned audio generation
-                        import json
                         with open(sectioned_file, 'r', encoding='utf-8') as f:
                             sectioned_data = json.load(f)
 

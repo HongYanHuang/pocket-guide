@@ -47,3 +47,7 @@ typer>=0.23.2
 typer-slim==0.23.2
 typing_extensions==4.15.0
 yarl==1.22.0
+PyJWT==2.10.1
+python-dotenv==1.0.0
+fastapi==0.115.12
+uvicorn==0.34.0

@@ -27,10 +27,8 @@ tmux new-session -d -s $SESSION_NAME -n "servers" -c "$PWD"
 
 # Run backend in left pane (already in project root)
 sleep 1
-tmux send-keys -t $SESSION_NAME:0.0 ". pocket-guide-3.11/bin/activate" C-m
-sleep 1
 tmux send-keys -t $SESSION_NAME:0.0 "echo '📡 Starting Backend (Python 3.11)...'" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "python src/api_server.py" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "pocket-guide-3.11/bin/python src/api_server.py" C-m
 
 # Split window vertically and set working directory to backstage
 tmux split-window -h -c "$PWD/backstage" -t $SESSION_NAME:0

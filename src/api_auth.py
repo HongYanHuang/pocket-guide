@@ -33,7 +33,7 @@ async def google_login(redirect_uri: str, code_challenge: str):
     state = str(uuid.uuid4())
     oauth_states[state] = {"redirect_uri": redirect_uri}
 
-    auth_url = oauth_handler.get_authorization_url(state, code_challenge)
+    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri)
     return {"auth_url": auth_url, "state": state}
 
 
@@ -59,11 +59,12 @@ async def google_callback(code: str, state: str, code_verifier: str):
     if state not in oauth_states:
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
-    oauth_states.pop(state)
+    state_data = oauth_states.pop(state)
+    redirect_uri = state_data.get("redirect_uri")
 
     # Exchange code for tokens
     try:
-        google_tokens = await oauth_handler.exchange_code_for_tokens(code, code_verifier)
+        google_tokens = await oauth_handler.exchange_code_for_tokens(code, code_verifier, redirect_uri)
         user_info = await oauth_handler.get_user_info(google_tokens["access_token"])
     except Exception as e:
         logger.error(f"OAuth failed: {e}")

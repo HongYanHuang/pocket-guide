@@ -17,20 +17,21 @@ class GoogleOAuthHandler:
         self.google_token_url = "https://oauth2.googleapis.com/token"
         self.google_userinfo_url = "https://www.googleapis.com/oauth2/v3/userinfo"
 
-    def get_authorization_url(self, state: str, code_challenge: str) -> str:
+    def get_authorization_url(self, state: str, code_challenge: str, redirect_uri: str = None) -> str:
         """
         Generate Google OAuth authorization URL with PKCE
 
         Args:
             state: CSRF protection state parameter
             code_challenge: PKCE code challenge
+            redirect_uri: Optional redirect URI (defaults to self.redirect_uri)
 
         Returns:
             Authorization URL to redirect user to
         """
         params = {
             "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
+            "redirect_uri": redirect_uri or self.redirect_uri,
             "response_type": "code",
             "scope": "openid email profile",
             "state": state,
@@ -39,13 +40,14 @@ class GoogleOAuthHandler:
         }
         return f"{self.google_oauth_base}?{urlencode(params)}"
 
-    async def exchange_code_for_tokens(self, code: str, code_verifier: str) -> Dict:
+    async def exchange_code_for_tokens(self, code: str, code_verifier: str, redirect_uri: str = None) -> Dict:
         """
         Exchange authorization code for access tokens
 
         Args:
             code: Authorization code from Google
             code_verifier: PKCE code verifier
+            redirect_uri: Optional redirect URI (defaults to self.redirect_uri)
 
         Returns:
             Token response from Google
@@ -59,7 +61,7 @@ class GoogleOAuthHandler:
             "code": code,
             "code_verifier": code_verifier,
             "grant_type": "authorization_code",
-            "redirect_uri": self.redirect_uri
+            "redirect_uri": redirect_uri or self.redirect_uri
         }
         async with httpx.AsyncClient() as client:
             response = await client.post(self.google_token_url, data=data)

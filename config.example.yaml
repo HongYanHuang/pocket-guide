@@ -4,6 +4,38 @@
 # Content directory (where cities and POIs will be stored)
 content_dir: "./content"
 
+# Authentication (for backstage API server)
+authentication:
+  enabled: true
+  google_oauth:
+    client_id: "${GOOGLE_CLIENT_ID}"
+    client_secret: "${GOOGLE_CLIENT_SECRET}"
+    redirect_uri: "${BACKEND_URL}/auth/google/callback"
+    scopes: [openid, email, profile]
+  jwt:
+    secret_key: "${JWT_SECRET_KEY}"
+    algorithm: "HS256"
+    access_token_expire_minutes: 15
+  session:
+    refresh_token_expire_days: 7
+
+  # Role & Scope Configuration
+  user_roles:
+    # Example: admin@example.com: { role: backstage_admin, scopes: [backstage, read_tours, write_tours] }
+    # Add your authorized users here
+
+  # Default role for unknown users (if allowed)
+  default_role: client_user
+  default_scopes: [client_app, read_tours, user_data]
+
+  # Allow public signup (for client app) or whitelist only (for backstage)
+  allow_public_signup: false  # Set true for client app, false for backstage only
+
+  cors:
+    # For development: use localhost URLs directly (not secrets)
+    # For production: override with environment variables
+    allowed_origins: ["http://localhost:5173", "http://localhost:8000"]
+
 # AI Provider API Keys
 ai_providers:
   openai:

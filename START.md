@@ -141,7 +141,14 @@ If this is your first time running the project:
    cd ..
    ```
 
-4. **Start development**
+4. **(Optional) Create .env file for OAuth testing**
+   ```bash
+   cp .env.example .env
+   # Edit .env and fill in Google OAuth credentials
+   ```
+   **Note**: Not required for basic development. Only needed if you want to test Google OAuth login.
+
+5. **Start development**
    ```bash
    ./start-dev-tmux.sh
    ```

@@ -48,9 +48,15 @@ const status = ref('Completing sign-in...')
 const error = ref('')
 
 onMounted(async () => {
+  console.log('🔵 AuthCallback component mounted')
+  console.log('🔵 Route query params:', route.query)
+
   try {
     // Get code and state from URL params
     const { code, state, error: oauthError } = route.query
+
+    console.log('🔵 Code:', code ? 'EXISTS' : 'MISSING')
+    console.log('🔵 State:', state ? 'EXISTS' : 'MISSING')
 
     if (oauthError) {
       throw new Error(`OAuth error: ${oauthError}`)
@@ -61,13 +67,16 @@ onMounted(async () => {
     }
 
     // Handle OAuth callback
+    console.log('🔵 Calling handleCallback...')
     status.value = 'Verifying credentials...'
     await handleCallback(code, state)
 
+    console.log('🔵 handleCallback completed successfully')
     status.value = 'Success! Redirecting...'
     // Router push is handled in useAuth.handleCallback
   } catch (err) {
-    console.error('OAuth callback error:', err)
+    console.error('🔴 OAuth callback error:', err)
+    console.error('🔴 Error details:', err.message, err.stack)
     error.value = err.message || 'An unexpected error occurred'
     status.value = 'Sign-in failed'
   }

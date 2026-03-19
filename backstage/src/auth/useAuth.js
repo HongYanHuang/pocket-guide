@@ -82,27 +82,40 @@ export function useAuth() {
    * @param {string} state - State parameter
    */
   const handleCallback = async (code, state) => {
+    console.log('🟢 handleCallback called with code:', code ? 'EXISTS' : 'MISSING')
+    console.log('🟢 handleCallback called with state:', state ? 'EXISTS' : 'MISSING')
+
     try {
       // Get stored code verifier
       const codeVerifier = sessionStorage.getItem('pkce_code_verifier')
+      console.log('🟢 Code verifier from storage:', codeVerifier ? 'EXISTS' : 'MISSING')
+
       if (!codeVerifier) {
         throw new Error('Missing PKCE code verifier')
       }
 
       // Exchange code for tokens
+      console.log('🟢 Calling backend /auth/google/callback...')
       const tokens = await authService.exchangeCodeForTokens(code, state, codeVerifier)
+      console.log('🟢 Got tokens from backend:', tokens ? 'YES' : 'NO')
+
       tokenManager.setTokens(tokens.access_token, tokens.refresh_token)
+      console.log('🟢 Tokens stored in storage')
 
       // Clean up
       sessionStorage.removeItem('pkce_code_verifier')
 
       // Get user info
+      console.log('🟢 Calling checkAuth...')
       await checkAuth()
+      console.log('🟢 checkAuth completed')
 
       // Redirect to home
+      console.log('🟢 Redirecting to /')
       router.push('/')
     } catch (error) {
-      console.error('OAuth callback failed:', error)
+      console.error('🔴 OAuth callback failed:', error)
+      console.error('🔴 Error message:', error.message)
       throw error
     }
   }

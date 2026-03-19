@@ -17,9 +17,12 @@ That's it! This starts both backend and frontend in a split tmux terminal.
 │ 📡 Backend (Python 3.11)        │ 🎨 Frontend (Vue + Vite)        │
 │ http://localhost:8000           │ http://localhost:5173           │
 │                                 │                                 │
-│ API server logs...              │ Vite dev server logs...         │
+│ (pocket-guide-3.11)             │ $ npm run dev                   │
+│ INFO: Uvicorn running...        │ VITE ready in 500ms...          │
 └─────────────────────────────────┴─────────────────────────────────┘
 ```
+
+**Wait ~10 seconds** for both servers to fully start.
 
 ---
 
@@ -74,14 +77,22 @@ tmux kill-session -t pocket-guide
 brew install tmux
 ```
 
-### "ModuleNotFoundError: No module named 'jwt'"
+### Backend shows "ModuleNotFoundError"
 
-The script automatically uses the correct virtual environment (`pocket-guide-3.11`). If you still see this error, the venv might be corrupted:
+The script automatically activates `pocket-guide-3.11` virtual environment. If you still see this:
 
 ```bash
 # Reinstall dependencies
 source pocket-guide-3.11/bin/activate
 pip install -r requirements.txt
+```
+
+### Frontend shows "Cannot find package.json"
+
+The script automatically `cd`s into the `backstage` directory. If you still see this, check that `backstage/package.json` exists:
+
+```bash
+ls -la backstage/package.json
 ```
 
 ### Port already in use
@@ -93,6 +104,18 @@ lsof -ti:8000,5173 | xargs kill -9
 # Then restart
 ./start-dev-tmux.sh
 ```
+
+### Servers don't start / panes are empty
+
+Sometimes tmux needs a moment. Try:
+
+1. Wait 10-15 seconds after running the script
+2. Check each pane with `Ctrl+b` then `→` or `←`
+3. If still not working:
+   ```bash
+   tmux kill-session -t pocket-guide
+   ./start-dev-tmux.sh
+   ```
 
 ---
 
@@ -115,11 +138,11 @@ If this is your first time running the project:
    ```bash
    cd backstage
    npm install
+   cd ..
    ```
 
 4. **Start development**
    ```bash
-   cd ..
    ./start-dev-tmux.sh
    ```
 
@@ -131,3 +154,15 @@ If this is your first time running the project:
 - The frontend uses **Vue 3 + Vite**
 - Both servers auto-reload on file changes
 - Authentication is **optional** - backstage works without login
+- It takes ~10 seconds for both servers to be fully ready
+
+---
+
+## Common Issues Fixed
+
+✅ **Backend**: Uses absolute path for venv activation
+✅ **Frontend**: Uses absolute path `$PWD/backstage`
+✅ **Commands**: Uses `.` instead of `source` (works in bash and zsh)
+✅ **Timing**: Added sleep delays to let commands complete
+
+If you still have issues, check that you're running from the project root directory!

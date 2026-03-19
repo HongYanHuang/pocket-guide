@@ -1,5 +1,6 @@
 <template>
-  <div class="callback-container">
+  <div class="callback-container" style="background: red;">
+    <h1 style="color: white; font-size: 48px;">CALLBACK PAGE LOADED!</h1>
     <div class="callback-card">
       <el-icon :size="64" class="loading-icon">
         <Loading />
@@ -35,10 +36,14 @@
 </template>
 
 <script setup>
+console.log('🟣 AuthCallback.vue script LOADED')
+
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../auth/useAuth'
 import { Loading } from '@element-plus/icons-vue'
+
+console.log('🟣 AuthCallback.vue imports completed')
 
 const route = useRoute()
 const router = useRouter()
@@ -46,6 +51,8 @@ const { handleCallback } = useAuth()
 
 const status = ref('Completing sign-in...')
 const error = ref('')
+
+console.log('🟣 AuthCallback.vue setup running, route.path:', route.path)
 
 onMounted(async () => {
   console.log('🔵 AuthCallback component mounted')

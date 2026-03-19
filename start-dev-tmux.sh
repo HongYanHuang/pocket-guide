@@ -22,21 +22,20 @@ fi
 
 echo "🚀 Starting Pocket Guide in tmux..."
 
-# Create new session with backend
-tmux new-session -d -s $SESSION_NAME -n "servers"
+# Create new session with backend (set working directory to project root)
+tmux new-session -d -s $SESSION_NAME -n "servers" -c "$PWD"
 
-# Run backend in left pane
-tmux send-keys -t $SESSION_NAME:0.0 "cd $PWD" C-m
+# Run backend in left pane (already in project root)
+sleep 1
 tmux send-keys -t $SESSION_NAME:0.0 ". pocket-guide-3.11/bin/activate" C-m
 sleep 1
 tmux send-keys -t $SESSION_NAME:0.0 "echo '📡 Starting Backend (Python 3.11)...'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "python src/api_server.py" C-m
 
-# Split window vertically
-tmux split-window -h -t $SESSION_NAME:0
+# Split window vertically and set working directory to backstage
+tmux split-window -h -c "$PWD/backstage" -t $SESSION_NAME:0
 
-# Run frontend in right pane
-tmux send-keys -t $SESSION_NAME:0.1 "cd $PWD/backstage" C-m
+# Run frontend in right pane (already in backstage directory)
 sleep 1
 tmux send-keys -t $SESSION_NAME:0.1 "echo '🎨 Starting Frontend...'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "npm run dev" C-m

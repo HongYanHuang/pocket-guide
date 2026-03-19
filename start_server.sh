@@ -1,7 +1,20 @@
 #!/bin/bash
 # Startup script for Pocket Guide API Server
 
+# Get the directory where this script is located (project root)
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+echo "📁 Project directory: $SCRIPT_DIR"
+echo ""
+
 # Activate the correct virtual environment
+if [ ! -d "pocket-guide-3.11/bin" ]; then
+    echo "❌ Error: Virtual environment 'pocket-guide-3.11' not found!"
+    echo "   Please run this script from the project root directory."
+    exit 1
+fi
+
 source pocket-guide-3.11/bin/activate
 
 # Check if port 8000 is in use

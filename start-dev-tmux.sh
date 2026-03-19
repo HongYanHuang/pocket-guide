@@ -36,7 +36,8 @@ tmux send-keys -t $SESSION_NAME:0.0 "python src/api_server.py" C-m
 tmux split-window -h -t $SESSION_NAME:0
 
 # Run frontend in right pane
-tmux send-keys -t $SESSION_NAME:0.1 "cd backstage" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "cd $PWD/backstage" C-m
+sleep 1
 tmux send-keys -t $SESSION_NAME:0.1 "echo '🎨 Starting Frontend...'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "npm run dev" C-m
 

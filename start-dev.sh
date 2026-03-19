@@ -7,13 +7,14 @@ echo "🚀 Starting Pocket Guide Development Servers..."
 echo ""
 
 # Check if venv exists
-if [ ! -d "venv" ]; then
-    echo "❌ Error: venv not found. Please run: python -m venv venv"
+if [ ! -d "pocket-guide-3.11" ]; then
+    echo "❌ Error: pocket-guide-3.11 venv not found"
+    echo "   Please create it or use the old venv"
     exit 1
 fi
 
 # Activate virtual environment
-source venv/bin/activate
+source pocket-guide-3.11/bin/activate
 
 # Start backend in background
 echo "📡 Starting FastAPI backend on http://localhost:8000..."

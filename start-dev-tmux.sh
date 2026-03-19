@@ -26,8 +26,8 @@ echo "🚀 Starting Pocket Guide in tmux..."
 tmux new-session -d -s $SESSION_NAME -n "servers"
 
 # Run backend in left pane
-tmux send-keys -t $SESSION_NAME:0.0 "source venv/bin/activate" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "echo '📡 Starting Backend...'" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "source pocket-guide-3.11/bin/activate" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "echo '📡 Starting Backend (Python 3.11)...'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "python src/api_server.py" C-m
 
 # Split window vertically

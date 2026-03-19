@@ -5,7 +5,7 @@ This API provides endpoints for viewing and editing POI metadata,
 including coordinates, operation hours, and distance matrices.
 """
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -38,6 +38,7 @@ from api_auth import router as auth_router
 from auth.jwt_handler import JWTHandler
 from auth.session_manager import SessionManager
 from auth.oauth_handler import GoogleOAuthHandler
+from auth.dependencies import get_current_user, require_backstage_admin
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -351,6 +352,41 @@ async def health_check():
     return {
         "status": "healthy",
         "agent_initialized": metadata_agent is not None
+    }
+
+
+# ==== Admin Endpoints ====
+
+@app.get("/admin/sessions")
+async def list_active_sessions(current_user: dict = Depends(require_backstage_admin)):
+    """
+    List all active user sessions (admin only).
+
+    Returns information about logged-in users including email, role, scopes, and last access time.
+    """
+    if session_manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication not enabled"
+        )
+
+    sessions = []
+    for refresh_token, session_data in session_manager.sessions.items():
+        user = session_data.get("user", {})
+        sessions.append({
+            "email": user.get("email"),
+            "name": user.get("name"),
+            "role": user.get("role"),
+            "scopes": user.get("scopes", []),
+            "client_type": user.get("client_type"),
+            "created_at": session_data.get("created_at").isoformat() if session_data.get("created_at") else None,
+            "expires_at": session_data.get("expires_at").isoformat() if session_data.get("expires_at") else None,
+            "last_accessed": session_data.get("last_accessed").isoformat() if session_data.get("last_accessed") else None
+        })
+
+    return {
+        "total_sessions": len(sessions),
+        "sessions": sessions
     }
 
 

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuth } from '../auth/useAuth'
 import Dashboard from '../views/Dashboard.vue'
 import POIDetail from '../views/POIDetail.vue'
 import TranscriptView from '../views/TranscriptView.vue'
@@ -7,53 +8,109 @@ import ToursView from '../views/ToursView.vue'
 import TourDetail from '../views/TourDetail.vue'
 import TourGeneratorView from '../views/TourGeneratorView.vue'
 import ComboTicketsView from '../views/ComboTicketsView.vue'
+import Login from '../views/Login.vue'
+import AuthCallback from '../views/AuthCallback.vue'
 
 const routes = [
+  // Auth routes (no authentication required)
+  {
+    path: '/login',
+    name: 'Login',
+    component: Login,
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/auth/callback',
+    name: 'AuthCallback',
+    component: AuthCallback,
+    meta: { requiresAuth: false }
+  },
+
+  // Protected routes (authentication required)
   {
     path: '/',
     name: 'Dashboard',
-    component: Dashboard
+    component: Dashboard,
+    meta: { requiresAuth: true }
   },
   {
     path: '/poi/:city/:poiId',
     name: 'POIDetail',
-    component: POIDetail
+    component: POIDetail,
+    meta: { requiresAuth: true }
   },
   {
     path: '/poi/:city/:poiId/transcript',
     name: 'TranscriptView',
-    component: TranscriptView
+    component: TranscriptView,
+    meta: { requiresAuth: true }
   },
   {
     path: '/poi/:city/:poiId/research',
     name: 'ResearchView',
-    component: ResearchView
+    component: ResearchView,
+    meta: { requiresAuth: true }
   },
   {
     path: '/tours',
     name: 'ToursView',
-    component: ToursView
+    component: ToursView,
+    meta: { requiresAuth: true }
   },
   {
     path: '/tours/:tourId',
     name: 'TourDetail',
-    component: TourDetail
+    component: TourDetail,
+    meta: { requiresAuth: true }
   },
   {
     path: '/tour/generate',
     name: 'TourGenerator',
-    component: TourGeneratorView
+    component: TourGeneratorView,
+    meta: { requiresAuth: true }
   },
   {
     path: '/combo-tickets',
     name: 'ComboTickets',
-    component: ComboTicketsView
+    component: ComboTicketsView,
+    meta: { requiresAuth: true }
   }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// Navigation guard for authentication
+router.beforeEach(async (to, from, next) => {
+  const { isAuthenticated, checkAuth, loading } = useAuth()
+
+  // Public routes
+  if (!to.meta.requiresAuth) {
+    // If already authenticated and trying to access login, redirect to home
+    if (to.name === 'Login' && isAuthenticated.value) {
+      next('/')
+    } else {
+      next()
+    }
+    return
+  }
+
+  // Protected routes - check authentication
+  if (!isAuthenticated.value && !loading.value) {
+    await checkAuth()
+  }
+
+  if (isAuthenticated.value) {
+    next()
+  } else {
+    // Redirect to login with return URL
+    next({
+      name: 'Login',
+      query: { redirect: to.fullPath }
+    })
+  }
 })
 
 export default router

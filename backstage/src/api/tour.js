@@ -1,23 +1,4 @@
-import axios from 'axios'
-
-// Create axios instance with base configuration
-const apiClient = axios.create({
-  baseURL: '/api',
-  timeout: 300000, // 5 minutes for tour generation
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
-
-// Response interceptor
-apiClient.interceptors.response.use(
-  response => response.data,
-  error => {
-    const message = error.response?.data?.detail || error.message || 'An error occurred'
-    console.error('Tour API Error:', message)
-    return Promise.reject(new Error(message))
-  }
-)
+import apiClient from './client'
 
 /**
  * Tour Generation API Methods

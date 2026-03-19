@@ -1,23 +1,6 @@
-import axios from 'axios'
+import apiClient from './client'
 
-// Create axios instance with base configuration
-const apiClient = axios.create({
-  baseURL: '/api/combo-tickets',
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
-
-// Response interceptor
-apiClient.interceptors.response.use(
-  response => response.data,
-  error => {
-    const message = error.response?.data?.detail || error.message || 'An error occurred'
-    console.error('Combo Tickets API Error:', message)
-    return Promise.reject(new Error(message))
-  }
-)
+// Note: This module uses /combo-tickets prefix for all routes
 
 /**
  * Combo Ticket API Methods

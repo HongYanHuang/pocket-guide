@@ -108,6 +108,7 @@ class ClientTourGenerationResponse(BaseModel):
     title_display: Optional[str] = Field(None, description="Human-readable tour title")
     itinerary: List[Dict[str, Any]] = Field(..., description="Day-by-day itinerary")
     optimization_scores: Dict[str, float] = Field(..., description="Optimization metrics")
+    input_parameters: Dict[str, Any] = Field(..., description="Input parameters used to generate this tour")
 
     # Creator information
     visibility: str = Field(default="private", description="Tour visibility (private for client-created tours)")
@@ -380,6 +381,7 @@ async def generate_client_tour(
             title_display=title_display,
             itinerary=itinerary,
             optimization_scores=optimization_scores,
+            input_parameters=input_parameters,
             visibility="private",
             creator_email=current_user['email']
         )

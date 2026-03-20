@@ -2,8 +2,39 @@
 
 This guide explains how to integrate Google OAuth 2.0 authentication into your client-side application (web or mobile) using the Pocket Guide API.
 
+## Quick Start
+
+**For developers building client apps (web/mobile):**
+
+1. **Configure backend CORS** - Add your app origin to `config.yaml`:
+   ```yaml
+   cors:
+     allowed_origins:
+       - "http://localhost:65263"  # Your client app
+   ```
+
+2. **Set up Google OAuth** - Add redirect URI: `http://localhost:65263/auth/callback`
+
+3. **Use client-specific endpoints:**
+   - Login: `GET /auth/client/google/login`
+   - Callback: `GET /auth/client/google/callback`
+
+4. **Enable public signup** in `config.yaml`:
+   ```yaml
+   allow_public_signup: true
+   ```
+
+5. **Start backend:** `uvicorn src.api_server:app --reload`
+
+6. **Implement OAuth flow** (see [Step-by-Step Implementation](#step-by-step-implementation))
+
+**You'll get:** `client_user` role with scopes `[client_app, read_tours, user_data]`
+
+---
+
 ## Table of Contents
 - [Overview](#overview)
+- [Prerequisites & Setup](#prerequisites--setup)
 - [Authentication Flow](#authentication-flow)
 - [API Endpoints](#api-endpoints)
 - [Step-by-Step Implementation](#step-by-step-implementation)
@@ -33,56 +64,162 @@ Development: http://localhost:8000
 
 ---
 
+## Prerequisites & Setup
+
+### 1. Google OAuth Configuration
+
+**Create OAuth 2.0 Client ID:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create OAuth 2.0 Client ID (Web Application)
+3. Configure authorized origins and redirect URIs:
+
+**Authorized JavaScript Origins:**
+```
+http://localhost:8000          (Backend API)
+http://localhost:5173          (Backstage admin - optional)
+http://localhost:65263         (Your client app)
+https://yourapp.com            (Production client app)
+```
+
+**Authorized Redirect URIs:**
+```
+http://localhost:8000/auth/google/callback    (Backend callback)
+http://localhost:65263/auth/callback          (Client app callback)
+https://yourapp.com/auth/callback             (Production callback)
+```
+
+4. Save the `Client ID` and `Client Secret`
+
+---
+
+### 2. Backend Configuration
+
+**Enable CORS for Your Client App:**
+
+The backend must allow cross-origin requests from your client app domain.
+
+**Update `config.yaml`:**
+```yaml
+authentication:
+  # Enable public signup for client app
+  allow_public_signup: true
+
+  # CORS Configuration
+  cors:
+    allowed_origins:
+      - "http://localhost:8000"      # Backend API
+      - "http://localhost:5173"      # Backstage (optional)
+      - "http://localhost:65263"     # Your client app (REQUIRED)
+      # For production:
+      # - "https://yourapp.com"
+```
+
+**Or using environment variables:**
+
+Create `.env`:
+```bash
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+JWT_SECRET_KEY=your-32-char-secret
+CORS_ORIGINS=http://localhost:8000,http://localhost:65263
+```
+
+**⚠️ IMPORTANT:** Without CORS configuration, your client app will get errors like:
+```
+Access to fetch at 'http://localhost:8000/auth/client/google/login'
+from origin 'http://localhost:65263' has been blocked by CORS policy
+```
+
+---
+
+### 3. Verify CORS is Working
+
+Test CORS from your client app:
+
+```javascript
+// Run this in your client app console
+fetch('http://localhost:8000/auth/me', {
+  headers: { 'Authorization': 'Bearer test' }
+})
+.then(r => console.log('CORS OK'))
+.catch(e => console.error('CORS Error:', e))
+```
+
+**Expected:**
+- ✅ `401 Unauthorized` (expected - no valid token)
+- ❌ `CORS Error` → Backend CORS not configured for your origin
+
+---
+
+### 4. Start Backend with CORS Enabled
+
+```bash
+# Make sure config.yaml includes your client app origin
+uvicorn src.api_server:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Verify logs show CORS configuration:**
+```
+INFO:     Configuration loaded successfully
+INFO:     CORS allowed origins: ['http://localhost:8000', 'http://localhost:65263']
+INFO:     Application startup complete.
+```
+
+---
+
 ## Authentication Flow
 
 ```
-┌─────────────┐
-│ Your App    │
-│ (Client)    │
-└──────┬──────┘
-       │
-       │ 1. Generate PKCE challenge
-       │ 2. GET /auth/google/login
-       │
-       v
-┌─────────────────┐
-│ Backend API     │
-└────────┬────────┘
-         │
-         │ 3. Returns Google OAuth URL
-         │
-         v
-┌─────────────────┐
-│ Google OAuth    │
-│ (User consents) │
-└────────┬────────┘
-         │
-         │ 4. Redirects to your callback URL
-         │    with authorization code
-         │
-         v
-┌─────────────┐
-│ Your App    │
-│ (Callback)  │
-└──────┬──────┘
-       │
-       │ 5. GET /auth/google/callback
-       │    with code + PKCE verifier
-       │
-       v
-┌─────────────────┐
-│ Backend API     │
-│ Returns tokens  │
-└─────────────────┘
-       │
-       │ access_token (JWT, 15 min)
-       │ refresh_token (UUID, 7 days)
-       │
-       v
-┌─────────────┐
-│ Your App    │
-│ (Authenticated)
-└─────────────┘
+┌─────────────────────────┐
+│ Your Client App         │
+│ (localhost:65263)       │
+└──────────┬──────────────┘
+           │
+           │ 1. Generate PKCE challenge
+           │ 2. GET /auth/client/google/login
+           │
+           v
+┌─────────────────────────┐
+│ Backend API             │
+│ (localhost:8000)        │
+└──────────┬──────────────┘
+           │
+           │ 3. Returns Google OAuth URL
+           │
+           v
+┌─────────────────────────┐
+│ Google OAuth            │
+│ (User consents)         │
+└──────────┬──────────────┘
+           │
+           │ 4. Redirects to your callback URL
+           │    with authorization code
+           │
+           v
+┌─────────────────────────┐
+│ Your Client App         │
+│ /auth/callback          │
+└──────────┬──────────────┘
+           │
+           │ 5. GET /auth/client/google/callback
+           │    with code + PKCE verifier
+           │
+           v
+┌─────────────────────────┐
+│ Backend API             │
+│ Returns tokens          │
+└──────────┬──────────────┘
+           │
+           │ access_token (JWT, 15 min)
+           │ refresh_token (UUID, 7 days)
+           │ role: client_user
+           │ scopes: [client_app, read_tours, user_data]
+           │
+           v
+┌─────────────────────────┐
+│ Your Client App         │
+│ (Authenticated)         │
+└─────────────────────────┘
 ```
 
 ---
@@ -129,7 +266,7 @@ curl "http://localhost:8000/auth/client/google/login?redirect_uri=http://localho
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `redirect_uri` | string | Yes | Your app's callback URL (must match Google Console) |
+| `redirect_uri` | string | Yes | Backstage callback URL (must match Google Console) |
 | `code_challenge` | string | Yes | PKCE code challenge (Base64-URL encoded SHA-256 hash) |
 
 **Response:**
@@ -142,7 +279,7 @@ curl "http://localhost:8000/auth/client/google/login?redirect_uri=http://localho
 
 **Example:**
 ```bash
-curl "http://localhost:8000/auth/google/login?redirect_uri=http://localhost:65263/auth/callback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+curl "http://localhost:8000/auth/backstage/google/login?redirect_uri=http://localhost:5173/auth/callback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 ```
 
 ---
@@ -692,7 +829,37 @@ Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID
 - **Always** use `sessionStorage` for access tokens
 - Use `localStorage` only for refresh tokens (if you need persistence)
 
-### 4. HTTPS Only (Production)
+### 4. Configure CORS Properly
+
+**CRITICAL:** Backend must allow your client app origin.
+
+**Development:**
+```yaml
+# config.yaml
+authentication:
+  cors:
+    allowed_origins:
+      - "http://localhost:65263"  # Your client app
+```
+
+**Production:**
+```yaml
+authentication:
+  cors:
+    allowed_origins:
+      - "https://yourapp.com"      # Production domain
+      - "https://www.yourapp.com"  # www subdomain
+```
+
+**Test CORS is working:**
+```javascript
+// Run from your client app
+fetch('http://localhost:8000/auth/me')
+  .then(r => console.log('✅ CORS configured correctly'))
+  .catch(e => console.error('❌ CORS error:', e))
+```
+
+### 5. HTTPS Only (Production)
 In production, **always** use HTTPS:
 ```javascript
 const API_BASE_URL = process.env.NODE_ENV === 'production'
@@ -829,6 +996,185 @@ export function AuthProvider({ children }) {
 
 export const useAuth = () => useContext(AuthContext)
 ```
+
+---
+
+## Troubleshooting
+
+### CORS Errors
+
+**Symptom:**
+```
+Access to fetch at 'http://localhost:8000/auth/client/google/login'
+from origin 'http://localhost:65263' has been blocked by CORS policy:
+No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+
+**Solution:**
+
+1. **Check backend config.yaml:**
+   ```yaml
+   authentication:
+     cors:
+       allowed_origins:
+         - "http://localhost:65263"  # Add your client app origin
+   ```
+
+2. **Restart backend:**
+   ```bash
+   uvicorn src.api_server:app --reload
+   ```
+
+3. **Verify CORS in logs:**
+   ```
+   INFO: CORS allowed origins: ['http://localhost:8000', 'http://localhost:65263']
+   ```
+
+4. **Test CORS:**
+   ```javascript
+   // Run in browser console from your client app
+   fetch('http://localhost:8000/auth/me')
+     .then(r => console.log('CORS OK:', r.status))
+     .catch(e => console.error('CORS Error:', e))
+   ```
+
+**Common mistakes:**
+- ❌ Forgot to add client origin to `allowed_origins`
+- ❌ Wrong port number in origin (e.g., `65263` vs `5173`)
+- ❌ Missing protocol (must include `http://`)
+- ❌ Didn't restart backend after config change
+
+---
+
+### 403 Forbidden on Client App Login
+
+**Symptom:**
+```json
+{
+  "detail": "Client app registration is currently disabled."
+}
+```
+
+**Solution:**
+
+Enable public signup in `config.yaml`:
+```yaml
+authentication:
+  allow_public_signup: true  # ← Set to true
+```
+
+Restart backend and try again.
+
+---
+
+### Getting backstage_admin Instead of client_user
+
+**Symptom:**
+- Email is whitelisted in backend config
+- Logging in from client app but getting admin role
+
+**Solution:**
+
+Use **client-specific endpoint**, not generic endpoint:
+
+**Wrong:**
+```javascript
+fetch('/auth/google/login?...')  // Generic endpoint
+// Backend auto-detects from redirect_uri (can be spoofed)
+```
+
+**Correct:**
+```javascript
+fetch('/auth/client/google/login?...')  // Client-specific endpoint
+// Backend enforces client_user role
+```
+
+---
+
+### Token Expired / Invalid Token
+
+**Symptom:**
+```json
+{
+  "detail": "Token expired"
+}
+```
+
+**Solution:**
+
+1. **Check if access token is old:**
+   - Access tokens expire after 15 minutes
+   - Implement automatic refresh (see [Token Management](#token-management))
+
+2. **Try refreshing token:**
+   ```javascript
+   const refreshToken = localStorage.getItem('refresh_token')
+   const response = await fetch('/auth/refresh', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ refresh_token: refreshToken })
+   })
+   const { access_token } = await response.json()
+   sessionStorage.setItem('access_token', access_token)
+   ```
+
+3. **If refresh fails → re-login:**
+   ```javascript
+   // Clear tokens and redirect to login
+   sessionStorage.removeItem('access_token')
+   localStorage.removeItem('refresh_token')
+   window.location.href = '/login'
+   ```
+
+---
+
+### Google OAuth Error: redirect_uri_mismatch
+
+**Symptom:**
+```
+Error 400: redirect_uri_mismatch
+```
+
+**Solution:**
+
+1. **Go to Google Cloud Console:**
+   - APIs & Services → Credentials → OAuth 2.0 Client ID
+
+2. **Add your callback URL to "Authorized redirect URIs":**
+   ```
+   http://localhost:65263/auth/callback
+   ```
+
+3. **Wait 1-2 minutes** for Google to propagate changes
+
+4. **Try login again**
+
+---
+
+### Network Error / Connection Refused
+
+**Symptom:**
+```
+TypeError: Failed to fetch
+net::ERR_CONNECTION_REFUSED
+```
+
+**Solution:**
+
+1. **Check if backend is running:**
+   ```bash
+   curl http://localhost:8000/docs
+   # Should return Swagger UI
+   ```
+
+2. **Start backend if not running:**
+   ```bash
+   uvicorn src.api_server:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+3. **Check firewall:**
+   - Make sure port 8000 is not blocked
+   - Check if localhost is accessible
 
 ---
 

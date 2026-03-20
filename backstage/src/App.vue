@@ -58,9 +58,7 @@ const { isAuthenticated, checkAuth } = useAuth()
 
 // Check if current route is an auth route (login, callback)
 const isAuthRoute = computed(() => {
-  const result = route.path === '/login' || route.path.startsWith('/auth/')
-  console.log('🟠 App.vue isAuthRoute computed:', route.path, '→', result)
-  return result
+  return route.path === '/login' || route.path.startsWith('/auth/')
 })
 
 // NOTE: We DON'T call checkAuth() here because:

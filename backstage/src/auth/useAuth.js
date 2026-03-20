@@ -23,18 +23,14 @@ export function useAuth() {
    * Tries to refresh access token if expired
    */
   const checkAuth = async () => {
-    console.log('🟡 checkAuth() called')
     loading.value = true
     try {
       const accessToken = tokenManager.getAccessToken()
-      console.log('🟡 Access token:', accessToken ? 'EXISTS' : 'MISSING')
 
       if (!accessToken) {
         // No access token, try refreshing
-        console.log('🟡 No access token, trying to refresh...')
         const refreshed = await refreshAccessToken()
         if (!refreshed) {
-          console.log('🟡 Refresh failed, calling logout()')
           logout()
           return false
         }
@@ -42,16 +38,13 @@ export function useAuth() {
 
       // Get user info
       const currentAccessToken = tokenManager.getAccessToken()
-      console.log('🟡 Getting user info...')
       const userInfo = await authService.getCurrentUser(currentAccessToken)
       user.value = userInfo
       isAuthenticated.value = true
       startTokenRefresh()
-      console.log('🟡 checkAuth SUCCESS, user:', userInfo.email)
       return true
     } catch (error) {
-      console.error('🔴 Auth check failed:', error)
-      console.log('🔴 Calling logout() due to error')
+      console.error('Auth check failed:', error)
       logout()
       return false
     } finally {
@@ -89,40 +82,27 @@ export function useAuth() {
    * @param {string} state - State parameter
    */
   const handleCallback = async (code, state) => {
-    console.log('🟢 handleCallback called with code:', code ? 'EXISTS' : 'MISSING')
-    console.log('🟢 handleCallback called with state:', state ? 'EXISTS' : 'MISSING')
-
     try {
       // Get stored code verifier
       const codeVerifier = sessionStorage.getItem('pkce_code_verifier')
-      console.log('🟢 Code verifier from storage:', codeVerifier ? 'EXISTS' : 'MISSING')
-
       if (!codeVerifier) {
         throw new Error('Missing PKCE code verifier')
       }
 
       // Exchange code for tokens
-      console.log('🟢 Calling backend /auth/google/callback...')
       const tokens = await authService.exchangeCodeForTokens(code, state, codeVerifier)
-      console.log('🟢 Got tokens from backend:', tokens ? 'YES' : 'NO')
-
       tokenManager.setTokens(tokens.access_token, tokens.refresh_token)
-      console.log('🟢 Tokens stored in storage')
 
       // Clean up
       sessionStorage.removeItem('pkce_code_verifier')
 
       // Get user info
-      console.log('🟢 Calling checkAuth...')
       await checkAuth()
-      console.log('🟢 checkAuth completed')
 
       // Redirect to home
-      console.log('🟢 Redirecting to /')
       router.push('/')
     } catch (error) {
-      console.error('🔴 OAuth callback failed:', error)
-      console.error('🔴 Error message:', error.message)
+      console.error('OAuth callback failed:', error)
       throw error
     }
   }
@@ -131,8 +111,6 @@ export function useAuth() {
    * Logout - clear tokens and redirect to login
    */
   const logout = async () => {
-    console.log('🔴 logout() CALLED')
-    console.trace('🔴 logout() call stack')
     try {
       const refreshToken = tokenManager.getRefreshToken()
       const accessToken = tokenManager.getAccessToken()
@@ -147,7 +125,6 @@ export function useAuth() {
       isAuthenticated.value = false
       user.value = null
       stopTokenRefresh()
-      console.log('🔴 logout() redirecting to /login')
       router.push('/login')
     }
   }

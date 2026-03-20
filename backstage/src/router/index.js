@@ -84,27 +84,39 @@ const router = createRouter({
 
 // Navigation guard for authentication
 router.beforeEach(async (to, from, next) => {
+  console.log('🔷 Router guard triggered')
+  console.log('🔷 Navigating to:', to.path, 'name:', to.name)
+  console.log('🔷 requiresAuth:', to.meta.requiresAuth)
+
   const { isAuthenticated, checkAuth, loading } = useAuth()
+  console.log('🔷 isAuthenticated:', isAuthenticated.value)
 
   // Public routes
   if (!to.meta.requiresAuth) {
+    console.log('🔷 Public route, no auth required')
     // If already authenticated and trying to access login, redirect to home
     if (to.name === 'Login' && isAuthenticated.value) {
+      console.log('🔷 Already authenticated, redirecting to /')
       next('/')
     } else {
+      console.log('🔷 Allowing navigation to:', to.path)
       next()
     }
     return
   }
 
   // Protected routes - check authentication
+  console.log('🔷 Protected route, checking auth...')
   if (!isAuthenticated.value && !loading.value) {
+    console.log('🔷 Calling checkAuth...')
     await checkAuth()
   }
 
   if (isAuthenticated.value) {
+    console.log('🔷 Authenticated, allowing access')
     next()
   } else {
+    console.log('🔷 Not authenticated, redirecting to login')
     // Redirect to login with return URL
     next({
       name: 'Login',

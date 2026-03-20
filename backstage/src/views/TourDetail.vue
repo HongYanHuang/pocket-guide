@@ -703,6 +703,7 @@ import { useRoute } from 'vue-router'
 import { Loading, ArrowDown, LocationInformation, Location, Guide, Right, Select, CircleCheck } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
+import apiClient from '../api/client'
 import TourMap from '../components/TourMap.vue'
 import tourApi from '../api/tour.js'
 
@@ -808,8 +809,9 @@ const loadTour = async () => {
     error.value = null
 
     const tourId = route.params.tourId
-    const response = await axios.get(`http://localhost:8000/tours/${tourId}`)
-    tour.value = response.data
+    // Use authenticated API client to include auth token
+    const response = await apiClient.get(`/tours/${tourId}`)
+    tour.value = response
 
   } catch (err) {
     console.error('Error loading tour:', err)

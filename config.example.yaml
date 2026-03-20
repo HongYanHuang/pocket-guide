@@ -34,7 +34,10 @@ authentication:
   cors:
     # For development: use localhost URLs directly (not secrets)
     # For production: override with environment variables
-    allowed_origins: ["http://localhost:5173", "http://localhost:8000"]
+    allowed_origins:
+      - "http://localhost:5173"     # Backstage admin panel
+      - "http://localhost:8000"     # Backend API
+      - "http://localhost:65263"    # Client web app (Chrome dev)
 
 # AI Provider API Keys
 ai_providers:

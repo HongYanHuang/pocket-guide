@@ -109,7 +109,7 @@ Development: http://localhost:8000
 
 **Example:**
 ```bash
-curl "http://localhost:8000/auth/google/login?redirect_uri=http://localhost:3000/auth/callback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+curl "http://localhost:8000/auth/google/login?redirect_uri=http://localhost:65263/auth/callback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 ```
 
 ---
@@ -589,6 +589,16 @@ Ensure your callback URL is registered in Google Cloud Console:
 Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID
 → Authorized redirect URIs
 ```
+
+**Required Redirect URIs for Development:**
+- Backend callback: `http://localhost:8000/auth/google/callback`
+- Backstage admin: `http://localhost:5173/auth/callback`
+- Client web app: `http://localhost:65263/auth/callback` (or your dev server port)
+
+**Required Origins:**
+- `http://localhost:8000`
+- `http://localhost:5173`
+- `http://localhost:65263`
 
 ### 3. Token Storage
 - **Never** store tokens in cookies without `HttpOnly` flag

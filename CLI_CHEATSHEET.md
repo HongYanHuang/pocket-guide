@@ -7,8 +7,14 @@
 1. **Create OAuth Credentials**:
    - Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
    - Create OAuth 2.0 Client ID (Web Application)
-   - Add authorized origins: `http://localhost:5173`, `http://localhost:8000`
-   - Add redirect URI: `http://localhost:8000/auth/google/callback`
+   - Add authorized origins:
+     - `http://localhost:5173` (Backstage admin panel)
+     - `http://localhost:8000` (Backend API)
+     - `http://localhost:65263` (Client web app)
+   - Add redirect URIs:
+     - `http://localhost:8000/auth/google/callback` (Backend)
+     - `http://localhost:5173/auth/callback` (Backstage)
+     - `http://localhost:65263/auth/callback` (Client app)
    - Save CLIENT_ID and CLIENT_SECRET
 
 2. **Environment Setup**:

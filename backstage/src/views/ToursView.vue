@@ -134,7 +134,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '../api/client'
 
 const router = useRouter()
 const loading = ref(true)
@@ -164,8 +164,9 @@ const loadTours = async () => {
     loading.value = true
     error.value = null
 
-    const response = await axios.get('http://localhost:8000/tours')
-    tours.value = response.data
+    // Use authenticated API client to include auth token
+    const response = await apiClient.get('/tours')
+    tours.value = response
 
   } catch (err) {
     console.error('Error loading tours:', err)

@@ -8,6 +8,7 @@ import ToursView from '../views/ToursView.vue'
 import TourDetail from '../views/TourDetail.vue'
 import TourGeneratorView from '../views/TourGeneratorView.vue'
 import ComboTicketsView from '../views/ComboTicketsView.vue'
+import UserManagement from '../views/UserManagement.vue'
 import Login from '../views/Login.vue'
 import AuthCallback from '../views/AuthCallback.vue'
 
@@ -73,6 +74,12 @@ const routes = [
     path: '/combo-tickets',
     name: 'ComboTickets',
     component: ComboTicketsView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/users',
+    name: 'UserManagement',
+    component: UserManagement,
     meta: { requiresAuth: true }
   }
 ]

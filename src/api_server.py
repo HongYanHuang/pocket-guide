@@ -2555,6 +2555,52 @@ def reset_visit_status(tour_id: str, language: str = "en"):
         )
 
 
+# ==== Admin Endpoints ====
+
+@app.get("/admin/users")
+async def list_users(current_user: dict = Depends(require_backstage_admin)):
+    """
+    List all active user sessions (admin only)
+
+    Returns information about all users with active sessions,
+    separated by backstage and client app users.
+    """
+    backstage_users = []
+    client_users = []
+
+    for token, session in session_manager.sessions.items():
+        user_data = session["user"]
+        user_info = {
+            "email": user_data["email"],
+            "name": user_data["name"],
+            "picture": user_data.get("picture"),
+            "role": user_data.get("role", "client_user"),
+            "scopes": user_data.get("scopes", []),
+            "client_type": user_data.get("client_type", "backstage"),
+            "last_accessed": session["last_accessed"].isoformat(),
+            "created_at": session["created_at"].isoformat(),
+            "expires_at": session["expires_at"].isoformat()
+        }
+
+        # Separate by client type
+        if "backstage" in user_data.get("scopes", []):
+            backstage_users.append(user_info)
+        else:
+            client_users.append(user_info)
+
+    return {
+        "backstage": {
+            "users": backstage_users,
+            "count": len(backstage_users)
+        },
+        "client": {
+            "users": client_users,
+            "count": len(client_users)
+        },
+        "total": len(backstage_users) + len(client_users)
+    }
+
+
 # ==== Main Entry Point ====
 
 if __name__ == "__main__":

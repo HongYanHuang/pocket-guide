@@ -25,6 +25,9 @@
           <el-menu-item index="/combo-tickets">
             <span>Combo Tickets</span>
           </el-menu-item>
+          <el-menu-item v-if="user?.role === 'backstage_admin'" index="/users">
+            <span>Users</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -54,7 +57,7 @@ import { useAuth } from './auth/useAuth'
 import UserHeader from './components/UserHeader.vue'
 
 const route = useRoute()
-const { isAuthenticated, checkAuth } = useAuth()
+const { isAuthenticated, user } = useAuth()
 
 // Check if current route is an auth route (login, callback)
 const isAuthRoute = computed(() => {

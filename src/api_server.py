@@ -34,6 +34,7 @@ from poi_metadata_agent import POIMetadataAgent
 from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
 from api_combo_tickets import router as combo_tickets_router
 from api_tour_generator import router as tour_generator_router
+from api_client_tours import router as client_tours_router
 from api_auth import router as auth_router
 from auth.jwt_handler import JWTHandler
 from auth.session_manager import SessionManager
@@ -113,6 +114,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(combo_tickets_router)
 app.include_router(tour_generator_router)
+app.include_router(client_tours_router)
 
 
 # ==== Helper Functions ====

@@ -62,12 +62,15 @@
 
 ### Client Authentication API
 
-For developers building client apps, see detailed guide:
-- **Documentation**: `docs/CLIENT_AUTH_API.md`
-- Complete OAuth 2.0 flow with PKCE
-- Token management strategies
-- API usage examples in JavaScript/React
-- Security best practices
+For developers building client apps, see detailed guides:
+- **Client Auth API**: `docs/CLIENT_AUTH_API.md` - OAuth 2.0 flow, token management, code examples
+- **Multi-Role Auth**: `docs/MULTI_ROLE_AUTHENTICATION.md` - Same account, different roles per app
+
+**Key Feature:**
+- Same Google account can be `backstage_admin` in admin panel AND `client_user` in client app
+- Backend detects app type from redirect_uri (port 5173 = backstage, port 65263 = client app)
+- Separate sessions with different permissions for each app
+- Single OAuth Client ID for both apps
 
 ---
 

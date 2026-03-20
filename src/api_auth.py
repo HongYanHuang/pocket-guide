@@ -70,12 +70,27 @@ async def google_callback(code: str, state: str, code_verifier: str):
         logger.error(f"OAuth failed: {e}")
         raise HTTPException(status_code=400, detail=f"OAuth failed: {str(e)}")
 
-    # Determine role and scopes based on email
+    # Determine client type from redirect_uri
     auth_config = config.get("authentication", {})
     user_roles_config = auth_config.get("user_roles", {})
 
-    if user_info["email"] in user_roles_config:
-        # Known user - assign configured role and scopes
+    # Detect which app the user is logging in from
+    client_type = "client_app"  # default
+    if redirect_uri and ("5173" in redirect_uri or "backstage" in redirect_uri.lower()):
+        client_type = "backstage"
+
+    logger.info(f"Login attempt from {client_type} app (redirect_uri: {redirect_uri})")
+
+    # Role assignment based on client type
+    if client_type == "backstage":
+        # Backstage login - only allow whitelisted users
+        if user_info["email"] not in user_roles_config:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized for backstage access. Please contact administrator."
+            )
+
+        # Assign configured backstage role
         user_config = user_roles_config[user_info["email"]]
         user_data = {
             "email": user_info["email"],
@@ -83,19 +98,21 @@ async def google_callback(code: str, state: str, code_verifier: str):
             "picture": user_info.get("picture"),
             "role": user_config["role"],
             "scopes": user_config["scopes"],
-            "client_type": "backstage" if "backstage" in user_config["scopes"] else "client_app"
+            "client_type": "backstage"
         }
+        logger.info(f"Backstage login: {user_info['email']} as {user_config['role']}")
+
     else:
-        # Unknown user - check if public signup allowed
+        # Client app login - assign client_user role to everyone
+        # Even if user is in backstage config, they get client_user for client app
         allow_public = auth_config.get("allow_public_signup", False)
 
         if not allow_public:
             raise HTTPException(
                 status_code=403,
-                detail="Not authorized. Please contact administrator for access."
+                detail="Client app registration is currently disabled. Please contact administrator."
             )
 
-        # Assign default client user role
         user_data = {
             "email": user_info["email"],
             "name": user_info["name"],
@@ -104,6 +121,7 @@ async def google_callback(code: str, state: str, code_verifier: str):
             "scopes": auth_config.get("default_scopes", ["client_app", "read_tours", "user_data"]),
             "client_type": "client_app"
         }
+        logger.info(f"Client app login: {user_info['email']} as client_user")
 
     # Create session and tokens
     refresh_token = session_manager.create_session(user_data)

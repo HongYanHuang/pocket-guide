@@ -28,8 +28,10 @@ authentication:
   default_role: client_user
   default_scopes: [client_app, read_tours, user_data]
 
-  # Allow public signup (for client app) or whitelist only (for backstage)
-  allow_public_signup: false  # Set true for client app, false for backstage only
+  # Allow public signup for client app
+  # true = Anyone can register via client app (gets client_user role)
+  # false = Only whitelisted users (backstage only)
+  allow_public_signup: true  # Set true for client app, false for backstage only
 
   cors:
     # For development: use localhost URLs directly (not secrets)

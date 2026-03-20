@@ -23,14 +23,18 @@ export function useAuth() {
    * Tries to refresh access token if expired
    */
   const checkAuth = async () => {
+    console.log('🟡 checkAuth() called')
     loading.value = true
     try {
       const accessToken = tokenManager.getAccessToken()
+      console.log('🟡 Access token:', accessToken ? 'EXISTS' : 'MISSING')
 
       if (!accessToken) {
         // No access token, try refreshing
+        console.log('🟡 No access token, trying to refresh...')
         const refreshed = await refreshAccessToken()
         if (!refreshed) {
+          console.log('🟡 Refresh failed, calling logout()')
           logout()
           return false
         }
@@ -38,13 +42,16 @@ export function useAuth() {
 
       // Get user info
       const currentAccessToken = tokenManager.getAccessToken()
+      console.log('🟡 Getting user info...')
       const userInfo = await authService.getCurrentUser(currentAccessToken)
       user.value = userInfo
       isAuthenticated.value = true
       startTokenRefresh()
+      console.log('🟡 checkAuth SUCCESS, user:', userInfo.email)
       return true
     } catch (error) {
-      console.error('Auth check failed:', error)
+      console.error('🔴 Auth check failed:', error)
+      console.log('🔴 Calling logout() due to error')
       logout()
       return false
     } finally {
@@ -124,6 +131,8 @@ export function useAuth() {
    * Logout - clear tokens and redirect to login
    */
   const logout = async () => {
+    console.log('🔴 logout() CALLED')
+    console.trace('🔴 logout() call stack')
     try {
       const refreshToken = tokenManager.getRefreshToken()
       const accessToken = tokenManager.getAccessToken()
@@ -138,6 +147,7 @@ export function useAuth() {
       isAuthenticated.value = false
       user.value = null
       stopTokenRefresh()
+      console.log('🔴 logout() redirecting to /login')
       router.push('/login')
     }
   }

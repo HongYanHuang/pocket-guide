@@ -318,9 +318,11 @@ def tts(ctx, city, poi, provider, voice, language):
 
         # Load transcript
         try:
-            transcript = load_transcript(poi_path, format='txt')
+            # Use specified language or default to 'en'
+            lang = language or 'en'
+            transcript = load_transcript(poi_path, format='txt', language=lang)
         except FileNotFoundError:
-            console.print("[red]Error: No transcript found for this POI[/red]")
+            console.print(f"[red]Error: No transcript found for this POI (language: {lang})[/red]")
             console.print("[yellow]Generate content first using 'generate' command[/yellow]")
             sys.exit(1)
 

@@ -77,6 +77,22 @@ def get_config():
     return config
 
 
+def remove_null_values(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Remove keys with None values from a dictionary.
+
+    This ensures OpenAPI-generated clients don't receive null values
+    for optional fields, which can cause deserialization errors.
+
+    Args:
+        data: Dictionary that may contain None values
+
+    Returns:
+        Dictionary with None values removed
+    """
+    return {k: v for k, v in data.items() if v is not None}
+
+
 # ==== Helper Functions (continued) ====
 
 def generate_tour_title(
@@ -281,6 +297,9 @@ async def generate_tour(
                 'language': request.language,
                 'generated_via': 'backstage_ui'
             }
+
+            # Remove null values to prevent OpenAPI deserialization errors
+            input_parameters = remove_null_values(input_parameters)
 
             # Build tour data structure
             # Note: title_display is passed separately to save_tour()

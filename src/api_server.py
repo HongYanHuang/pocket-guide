@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 import yaml
 from datetime import datetime
@@ -127,6 +127,22 @@ def get_agent() -> POIMetadataAgent:
             detail="Metadata agent not initialized. Check configuration."
         )
     return metadata_agent
+
+
+def remove_null_values(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Remove keys with None values from a dictionary.
+
+    This ensures OpenAPI-generated clients don't receive null values
+    for optional fields, which can cause deserialization errors.
+
+    Args:
+        data: Dictionary that may contain None values
+
+    Returns:
+        Dictionary with None values removed
+    """
+    return {k: v for k, v in data.items() if v is not None}
 
 
 def load_poi_from_content(city: str, poi_id: str) -> dict:
@@ -1439,10 +1455,15 @@ def get_tour(tour_id: str, language: str = "en", current_user: Optional[dict] = 
         optimization_scores = OptimizationScores(**opt_scores)
 
         # Build tour detail
+        # Remove null values from input_parameters to prevent OpenAPI deserialization errors
+        input_params = gen_record.get('input_parameters', {})
+        if input_params:
+            input_params = remove_null_values(input_params)
+
         tour_detail = TourDetail(
             metadata=TourMetadata(**metadata),
             itinerary=itinerary,
-            input_parameters=gen_record.get('input_parameters', {}),
+            input_parameters=input_params,
             backup_pois=backup_pois,
             rejected_pois=rejected_pois,
             optimization_scores=optimization_scores,

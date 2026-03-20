@@ -34,12 +34,21 @@ authentication:
   allow_public_signup: true  # Set true for client app, false for backstage only
 
   cors:
-    # For development: use localhost URLs directly (not secrets)
-    # For production: override with environment variables
-    allowed_origins:
-      - "http://localhost:5173"     # Backstage admin panel
-      - "http://localhost:8000"     # Backend API
-      - "http://localhost:65263"    # Client web app (Chrome dev)
+    # For development: Allow all localhost URLs (any port)
+    # For production: Use specific allowed_origins only
+    allow_origin_regex: 'http://localhost:\d+'  # Matches http://localhost:ANY_PORT
+
+    # Alternative: Specific origins (more restrictive)
+    # allowed_origins:
+    #   - "http://localhost:5173"     # Backstage admin panel
+    #   - "http://localhost:8000"     # Backend API
+    #   - "http://localhost:65263"    # Client web app
+
+    # Production example (disable regex, use specific origins):
+    # allow_origin_regex: null
+    # allowed_origins:
+    #   - "https://yourapp.com"
+    #   - "https://www.yourapp.com"
 
 # AI Provider API Keys
 ai_providers:

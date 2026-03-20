@@ -40,7 +40,20 @@
          scopes: [backstage, read_tours, write_tours]
    ```
 
-4. **Start API Server**:
+4. **Configure CORS** (Allow all localhost URLs for development):
+   ```yaml
+   authentication:
+     cors:
+       # Development: Allow any localhost port
+       allow_origin_regex: 'http://localhost:\d+'
+
+       # Production: Use specific origins
+       # allow_origin_regex: null
+       # allowed_origins:
+       #   - "https://yourapp.com"
+   ```
+
+5. **Start API Server**:
    ```bash
    uvicorn src.api_server:app --reload --port 8000
    ```

@@ -96,9 +96,14 @@ else:
 
 # Configure CORS
 cors_origins = auth_config.get('cors', {}).get('allowed_origins', ['*'])
+cors_regex = auth_config.get('cors', {}).get('allow_origin_regex', None)
+
+# Allow all localhost URLs during development (any port)
+# In production, use specific allowed_origins only
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=cors_regex,  # Regex pattern for flexible origin matching
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],

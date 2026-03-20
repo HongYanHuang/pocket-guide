@@ -6,11 +6,10 @@ This guide explains how to integrate Google OAuth 2.0 authentication into your c
 
 **For developers building client apps (web/mobile):**
 
-1. **Configure backend CORS** - Add your app origin to `config.yaml`:
+1. **Configure backend CORS** - Allow all localhost URLs in `config.yaml`:
    ```yaml
    cors:
-     allowed_origins:
-       - "http://localhost:65263"  # Your client app
+     allow_origin_regex: 'http://localhost:\d+'  # All localhost ports
    ```
 
 2. **Set up Google OAuth** - Add redirect URI: `http://localhost:65263/auth/callback`
@@ -104,14 +103,23 @@ authentication:
   # Enable public signup for client app
   allow_public_signup: true
 
-  # CORS Configuration
+  # CORS Configuration - Allow ALL localhost URLs (any port)
   cors:
-    allowed_origins:
-      - "http://localhost:8000"      # Backend API
-      - "http://localhost:5173"      # Backstage (optional)
-      - "http://localhost:65263"     # Your client app (REQUIRED)
-      # For production:
-      # - "https://yourapp.com"
+    # Development: Allow any localhost port
+    allow_origin_regex: 'http://localhost:\d+'
+
+    # This allows:
+    # - http://localhost:8000 (backend)
+    # - http://localhost:5173 (backstage)
+    # - http://localhost:65263 (your client app)
+    # - http://localhost:3000 (React default)
+    # - http://localhost:ANY_PORT
+
+    # Production: Use specific origins
+    # allow_origin_regex: null
+    # allowed_origins:
+    #   - "https://yourapp.com"
+    #   - "https://www.yourapp.com"
 ```
 
 **Or using environment variables:**
@@ -833,27 +841,46 @@ Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID
 
 **CRITICAL:** Backend must allow your client app origin.
 
-**Development:**
+**Development (Recommended - Easy):**
 ```yaml
 # config.yaml
 authentication:
   cors:
-    allowed_origins:
-      - "http://localhost:65263"  # Your client app
+    # Allow ALL localhost URLs (any port) - perfect for development
+    allow_origin_regex: 'http://localhost:\d+'
 ```
 
-**Production:**
+**Why regex for development?**
+- ✅ Works with any port (3000, 5173, 8080, 65263, etc.)
+- ✅ No need to update config when changing ports
+- ✅ Supports multiple dev servers simultaneously
+- ⚠️ Only for development (localhost only)
+
+**Development (Specific Ports):**
 ```yaml
+# Alternative: Lock down to specific ports
 authentication:
   cors:
     allowed_origins:
-      - "https://yourapp.com"      # Production domain
-      - "https://www.yourapp.com"  # www subdomain
+      - "http://localhost:8000"     # Backend
+      - "http://localhost:65263"    # Your specific client app
+```
+
+**Production (CRITICAL - Security):**
+```yaml
+# NEVER use regex in production!
+authentication:
+  cors:
+    allow_origin_regex: null  # Disable regex
+    allowed_origins:
+      - "https://yourapp.com"       # Production domain
+      - "https://www.yourapp.com"   # www subdomain
+      - "https://api.yourapp.com"   # API subdomain if needed
 ```
 
 **Test CORS is working:**
 ```javascript
-// Run from your client app
+// Run from your client app (any localhost port)
 fetch('http://localhost:8000/auth/me')
   .then(r => console.log('✅ CORS configured correctly'))
   .catch(e => console.error('❌ CORS error:', e))
@@ -1016,8 +1043,12 @@ No 'Access-Control-Allow-Origin' header is present on the requested resource.
    ```yaml
    authentication:
      cors:
-       allowed_origins:
-         - "http://localhost:65263"  # Add your client app origin
+       # Development: Allow all localhost ports (easiest)
+       allow_origin_regex: 'http://localhost:\d+'
+
+       # Or specific origins:
+       # allowed_origins:
+       #   - "http://localhost:65263"
    ```
 
 2. **Restart backend:**
@@ -1039,10 +1070,17 @@ No 'Access-Control-Allow-Origin' header is present on the requested resource.
    ```
 
 **Common mistakes:**
-- ❌ Forgot to add client origin to `allowed_origins`
+- ❌ Forgot to set `allow_origin_regex` or `allowed_origins`
 - ❌ Wrong port number in origin (e.g., `65263` vs `5173`)
 - ❌ Missing protocol (must include `http://`)
 - ❌ Didn't restart backend after config change
+- ❌ Typo in regex pattern (use `'http://localhost:\d+'` for all localhost)
+
+**Recommended for development:**
+```yaml
+# Easiest - allows any localhost port
+allow_origin_regex: 'http://localhost:\d+'
+```
 
 ---
 

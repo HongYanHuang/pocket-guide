@@ -63,17 +63,10 @@ const isAuthRoute = computed(() => {
   return result
 })
 
-// Check authentication on app mount
-onMounted(async () => {
-  console.log('🟠 App.vue onMounted, route.path:', route.path)
-  console.log('🟠 App.vue isAuthRoute.value:', isAuthRoute.value)
-  if (!isAuthRoute.value) {
-    console.log('🟠 App.vue calling checkAuth()')
-    await checkAuth()
-  } else {
-    console.log('🟠 App.vue SKIPPING checkAuth (auth route)')
-  }
-})
+// NOTE: We DON'T call checkAuth() here because:
+// 1. Router guard already handles auth checks for protected routes
+// 2. Calling checkAuth() on mount can interrupt navigation (like /auth/callback)
+// 3. If user has no token, checkAuth() redirects to /login, breaking callback flow
 </script>
 
 <style>

@@ -353,6 +353,12 @@ class TourMetadata(BaseModel):
     languages: List[str] = Field(default_factory=lambda: ["en"], description="Available language codes")
     title_display: Optional[str] = Field(None, description="Human-readable display title for the tour (e.g., 'Ancient Rome History · 3 Days')")
 
+    # Creator and visibility fields
+    creator_email: Optional[str] = Field(None, description="Email of the user who created this tour")
+    creator_role: Optional[str] = Field(None, description="Role of creator (backstage_admin, client_user, etc.)")
+    created_via: Optional[str] = Field(None, description="Source of creation (backstage_ui, client_app)")
+    visibility: str = Field(default="public", description="Tour visibility: 'public' (anyone) or 'private' (creator only)")
+
     # Legacy fields (for backward compatibility with old tours)
     current_version: Optional[int] = Field(None, description="Current version number (legacy)")
     version_history: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Version history (legacy)")
@@ -371,6 +377,10 @@ class TourSummary(BaseModel):
     created_at: str = Field(..., description="Creation timestamp")
     optimization_score: Optional[float] = Field(None, description="Overall optimization score")
     title_display: Optional[str] = Field(None, description="Human-readable display title for the tour")
+
+    # Creator and visibility fields
+    creator_email: Optional[str] = Field(None, description="Email of the user who created this tour")
+    visibility: str = Field(default="public", description="Tour visibility: 'public' or 'private'")
 
 
 class TourDetail(BaseModel):

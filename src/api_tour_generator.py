@@ -4,7 +4,7 @@ FastAPI Router for Tour Generation
 Provides endpoints for generating AI-powered walking tour itineraries.
 """
 
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -12,6 +12,14 @@ import logging
 
 from trip_planner import POISelectorAgent, ItineraryOptimizerAgent, TourManager
 from utils import load_config, get_language_name
+
+# Import optional auth dependency
+try:
+    from auth.dependencies import get_current_user
+except ImportError:
+    # Auth not available, create a dummy dependency
+    async def get_current_user():
+        return None
 
 
 logger = logging.getLogger(__name__)
@@ -153,7 +161,10 @@ def generate_tour_title(
 # ==== Endpoints ====
 
 @router.post("/generate", response_model=TourGenerationResponse)
-async def generate_tour(request: TourGenerationRequest):
+async def generate_tour(
+    request: TourGenerationRequest,
+    current_user: Optional[dict] = Depends(get_current_user)
+):
     """
     Generate an AI-powered walking tour itinerary.
 
@@ -165,6 +176,7 @@ async def generate_tour(request: TourGenerationRequest):
 
     Args:
         request: Tour generation parameters
+        current_user: Optional authenticated user info (auto-injected)
 
     Returns:
         Generated tour data with itinerary and metadata
@@ -277,11 +289,21 @@ async def generate_tour(request: TourGenerationRequest):
                 'optimization_scores': optimization_scores
             }
 
+            # Prepare user info for tour attribution
+            user_info = None
+            if current_user:
+                user_info = {
+                    'email': current_user.get('email'),
+                    'role': current_user.get('role'),
+                    'name': current_user.get('name')
+                }
+
             # Save tour with full parameters
             result = tour_manager.save_tour(
                 tour_data=tour_data,
                 city=request.city,
                 input_parameters=input_parameters,
+                user_info=user_info,
                 selection_result=selection_result,
                 language=request.language,
                 title_display=title_display

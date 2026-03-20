@@ -215,6 +215,28 @@ class TourManager:
         elif 'title_display' not in metadata:
             metadata['title_display'] = None
 
+        # Store creator information (only on first creation)
+        if 'creator_email' not in metadata and user_info:
+            metadata['creator_email'] = user_info.get('email')
+            metadata['creator_role'] = user_info.get('role')
+
+        # Store creation source (backstage_ui or client_app)
+        if 'created_via' not in metadata:
+            metadata['created_via'] = input_parameters.get('generated_via', 'backstage_ui')
+
+        # Set visibility based on creator role and source
+        if 'visibility' not in metadata:
+            # All existing tours and backstage-created tours are public
+            # Future client-created tours will be private
+            created_via = metadata.get('created_via', 'backstage_ui')
+            creator_role = metadata.get('creator_role', 'backstage_admin')
+
+            if created_via == 'backstage_ui' or creator_role in ['backstage_admin', 'backstage_editor', 'backstage_viewer']:
+                metadata['visibility'] = 'public'
+            else:
+                # Client-created tours are private by default
+                metadata['visibility'] = 'private'
+
         # Save updated metadata
         save_tour_metadata(tour_path, metadata)
 

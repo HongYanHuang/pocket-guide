@@ -38,7 +38,7 @@ from api_auth import router as auth_router
 from auth.jwt_handler import JWTHandler
 from auth.session_manager import SessionManager
 from auth.oauth_handler import GoogleOAuthHandler
-from auth.dependencies import get_current_user, require_backstage_admin
+from auth.dependencies import get_current_user, get_optional_user, require_backstage_admin
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1168,7 +1168,7 @@ async def get_research(city: str, poi_id: str):
 # ==== Tour/Itinerary Endpoints ====
 
 @app.get("/tours", response_model=List[TourSummary])
-def list_tours():
+def list_tours(current_user: Optional[dict] = Depends(get_optional_user)):
     """
     List all saved tours, grouped by city.
 
@@ -1234,16 +1234,42 @@ def list_tours():
                         opt_scores = gen_record.get('optimization_scores', {})
                         optimization_score = opt_scores.get('overall_score')
 
-                    tours.append(TourSummary(
-                        tour_id=metadata['tour_id'],
-                        city=metadata['city'],
-                        duration_days=duration_days,
-                        total_pois=total_pois,
-                        interests=interests,
-                        created_at=metadata['created_at'],
-                        optimization_score=optimization_score,
-                        title_display=metadata.get('title_display')
-                    ))
+                    # Check visibility permissions
+                    visibility = metadata.get('visibility', 'public')
+                    creator_email = metadata.get('creator_email')
+
+                    # Determine if user can see this tour
+                    can_view = False
+
+                    if visibility == 'public':
+                        # Public tours are visible to everyone
+                        can_view = True
+                    elif current_user:
+                        # Private tours: check if user is creator or backstage admin
+                        user_email = current_user.get('email')
+                        user_role = current_user.get('role')
+
+                        if user_role == 'backstage_admin':
+                            # Backstage admins can see all tours
+                            can_view = True
+                        elif user_email == creator_email:
+                            # Creator can see their own private tours
+                            can_view = True
+
+                    # Only add tour if user has permission to view it
+                    if can_view:
+                        tours.append(TourSummary(
+                            tour_id=metadata['tour_id'],
+                            city=metadata['city'],
+                            duration_days=duration_days,
+                            total_pois=total_pois,
+                            interests=interests,
+                            created_at=metadata['created_at'],
+                            optimization_score=optimization_score,
+                            title_display=metadata.get('title_display'),
+                            creator_email=creator_email,
+                            visibility=visibility
+                        ))
 
                 except Exception as e:
                     logger.warning(f"Error loading tour {tour_dir.name}: {e}")
@@ -1263,7 +1289,7 @@ def list_tours():
 
 
 @app.get("/tours/{tour_id}", response_model=TourDetail)
-def get_tour(tour_id: str, language: str = "en"):
+def get_tour(tour_id: str, language: str = "en", current_user: Optional[dict] = Depends(get_optional_user)):
     """
     Get complete tour details including itinerary, backup POIs, and selection transparency.
 
@@ -1308,6 +1334,34 @@ def get_tour(tour_id: str, language: str = "en"):
         metadata_file = tour_path / "metadata.json"
         with open(metadata_file, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
+
+        # Check visibility permissions
+        visibility = metadata.get('visibility', 'public')
+        creator_email = metadata.get('creator_email')
+
+        # Determine if user can access this tour
+        can_access = False
+
+        if visibility == 'public':
+            # Public tours are accessible to everyone
+            can_access = True
+        elif current_user:
+            # Private tours: check if user is creator or backstage admin
+            user_email = current_user.get('email')
+            user_role = current_user.get('role')
+
+            if user_role == 'backstage_admin':
+                # Backstage admins can access all tours
+                can_access = True
+            elif user_email == creator_email:
+                # Creator can access their own private tours
+                can_access = True
+
+        if not can_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You do not have permission to access this tour"
+            )
 
         # Check if requested language is available
         available_languages = metadata.get('languages', ['en'])
@@ -2604,6 +2658,97 @@ async def list_users(current_user: dict = Depends(require_backstage_admin)):
         },
         "total": len(backstage_users) + len(client_users)
     }
+
+
+@app.post("/admin/migrate-tours-visibility")
+async def migrate_tours_visibility(current_user: dict = Depends(require_backstage_admin)):
+    """
+    Migrate all existing tours to have proper visibility settings.
+
+    This endpoint marks all existing tours as public and adds creator metadata.
+    Should be run once after deploying the visibility feature.
+
+    Admin only.
+    """
+    import json
+
+    try:
+        migrated_count = 0
+        error_count = 0
+        tours_dir = Path("tours")
+
+        if not tours_dir.exists():
+            return {"message": "No tours directory found", "migrated": 0}
+
+        # Iterate through all tours
+        for city_dir in tours_dir.iterdir():
+            if not city_dir.is_dir() or city_dir.name.startswith('.'):
+                continue
+
+            for tour_dir in city_dir.iterdir():
+                if not tour_dir.is_dir() or tour_dir.name.startswith('.'):
+                    continue
+
+                metadata_file = tour_dir / "metadata.json"
+                if not metadata_file.exists():
+                    continue
+
+                try:
+                    # Load existing metadata
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+
+                    # Check if already migrated
+                    if 'visibility' in metadata:
+                        continue
+
+                    # Set default values for existing tours
+                    metadata['visibility'] = 'public'  # All existing tours are public
+
+                    # Try to infer creator from version history
+                    if 'creator_email' not in metadata:
+                        # Check first version history entry for user_id
+                        for lang in metadata.get('languages', ['en']):
+                            version_history_key = f'version_history_{lang}'
+                            version_history = metadata.get(version_history_key, [])
+                            if version_history and len(version_history) > 0:
+                                first_version = version_history[0]
+                                user_id = first_version.get('user_id', 'anonymous')
+                                if user_id != 'anonymous':
+                                    metadata['creator_email'] = user_id
+                                    metadata['creator_role'] = 'backstage_admin'  # Assume backstage
+                                break
+
+                    # Set created_via based on presence of creator
+                    if 'created_via' not in metadata:
+                        metadata['created_via'] = 'backstage_ui'
+
+                    # Save updated metadata
+                    with open(metadata_file, 'w', encoding='utf-8') as f:
+                        json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+                    migrated_count += 1
+                    logger.info(f"Migrated tour: {metadata.get('tour_id', tour_dir.name)}")
+
+                except Exception as e:
+                    logger.error(f"Error migrating tour {tour_dir.name}: {e}")
+                    error_count += 1
+                    continue
+
+        return {
+            "success": True,
+            "message": f"Migration complete",
+            "migrated": migrated_count,
+            "errors": error_count,
+            "total_processed": migrated_count + error_count
+        }
+
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Migration failed: {str(e)}"
+        )
 
 
 # ==== Main Entry Point ====

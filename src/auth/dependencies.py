@@ -3,10 +3,11 @@ FastAPI dependencies for authentication and authorization
 """
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
-from typing import Dict
+from typing import Dict, Optional
 
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(credentials = Depends(security)) -> Dict:
@@ -45,6 +46,44 @@ async def get_current_user(credentials = Depends(security)) -> Dict:
         "scopes": payload.get("scopes", []),
         "client_type": payload.get("client_type", "backstage")
     }
+
+
+async def get_optional_user(credentials = Depends(optional_security)) -> Optional[Dict]:
+    """
+    Get current user from JWT token if present, otherwise return None.
+
+    This dependency is for endpoints where auth is optional - the endpoint
+    can provide different functionality based on whether user is authenticated.
+
+    Args:
+        credentials: HTTP Bearer credentials from request (optional)
+
+    Returns:
+        User information dictionary if authenticated, None otherwise
+    """
+    if not credentials:
+        return None
+
+    try:
+        from api_server import jwt_handler
+
+        if not jwt_handler:
+            return None
+
+        is_valid, payload = jwt_handler.validate_token(credentials.credentials)
+        if not is_valid:
+            return None
+
+        return {
+            "email": payload["sub"],
+            "name": payload["name"],
+            "picture": payload.get("picture"),
+            "role": payload.get("role", "client_user"),
+            "scopes": payload.get("scopes", []),
+            "client_type": payload.get("client_type", "backstage")
+        }
+    except Exception:
+        return None
 
 
 def require_role(required_role: str):

@@ -47,6 +47,22 @@
 - `POST /auth/logout` - Logout user
 - `GET /auth/me` - Get current user info
 
+### Admin Endpoints
+
+- `GET /admin/users` - List all active user sessions (admin only)
+  - Returns backstage users (admin/editor/viewer) and client app users
+  - Includes session info: email, name, role, scopes, login time, last accessed
+  - Accessible via backstage UI at `/users` (visible to admins only)
+
+### Client Authentication API
+
+For developers building client apps, see detailed guide:
+- **Documentation**: `docs/CLIENT_AUTH_API.md`
+- Complete OAuth 2.0 flow with PKCE
+- Token management strategies
+- API usage examples in JavaScript/React
+- Security best practices
+
 ---
 
 Quick reference for the Pocket Guide CLI - optimized for readability and quick lookup.

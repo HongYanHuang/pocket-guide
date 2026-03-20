@@ -89,9 +89,42 @@ Development: http://localhost:8000
 
 ## API Endpoints
 
+**IMPORTANT:** Use client-specific endpoints for better security:
+- **Backstage**: `/auth/backstage/google/*`
+- **Client App**: `/auth/client/google/*`
+
+The backend will enforce role assignment based on which endpoint you use - clients cannot spoof their type.
+
 ### 1. Initiate Login
 
-**GET** `/auth/google/login`
+#### For Client App (Recommended)
+
+**GET** `/auth/client/google/login`
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `redirect_uri` | string | Yes | Your client app callback URL |
+| `code_challenge` | string | Yes | PKCE code challenge (Base64-URL encoded SHA-256 hash) |
+
+**Response:**
+```json
+{
+  "auth_url": "https://accounts.google.com/o/oauth2/v2/auth?client_id=...",
+  "state": "uuid-v4-string"
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/auth/client/google/login?redirect_uri=http://localhost:65263/auth/callback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+```
+
+---
+
+#### For Backstage Admin Panel
+
+**GET** `/auth/backstage/google/login`
 
 **Query Parameters:**
 | Parameter | Type | Required | Description |
@@ -114,9 +147,41 @@ curl "http://localhost:8000/auth/google/login?redirect_uri=http://localhost:6526
 
 ---
 
+---
+
 ### 2. Exchange Code for Tokens
 
-**GET** `/auth/google/callback`
+#### For Client App (Recommended)
+
+**GET** `/auth/client/google/callback`
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `code` | string | Yes | Authorization code from Google |
+| `state` | string | Yes | State parameter from step 1 |
+| `code_verifier` | string | Yes | PKCE code verifier (original random string) |
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "550e8400-e29b-41d4-a716-446655440000",
+  "token_type": "bearer",
+  "expires_in": 900
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/auth/client/google/callback?code=4/0AfJoh...&state=abc-123&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+```
+
+---
+
+#### For Backstage Admin Panel
+
+**GET** `/auth/backstage/google/callback`
 
 **Query Parameters:**
 | Parameter | Type | Required | Description |
@@ -301,10 +366,10 @@ async function login() {
   // 2. Store code verifier (needed for callback)
   sessionStorage.setItem('pkce_code_verifier', codeVerifier)
 
-  // 3. Get Google OAuth URL
+  // 3. Get Google OAuth URL (use client-specific endpoint)
   const redirectUri = `${window.location.origin}/auth/callback`
   const response = await fetch(
-    `http://localhost:8000/auth/google/login?redirect_uri=${redirectUri}&code_challenge=${codeChallenge}`
+    `http://localhost:8000/auth/client/google/login?redirect_uri=${redirectUri}&code_challenge=${codeChallenge}`
   )
   const { auth_url, state } = await response.json()
 
@@ -335,9 +400,9 @@ async function handleCallback() {
     throw new Error('Missing PKCE code verifier')
   }
 
-  // 3. Exchange code for tokens
+  // 3. Exchange code for tokens (use client-specific endpoint)
   const response = await fetch(
-    `http://localhost:8000/auth/google/callback?code=${code}&state=${state}&code_verifier=${codeVerifier}`
+    `http://localhost:8000/auth/client/google/callback?code=${code}&state=${state}&code_verifier=${codeVerifier}`
   )
   const tokens = await response.json()
 
@@ -580,7 +645,28 @@ async function makeRequest(url, options = {}) {
 
 ## Security Best Practices
 
-### 1. Always Use PKCE
+### 1. Use Client-Specific Endpoints
+**Always use `/auth/client/google/*` endpoints** for client apps, not the generic `/auth/google/*` endpoints.
+
+**Why?**
+- ✅ Backend enforces client type based on endpoint (cannot be spoofed)
+- ✅ Prevents malicious clients from pretending to be backstage
+- ✅ Explicit intent - clear which app is authenticating
+- ✅ Better security logging
+
+**Bad (less secure):**
+```javascript
+// Client could change redirect_uri to spoof backstage
+fetch('/auth/google/login?redirect_uri=http://localhost:5173/callback')
+```
+
+**Good (secure):**
+```javascript
+// Endpoint determines client type - cannot be spoofed
+fetch('/auth/client/google/login?redirect_uri=http://localhost:65263/callback')
+```
+
+### 2. Always Use PKCE
 Never skip PKCE code challenge/verifier - it prevents authorization code interception.
 
 ### 2. Validate Redirect URIs
@@ -707,7 +793,7 @@ export function AuthProvider({ children }) {
 
     const redirectUri = `${window.location.origin}/auth/callback`
     const response = await fetch(
-      `http://localhost:8000/auth/google/login?redirect_uri=${redirectUri}&code_challenge=${codeChallenge}`
+      `http://localhost:8000/auth/client/google/login?redirect_uri=${redirectUri}&code_challenge=${codeChallenge}`
     )
     const { auth_url } = await response.json()
     window.location.href = auth_url

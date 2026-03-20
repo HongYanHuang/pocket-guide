@@ -13,13 +13,13 @@ const authApi = axios.create({
 
 export default {
   /**
-   * Get Google OAuth authorization URL
+   * Get Google OAuth authorization URL for BACKSTAGE
    * @param {string} redirectUri - Frontend redirect URI (e.g., http://localhost:5173/auth/callback)
    * @param {string} codeChallenge - PKCE code challenge
    * @returns {Promise<{auth_url: string, state: string}>}
    */
   async getGoogleAuthUrl(redirectUri, codeChallenge) {
-    const { data } = await authApi.get('/auth/google/login', {
+    const { data } = await authApi.get('/auth/backstage/google/login', {
       params: {
         redirect_uri: redirectUri,
         code_challenge: codeChallenge
@@ -29,14 +29,14 @@ export default {
   },
 
   /**
-   * Exchange authorization code for tokens
+   * Exchange authorization code for tokens (BACKSTAGE)
    * @param {string} code - Authorization code from Google
    * @param {string} state - State parameter from OAuth flow
    * @param {string} codeVerifier - PKCE code verifier
    * @returns {Promise<{access_token: string, refresh_token: string, token_type: string, expires_in: number}>}
    */
   async exchangeCodeForTokens(code, state, codeVerifier) {
-    const { data } = await authApi.get('/auth/google/callback', {
+    const { data } = await authApi.get('/auth/backstage/google/callback', {
       params: {
         code,
         state,

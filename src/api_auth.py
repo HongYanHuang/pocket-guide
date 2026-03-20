@@ -13,13 +13,66 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 logger = logging.getLogger(__name__)
 
 # Store OAuth states temporarily (in production, use Redis)
+# Format: { state: { redirect_uri: str, client_type: str } }
 oauth_states: Dict[str, dict] = {}
+
+
+@router.get("/backstage/google/login")
+async def backstage_google_login(redirect_uri: str, code_challenge: str):
+    """
+    Initiate Google OAuth login for BACKSTAGE admin panel
+
+    Args:
+        redirect_uri: Backstage callback URL
+        code_challenge: PKCE code challenge (SHA256 of verifier)
+
+    Returns:
+        Authorization URL and state parameter
+    """
+    from api_server import oauth_handler
+
+    state = str(uuid.uuid4())
+    oauth_states[state] = {
+        "redirect_uri": redirect_uri,
+        "client_type": "backstage"
+    }
+
+    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri)
+    logger.info(f"Backstage login initiated for {redirect_uri}")
+    return {"auth_url": auth_url, "state": state}
+
+
+@router.get("/client/google/login")
+async def client_google_login(redirect_uri: str, code_challenge: str):
+    """
+    Initiate Google OAuth login for CLIENT APP
+
+    Args:
+        redirect_uri: Client app callback URL
+        code_challenge: PKCE code challenge (SHA256 of verifier)
+
+    Returns:
+        Authorization URL and state parameter
+    """
+    from api_server import oauth_handler
+
+    state = str(uuid.uuid4())
+    oauth_states[state] = {
+        "redirect_uri": redirect_uri,
+        "client_type": "client_app"
+    }
+
+    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri)
+    logger.info(f"Client app login initiated for {redirect_uri}")
+    return {"auth_url": auth_url, "state": state}
 
 
 @router.get("/google/login")
 async def google_login(redirect_uri: str, code_challenge: str):
     """
-    Initiate Google OAuth login
+    DEPRECATED: Use /auth/backstage/google/login or /auth/client/google/login instead
+
+    Initiate Google OAuth login (legacy endpoint with auto-detection)
 
     Args:
         redirect_uri: Frontend callback URL
@@ -30,25 +83,40 @@ async def google_login(redirect_uri: str, code_challenge: str):
     """
     from api_server import oauth_handler
 
+    # Auto-detect client type from redirect_uri (less secure)
+    client_type = "client_app"
+    if redirect_uri and ("5173" in redirect_uri or "backstage" in redirect_uri.lower()):
+        client_type = "backstage"
+
+    logger.warning(f"Using deprecated /auth/google/login endpoint. Please use /auth/{client_type}/google/login instead")
+
     state = str(uuid.uuid4())
-    oauth_states[state] = {"redirect_uri": redirect_uri}
+    oauth_states[state] = {
+        "redirect_uri": redirect_uri,
+        "client_type": client_type
+    }
 
     auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri)
     return {"auth_url": auth_url, "state": state}
 
 
-@router.get("/google/callback", response_model=AuthTokenResponse)
-async def google_callback(code: str, state: str, code_verifier: str):
+async def _handle_oauth_callback(
+    code: str,
+    state: str,
+    code_verifier: str,
+    expected_client_type: str = None
+):
     """
-    Handle Google OAuth callback
+    Internal helper to handle OAuth callback
 
     Args:
         code: Authorization code from Google
         state: CSRF protection state parameter
         code_verifier: PKCE code verifier
+        expected_client_type: Expected client type (backstage or client_app)
 
     Returns:
-        JWT access token and refresh token
+        AuthTokenResponse with access and refresh tokens
 
     Raises:
         HTTPException: If OAuth fails or user not authorized
@@ -61,6 +129,14 @@ async def google_callback(code: str, state: str, code_verifier: str):
 
     state_data = oauth_states.pop(state)
     redirect_uri = state_data.get("redirect_uri")
+    client_type = state_data.get("client_type", "client_app")
+
+    # Validate client type matches expected (if endpoint-specific)
+    if expected_client_type and client_type != expected_client_type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid callback: expected {expected_client_type} but got {client_type}"
+        )
 
     # Exchange code for tokens
     try:
@@ -70,16 +146,10 @@ async def google_callback(code: str, state: str, code_verifier: str):
         logger.error(f"OAuth failed: {e}")
         raise HTTPException(status_code=400, detail=f"OAuth failed: {str(e)}")
 
-    # Determine client type from redirect_uri
     auth_config = config.get("authentication", {})
     user_roles_config = auth_config.get("user_roles", {})
 
-    # Detect which app the user is logging in from
-    client_type = "client_app"  # default
-    if redirect_uri and ("5173" in redirect_uri or "backstage" in redirect_uri.lower()):
-        client_type = "backstage"
-
-    logger.info(f"Login attempt from {client_type} app (redirect_uri: {redirect_uri})")
+    logger.info(f"Login attempt from {client_type} app for {user_info['email']}")
 
     # Role assignment based on client type
     if client_type == "backstage":
@@ -133,6 +203,66 @@ async def google_callback(code: str, state: str, code_verifier: str):
         access_token=access_token,
         refresh_token=refresh_token
     )
+
+
+@router.get("/backstage/google/callback", response_model=AuthTokenResponse)
+async def backstage_google_callback(code: str, state: str, code_verifier: str):
+    """
+    Handle Google OAuth callback for BACKSTAGE admin panel
+
+    Args:
+        code: Authorization code from Google
+        state: CSRF protection state parameter
+        code_verifier: PKCE code verifier
+
+    Returns:
+        JWT access token and refresh token for backstage user
+
+    Raises:
+        HTTPException: If OAuth fails or user not authorized
+    """
+    return await _handle_oauth_callback(code, state, code_verifier, expected_client_type="backstage")
+
+
+@router.get("/client/google/callback", response_model=AuthTokenResponse)
+async def client_google_callback(code: str, state: str, code_verifier: str):
+    """
+    Handle Google OAuth callback for CLIENT APP
+
+    Args:
+        code: Authorization code from Google
+        state: CSRF protection state parameter
+        code_verifier: PKCE code verifier
+
+    Returns:
+        JWT access token and refresh token for client app user
+
+    Raises:
+        HTTPException: If OAuth fails or user not authorized
+    """
+    return await _handle_oauth_callback(code, state, code_verifier, expected_client_type="client_app")
+
+
+@router.get("/google/callback", response_model=AuthTokenResponse)
+async def google_callback(code: str, state: str, code_verifier: str):
+    """
+    DEPRECATED: Use /auth/backstage/google/callback or /auth/client/google/callback instead
+
+    Handle Google OAuth callback (legacy endpoint with auto-detection)
+
+    Args:
+        code: Authorization code from Google
+        state: CSRF protection state parameter
+        code_verifier: PKCE code verifier
+
+    Returns:
+        JWT access token and refresh token
+
+    Raises:
+        HTTPException: If OAuth fails or user not authorized
+    """
+    logger.warning("Using deprecated /auth/google/callback endpoint")
+    return await _handle_oauth_callback(code, state, code_verifier, expected_client_type=None)
 
 
 @router.post("/refresh", response_model=AuthTokenResponse)

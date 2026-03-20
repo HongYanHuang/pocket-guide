@@ -47,11 +47,22 @@
 
 ### Authentication Endpoints
 
-- `GET /auth/google/login` - Initiate Google OAuth
-- `GET /auth/google/callback` - OAuth callback
+**Client App (Recommended - Secure):**
+- `GET /auth/client/google/login` - Initiate client app login
+- `GET /auth/client/google/callback` - Client app OAuth callback
+
+**Backstage Admin:**
+- `GET /auth/backstage/google/login` - Initiate backstage login
+- `GET /auth/backstage/google/callback` - Backstage OAuth callback
+
+**Common:**
 - `POST /auth/refresh` - Refresh access token
 - `POST /auth/logout` - Logout user
 - `GET /auth/me` - Get current user info
+
+**Legacy (Deprecated):**
+- `GET /auth/google/login` - Auto-detect client type (less secure)
+- `GET /auth/google/callback` - Generic callback (less secure)
 
 ### Admin Endpoints
 

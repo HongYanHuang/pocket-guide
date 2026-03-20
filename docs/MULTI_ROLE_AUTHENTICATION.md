@@ -18,20 +18,34 @@ This allows administrators to:
 
 ### 1. Client Type Detection
 
-The backend detects which app the user is logging in from based on the **redirect_uri**:
+**Recommended:** The backend knows which app you're using based on **which API endpoint** you call:
 
-| Redirect URI Pattern | Detected Client Type |
-|---------------------|---------------------|
-| Contains `5173` or `backstage` | `backstage` |
-| Contains `65263` or anything else | `client_app` |
+| Endpoint | Client Type | Security |
+|----------|-------------|----------|
+| `/auth/backstage/google/login` | `backstage` | ✅ Secure - cannot be spoofed |
+| `/auth/client/google/login` | `client_app` | ✅ Secure - cannot be spoofed |
+| `/auth/google/login` (deprecated) | Auto-detected | ⚠️ Less secure - relies on redirect_uri |
 
-**Examples:**
+**How it works:**
+```python
+# Backstage endpoint stores client_type
+@router.get("/backstage/google/login")
+async def backstage_google_login(redirect_uri: str, code_challenge: str):
+    oauth_states[state] = {
+        "redirect_uri": redirect_uri,
+        "client_type": "backstage"  # ← Fixed by endpoint
+    }
+
+# Client app endpoint stores different client_type
+@router.get("/client/google/login")
+async def client_google_login(redirect_uri: str, code_challenge: str):
+    oauth_states[state] = {
+        "redirect_uri": redirect_uri,
+        "client_type": "client_app"  # ← Fixed by endpoint
+    }
 ```
-http://localhost:5173/auth/callback     → backstage
-http://localhost:65263/auth/callback    → client_app
-https://backstage.yourapp.com/callback  → backstage
-https://app.yourapp.com/callback        → client_app
-```
+
+**Security benefit:** Client cannot change `client_type` - it's determined by the backend route.
 
 ---
 
@@ -357,12 +371,12 @@ You could create two OAuth clients:
 
 ```bash
 # 1. Generate PKCE challenge
-# 2. Get auth URL
-curl "http://localhost:8000/auth/google/login?redirect_uri=http://localhost:5173/auth/callback&code_challenge=CHALLENGE"
+# 2. Get auth URL (use backstage endpoint)
+curl "http://localhost:8000/auth/backstage/google/login?redirect_uri=http://localhost:5173/auth/callback&code_challenge=CHALLENGE"
 
 # 3. Approve in Google
-# 4. Exchange code for tokens
-curl "http://localhost:8000/auth/google/callback?code=CODE&state=STATE&code_verifier=VERIFIER"
+# 4. Exchange code for tokens (use backstage callback)
+curl "http://localhost:8000/auth/backstage/google/callback?code=CODE&state=STATE&code_verifier=VERIFIER"
 
 # Expected: backstage_admin role
 ```
@@ -373,14 +387,14 @@ curl "http://localhost:8000/auth/google/callback?code=CODE&state=STATE&code_veri
 
 ```bash
 # 1. Generate new PKCE challenge
-# 2. Get auth URL (different redirect_uri)
-curl "http://localhost:8000/auth/google/login?redirect_uri=http://localhost:65263/auth/callback&code_challenge=CHALLENGE"
+# 2. Get auth URL (use client endpoint)
+curl "http://localhost:8000/auth/client/google/login?redirect_uri=http://localhost:65263/auth/callback&code_challenge=CHALLENGE"
 
 # 3. Approve in Google
-# 4. Exchange code for tokens
-curl "http://localhost:8000/auth/google/callback?code=CODE&state=STATE&code_verifier=VERIFIER"
+# 4. Exchange code for tokens (use client callback)
+curl "http://localhost:8000/auth/client/google/callback?code=CODE&state=STATE&code_verifier=VERIFIER"
 
-# Expected: client_user role (even though email is whitelisted)
+# Expected: client_user role (even though email is whitelisted for backstage)
 ```
 
 ---

@@ -523,3 +523,75 @@ class UserInfo(BaseModel):
 class RefreshTokenRequest(BaseModel):
     """Request to refresh access token"""
     refresh_token: str = Field(..., description="Refresh token from login")
+
+
+# ==== Map Mode API Models ====
+
+class GPSPoint(BaseModel):
+    """Single GPS coordinate with metadata"""
+    lat: float = Field(..., ge=-90, le=90, description="Latitude in decimal degrees")
+    lng: float = Field(..., ge=-180, le=180, description="Longitude in decimal degrees")
+    timestamp: str = Field(..., description="ISO 8601 timestamp of GPS recording")
+    accuracy: Optional[float] = Field(None, ge=0, description="GPS accuracy in meters")
+
+
+class POIProgressUpdate(BaseModel):
+    """Request to update POI completion status"""
+    poi_id: str = Field(..., description="POI identifier (kebab-case)")
+    day: int = Field(..., ge=1, description="Day number where POI appears")
+    completed: bool = Field(..., description="Completion status")
+
+
+class POIProgressResponse(BaseModel):
+    """Response after updating POI progress"""
+    success: bool = Field(..., description="Whether update was successful")
+    poi_id: str = Field(..., description="POI identifier")
+    day: int = Field(..., description="Day number")
+    completed: bool = Field(..., description="Completion status")
+    completed_at: Optional[str] = Field(None, description="ISO timestamp when marked complete")
+    message: str = Field(..., description="Success message")
+
+
+class POICompletionStatus(BaseModel):
+    """Completion status for a single POI"""
+    poi_id: str = Field(..., description="POI identifier (kebab-case)")
+    poi_name: str = Field(..., description="POI display name")
+    day: int = Field(..., description="Day number")
+    completed: bool = Field(..., description="Whether POI is completed")
+    completed_at: Optional[str] = Field(None, description="ISO timestamp when completed")
+
+
+class TourProgressResponse(BaseModel):
+    """Complete tour progress for authenticated user"""
+    tour_id: str = Field(..., description="Tour identifier")
+    completions: List[POICompletionStatus] = Field(..., description="List of POI completion statuses")
+    total_pois: int = Field(..., description="Total number of POIs in tour")
+    completed_count: int = Field(..., description="Number of completed POIs")
+    completion_percentage: float = Field(..., ge=0, le=100, description="Completion percentage")
+
+
+class TrailUploadRequest(BaseModel):
+    """Request to upload GPS trail points (batch)"""
+    points: List[GPSPoint] = Field(..., min_items=1, max_items=100, description="GPS points to save (max 100 per request)")
+
+
+class TrailUploadResponse(BaseModel):
+    """Response after uploading GPS trail"""
+    success: bool = Field(..., description="Whether upload was successful")
+    points_saved: int = Field(..., description="Number of points saved in this request")
+    total_points: int = Field(..., description="Total points in trail after save")
+    message: str = Field(..., description="Success message")
+
+
+class TrailPoint(BaseModel):
+    """Simplified GPS point for retrieval"""
+    lat: float = Field(..., description="Latitude in decimal degrees")
+    lng: float = Field(..., description="Longitude in decimal degrees")
+    timestamp: str = Field(..., description="ISO 8601 timestamp")
+
+
+class TourTrailResponse(BaseModel):
+    """Complete GPS trail for authenticated user"""
+    tour_id: str = Field(..., description="Tour identifier")
+    points: List[TrailPoint] = Field(..., description="List of GPS trail points")
+    total_points: int = Field(..., description="Total number of points")

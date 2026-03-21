@@ -36,6 +36,7 @@ from api_combo_tickets import router as combo_tickets_router
 from api_tour_generator import router as tour_generator_router
 from api_client_tours import router as client_tours_router
 from api_auth import router as auth_router
+from api_map_mode import router as map_mode_router
 from auth.jwt_handler import JWTHandler
 from auth.session_manager import SessionManager
 from auth.oauth_handler import GoogleOAuthHandler
@@ -115,6 +116,7 @@ app.include_router(auth_router)
 app.include_router(combo_tickets_router)
 app.include_router(tour_generator_router)
 app.include_router(client_tours_router)
+app.include_router(map_mode_router)
 
 
 # ==== Helper Functions ====
@@ -2787,3 +2789,20 @@ async def migrate_tours_visibility(current_user: dict = Depends(require_backstag
         logger.error(f"Migration failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Migration failed: {str(e)}"
+        )
+
+
+# ==== Main Entry Point ====
+
+if __name__ == "__main__":
+    import uvicorn
+
+    # Run the server
+    uvicorn.run(
+        "api_server:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )

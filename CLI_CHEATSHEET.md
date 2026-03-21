@@ -666,6 +666,79 @@ trip tts rome-tour-123 --city rome --poi colosseum           # Single POI only
 trip tts rome-tour-123 --city rome --language zh-tw --force  # Chinese, force regenerate
 ```
 
+### Map Mode API Endpoints (Client App)
+
+**Authentication**: All endpoints require client app authentication (JWT token)
+
+```bash
+# 1. Update POI completion status
+POST /tours/{tour_id}/progress
+Body: {
+  "poi_id": "colosseum",
+  "day": 1,
+  "completed": true
+}
+
+# 2. Get all POI completion statuses
+GET /tours/{tour_id}/progress?language=en
+
+# 3. Upload GPS trail points (batch, max 100 points)
+POST /tours/{tour_id}/trail
+Body: {
+  "points": [
+    {
+      "lat": 41.8902,
+      "lng": 12.4922,
+      "timestamp": "2026-03-21T10:00:00.000000",
+      "accuracy": 15.5
+    }
+  ]
+}
+
+# 4. Get all GPS trail points
+GET /tours/{tour_id}/trail
+```
+
+**cURL Examples**:
+```bash
+# Get tour progress
+curl -X GET "http://localhost:8000/tours/rome-tour-123/progress?language=en" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Mark POI complete
+curl -X POST "http://localhost:8000/tours/rome-tour-123/progress" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"poi_id": "colosseum", "day": 1, "completed": true}'
+
+# Upload GPS points
+curl -X POST "http://localhost:8000/tours/rome-tour-123/trail" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "points": [
+      {"lat": 41.8902, "lng": 12.4922, "timestamp": "2026-03-21T10:00:00Z", "accuracy": 15.5}
+    ]
+  }'
+```
+
+**Features**:
+- **Per-user tracking**: Each user has independent progress and trail data
+- **Access control**: Public tours accessible to all, private tours only to creator
+- **Composite keys**: POI completion tracked by `poi_id:day` to handle multi-day visits
+- **Batch upload**: GPS trail accepts up to 100 points per request
+- **Language support**: Progress endpoint returns POI names in requested language
+
+**Data Storage**:
+```
+user_data/
+└── {user_email}/
+    ├── tour_{tour_id}_progress.json  # POI completion status
+    └── tour_{tour_id}_trail.json     # GPS trail points
+```
+
+---
+
 ### Utility Scripts
 
 ```bash

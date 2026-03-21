@@ -732,3 +732,74 @@ def load_poi_metadata_from_research(city: str, poi_name: str) -> Dict[str, Any]:
         'date_built': basic_info.get('date_built', ''),
         'estimated_hours': visit_info.get('typical_duration_minutes', 120) / 60.0
     }
+
+
+def poi_name_to_id(poi_name: str) -> str:
+    """
+    Convert POI name to kebab-case ID for URL construction.
+
+    Args:
+        poi_name: POI name (e.g., "Colosseum", "St. Peter's Basilica")
+
+    Returns:
+        POI ID in kebab-case (e.g., "colosseum", "st.-peter's-basilica")
+
+    Examples:
+        >>> poi_name_to_id("Colosseum")
+        'colosseum'
+        >>> poi_name_to_id("St. Peter's Basilica")
+        'st.-peter's-basilica'
+        >>> poi_name_to_id("Basilica di San Clemente")
+        'basilica-di-san-clemente'
+    """
+    # Convert to lowercase
+    poi_id = poi_name.lower()
+    # Replace spaces and most special chars with hyphens, but preserve periods
+    poi_id = re.sub(r'[^a-z0-9.]+', '-', poi_id)
+    # Remove leading/trailing hyphens
+    poi_id = poi_id.strip('-')
+    return poi_id
+
+
+def check_audio_exists(city: str, poi_name: str, language: str, content_dir: str = "content") -> bool:
+    """
+    Check if audio file exists for a POI.
+
+    Args:
+        city: City name
+        poi_name: POI name
+        language: Language code (e.g., 'en', 'zh-tw')
+        content_dir: Content directory path
+
+    Returns:
+        True if audio file exists and has content
+    """
+    city_slug = city.lower().replace(' ', '-')
+    poi_id = poi_name_to_id(poi_name)
+    language_code = normalize_language_code(language)
+
+    audio_path = Path(content_dir) / city_slug / poi_id / f"audio_{language_code}.mp3"
+    return audio_path.exists() and audio_path.stat().st_size > 0
+
+
+def get_poi_audio_url(city: str, poi_name: str, language: str) -> str:
+    """
+    Generate audio URL for a POI (relative URL).
+
+    Args:
+        city: City name
+        poi_name: POI name
+        language: Language code (e.g., 'en', 'zh-tw')
+
+    Returns:
+        Relative audio URL
+
+    Example:
+        >>> get_poi_audio_url('rome', 'Colosseum', 'zh-tw')
+        '/pois/rome/colosseum/audio/audio_zh-tw.mp3'
+    """
+    city_slug = city.lower().replace(' ', '-')
+    poi_id = poi_name_to_id(poi_name)
+    language_code = normalize_language_code(language)
+
+    return f"/pois/{city_slug}/{poi_id}/audio/audio_{language_code}.mp3"

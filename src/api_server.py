@@ -5,9 +5,10 @@ This API provides endpoints for viewing and editing POI metadata,
 including coordinates, operation hours, and distance matrices.
 """
 
-from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import logging
@@ -54,6 +55,57 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+
+# ==== Global Exception Handlers ====
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handle validation errors gracefully.
+
+    FastAPI already ignores undefined query parameters by default.
+    This handler makes validation error messages more user-friendly.
+    """
+    errors = exc.errors()
+
+    # Log the validation error for debugging
+    logger.warning(f"Validation error on {request.url}: {errors}")
+
+    # Return user-friendly error message
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Invalid request parameters",
+            "errors": [
+                {
+                    "field": ".".join(str(loc) for loc in err["loc"]),
+                    "message": err["msg"],
+                    "type": err["type"]
+                }
+                for err in errors
+            ]
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all handler for unexpected errors.
+    Prevents server from returning HTML error pages.
+    """
+    logger.error(f"Unhandled exception on {request.url}: {exc}", exc_info=True)
+
+    # Don't leak internal error details to client
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "message": "An unexpected error occurred. Please contact support if this persists."
+        }
+    )
+
 
 # Load configuration first (needed for CORS and auth)
 try:

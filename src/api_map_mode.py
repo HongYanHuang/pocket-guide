@@ -168,23 +168,30 @@ def load_tour_pois(tour_path: Path, language: str = "en") -> list[dict]:
     Returns list of POIs with poi_id, poi_name, and day.
     """
     language = normalize_language_code(language)
-    itinerary_file = tour_path / f"itinerary_{language}.json"
+    tour_file = tour_path / f"tour_{language}.json"
 
-    if not itinerary_file.exists():
+    if not tour_file.exists():
         # Fallback to English
-        itinerary_file = tour_path / "itinerary_en.json"
-        if not itinerary_file.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Tour itinerary not found for language '{language}'"
-            )
+        tour_file = tour_path / "tour_en.json"
+        if not tour_file.exists():
+            # If English doesn't exist, find any available language
+            tour_files = list(tour_path.glob("tour_*.json"))
+            # Filter out versioned files (tour_v1_*.json)
+            tour_files = [f for f in tour_files if not f.stem.startswith("tour_v")]
+            if tour_files:
+                tour_file = tour_files[0]
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Tour itinerary not found for language '{language}'"
+                )
 
-    with open(itinerary_file, 'r', encoding='utf-8') as f:
-        itinerary = json.load(f)
+    with open(tour_file, 'r', encoding='utf-8') as f:
+        tour_data = json.load(f)
 
     # Extract POIs from all days
     pois = []
-    for day_data in itinerary.get("itinerary", []):
+    for day_data in tour_data.get("itinerary", []):
         day_num = day_data.get("day")
         for poi in day_data.get("pois", []):
             poi_name = poi.get("poi", "")

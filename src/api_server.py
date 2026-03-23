@@ -130,11 +130,24 @@ if auth_config.get('enabled', False):
         )
 
         oauth_config = auth_config.get('google_oauth', {})
+
+        # Support both new multi-client format and old single-client format
+        clients = oauth_config.get('clients', {})
+        if not clients:
+            # Fallback to old format for backward compatibility
+            clients = {
+                "web": {
+                    "client_id": oauth_config.get('client_id'),
+                    "client_secret": oauth_config.get('client_secret')
+                }
+            }
+
         oauth_handler = GoogleOAuthHandler(
-            client_id=oauth_config.get('client_id'),
-            client_secret=oauth_config.get('client_secret'),
-            redirect_uri=oauth_config.get('redirect_uri')
+            clients=clients,
+            default_redirect_uri=oauth_config.get('default_redirect_uri') or oauth_config.get('redirect_uri')
         )
+
+        logger.info(f"OAuth clients configured: {list(clients.keys())}")
 
         logger.info("Authentication handlers initialized successfully")
     except Exception as e:

@@ -13,7 +13,9 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 logger = logging.getLogger(__name__)
 
 # Store OAuth states temporarily (in production, use Redis)
-# Format: { state: { redirect_uri: str, client_type: str } }
+# Format: { state: { redirect_uri: str, client_type: str, oauth_client_type: str } }
+# client_type: "backstage" or "client_app" (application context)
+# oauth_client_type: "web" or "ios" (OAuth client type)
 oauth_states: Dict[str, dict] = {}
 
 
@@ -31,14 +33,18 @@ async def backstage_google_login(redirect_uri: str, code_challenge: str):
     """
     from api_server import oauth_handler
 
+    # Backstage always uses web client
+    oauth_client_type = "web"
+
     state = str(uuid.uuid4())
     oauth_states[state] = {
         "redirect_uri": redirect_uri,
-        "client_type": "backstage"
+        "client_type": "backstage",
+        "oauth_client_type": oauth_client_type
     }
 
-    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri)
-    logger.info(f"Backstage login initiated for {redirect_uri}")
+    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri, oauth_client_type)
+    logger.info(f"Backstage login initiated for {redirect_uri} (OAuth client: {oauth_client_type})")
     return {"auth_url": auth_url, "state": state}
 
 
@@ -48,7 +54,7 @@ async def client_google_login(redirect_uri: str, code_challenge: str):
     Initiate Google OAuth login for CLIENT APP
 
     Args:
-        redirect_uri: Client app callback URL
+        redirect_uri: Client app callback URL (web or mobile)
         code_challenge: PKCE code challenge (SHA256 of verifier)
 
     Returns:
@@ -56,14 +62,18 @@ async def client_google_login(redirect_uri: str, code_challenge: str):
     """
     from api_server import oauth_handler
 
+    # Auto-detect OAuth client type from redirect URI
+    oauth_client_type = oauth_handler.detect_client_type(redirect_uri)
+
     state = str(uuid.uuid4())
     oauth_states[state] = {
         "redirect_uri": redirect_uri,
-        "client_type": "client_app"
+        "client_type": "client_app",
+        "oauth_client_type": oauth_client_type  # "web" or "ios"
     }
 
-    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri)
-    logger.info(f"Client app login initiated for {redirect_uri}")
+    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri, oauth_client_type)
+    logger.info(f"Client app login initiated for {redirect_uri} (OAuth client: {oauth_client_type})")
     return {"auth_url": auth_url, "state": state}
 
 
@@ -88,15 +98,19 @@ async def google_login(redirect_uri: str, code_challenge: str):
     if redirect_uri and ("5173" in redirect_uri or "backstage" in redirect_uri.lower()):
         client_type = "backstage"
 
+    # Auto-detect OAuth client type
+    oauth_client_type = oauth_handler.detect_client_type(redirect_uri)
+
     logger.warning(f"Using deprecated /auth/google/login endpoint. Please use /auth/{client_type}/google/login instead")
 
     state = str(uuid.uuid4())
     oauth_states[state] = {
         "redirect_uri": redirect_uri,
-        "client_type": client_type
+        "client_type": client_type,
+        "oauth_client_type": oauth_client_type
     }
 
-    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri)
+    auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri, oauth_client_type)
     return {"auth_url": auth_url, "state": state}
 
 
@@ -130,6 +144,7 @@ async def _handle_oauth_callback(
     state_data = oauth_states.pop(state)
     redirect_uri = state_data.get("redirect_uri")
     client_type = state_data.get("client_type", "client_app")
+    oauth_client_type = state_data.get("oauth_client_type", "web")  # OAuth client: web/ios
 
     # Validate client type matches expected (if endpoint-specific)
     if expected_client_type and client_type != expected_client_type:
@@ -138,12 +153,18 @@ async def _handle_oauth_callback(
             detail=f"Invalid callback: expected {expected_client_type} but got {client_type}"
         )
 
-    # Exchange code for tokens
+    # Exchange code for tokens (use correct OAuth client type)
     try:
-        google_tokens = await oauth_handler.exchange_code_for_tokens(code, code_verifier, redirect_uri)
+        google_tokens = await oauth_handler.exchange_code_for_tokens(
+            code,
+            code_verifier,
+            redirect_uri,
+            oauth_client_type  # Pass the OAuth client type (web/ios)
+        )
         user_info = await oauth_handler.get_user_info(google_tokens["access_token"])
+        logger.info(f"Token exchange successful using {oauth_client_type} client")
     except Exception as e:
-        logger.error(f"OAuth failed: {e}")
+        logger.error(f"OAuth failed for {oauth_client_type} client: {e}")
         raise HTTPException(status_code=400, detail=f"OAuth failed: {str(e)}")
 
     auth_config = config.get("authentication", {})

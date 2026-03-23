@@ -1,0 +1,34 @@
+# Mobile OAuth Configuration Update
+# Apply these changes to your config.yaml file
+
+# REPLACE THIS SECTION:
+# authentication:
+#   enabled: true
+#   google_oauth:
+#     client_id: "${GOOGLE_CLIENT_ID}"
+#     client_secret: "${GOOGLE_CLIENT_SECRET}"
+#     redirect_uri: "${BACKEND_URL}/auth/google/callback"
+#     scopes: [openid, email, profile]
+
+# WITH THIS NEW STRUCTURE:
+
+authentication:
+  enabled: true
+  google_oauth:
+    # Multiple OAuth clients (web, iOS, Android)
+    clients:
+      web:
+        client_id: "${GOOGLE_WEB_CLIENT_ID:-${GOOGLE_CLIENT_ID}}"  # Fallback to old var
+        client_secret: "${GOOGLE_WEB_CLIENT_SECRET:-${GOOGLE_CLIENT_SECRET}}"
+      ios:
+        client_id: "${GOOGLE_IOS_CLIENT_ID}"
+        # iOS native apps don't need client_secret (PKCE provides security)
+
+    # Legacy support (backward compatibility)
+    default_redirect_uri: "${BACKEND_URL}/auth/google/callback"
+    scopes: [openid, email, profile]
+
+# NOTES:
+# - The ${VAR:-${FALLBACK}} syntax means: use VAR if set, otherwise use FALLBACK
+# - This maintains backward compatibility with old environment variables
+# - iOS client doesn't need client_secret (native mobile apps use PKCE only)

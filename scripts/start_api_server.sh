@@ -52,4 +52,14 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Start the server
-python -m uvicorn src.api_server:app --reload --port 8000
+# Try virtual environment first, fall back to system python
+if [ -f "pocket-guide-3.11/bin/python" ]; then
+    echo -e "${BLUE}Using virtual environment: pocket-guide-3.11${NC}"
+    pocket-guide-3.11/bin/python -m uvicorn src.api_server:app --reload --port 8000
+elif command -v python3 &> /dev/null; then
+    echo -e "${BLUE}Using system python3${NC}"
+    python3 -m uvicorn src.api_server:app --reload --port 8000
+else
+    echo -e "${RED}❌ No Python found!${NC}"
+    exit 1
+fi

@@ -364,6 +364,56 @@ async def get_me(current_user: Dict = Depends(get_current_user)):
     return UserInfo(**current_user)
 
 
+@router.get("/debug/oauth-config")
+async def debug_oauth_config(redirect_uri: str = ""):
+    """
+    Debug endpoint to check OAuth configuration
+
+    Test with: /auth/debug/oauth-config?redirect_uri=http://localhost:65263/callback
+
+    Returns:
+        - What client type would be detected
+        - What client_id would be used
+        - Whether that redirect_uri needs to be added to Google Console
+    """
+    from api_server import oauth_handler
+
+    if not redirect_uri:
+        return {
+            "error": "Please provide redirect_uri parameter",
+            "example": "/auth/debug/oauth-config?redirect_uri=http://localhost:65263/callback",
+            "available_clients": list(oauth_handler.clients.keys()) if oauth_handler else []
+        }
+
+    # Detect client type
+    detected_client = oauth_handler.detect_client_type(redirect_uri)
+
+    # Get client config
+    try:
+        client_config = oauth_handler.get_client_config(detected_client)
+        client_id = client_config.get("client_id", "not configured")
+        has_secret = "client_secret" in client_config
+    except Exception as e:
+        return {
+            "error": f"Client type '{detected_client}' not configured",
+            "redirect_uri": redirect_uri,
+            "available_clients": list(oauth_handler.clients.keys())
+        }
+
+    return {
+        "redirect_uri": redirect_uri,
+        "detected_client_type": detected_client,
+        "client_id": client_id,
+        "has_client_secret": has_secret,
+        "next_steps": {
+            "1": f"Go to Google Cloud Console",
+            "2": f"Find OAuth client with ID: {client_id}",
+            "3": f"Verify this redirect URI is in 'Authorized redirect URIs': {redirect_uri}",
+            "4": f"If not, add it and wait 10 minutes"
+        }
+    }
+
+
 @router.post("/client/google/verify-token", response_model=AuthTokenResponse)
 async def verify_google_id_token(request: IDTokenVerifyRequest):
     """

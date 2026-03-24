@@ -525,6 +525,11 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., description="Refresh token from login")
 
 
+class IDTokenVerifyRequest(BaseModel):
+    """Request to verify Google ID token from native SDK"""
+    id_token: str = Field(..., description="Google ID token from native Sign-In SDK")
+
+
 # ==== Map Mode API Models ====
 
 class GPSPoint(BaseModel):

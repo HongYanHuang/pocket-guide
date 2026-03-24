@@ -3,7 +3,7 @@ Authentication API Router
 Handles Google OAuth flow, token refresh, and logout
 """
 from fastapi import APIRouter, HTTPException, Depends
-from api_models import AuthTokenResponse, UserInfo, RefreshTokenRequest
+from api_models import AuthTokenResponse, UserInfo, RefreshTokenRequest, IDTokenVerifyRequest
 from auth.dependencies import get_current_user
 import uuid
 import logging
@@ -349,3 +349,70 @@ async def get_me(current_user: Dict = Depends(get_current_user)):
         User information
     """
     return UserInfo(**current_user)
+
+
+@router.post("/client/google/verify-token", response_model=AuthTokenResponse)
+async def verify_google_id_token(request: IDTokenVerifyRequest):
+    """
+    Verify Google ID token from native SDK and return app tokens
+
+    This endpoint is for mobile apps using native Google Sign-In SDK.
+    The SDK provides an ID token which we verify with Google, then
+    return our own access_token and refresh_token.
+
+    Args:
+        request: ID token from Google Sign-In SDK
+
+    Returns:
+        JWT access token and refresh token for client app user
+
+    Raises:
+        HTTPException: If token verification fails or user not allowed
+    """
+    from api_server import oauth_handler, jwt_handler, session_manager, config
+
+    # Verify ID token with Google (default to iOS client)
+    try:
+        user_info = await oauth_handler.verify_id_token(request.id_token, client_type="ios")
+        logger.info(f"ID token verified for {user_info['email']}")
+    except ValueError as e:
+        logger.error(f"ID token verification failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid ID token: {str(e)}")
+    except Exception as e:
+        logger.error(f"ID token verification error: {e}")
+        raise HTTPException(status_code=400, detail=f"Token verification failed: {str(e)}")
+
+    # Ensure email is verified
+    if not user_info.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Email not verified by Google")
+
+    # Check if public signup is allowed
+    auth_config = config.get("authentication", {})
+    allow_public = auth_config.get("allow_public_signup", False)
+
+    if not allow_public:
+        raise HTTPException(
+            status_code=403,
+            detail="Client app registration is currently disabled. Please contact administrator."
+        )
+
+    # Create user data for client app (always client_user role)
+    user_data = {
+        "email": user_info["email"],
+        "name": user_info["name"],
+        "picture": user_info.get("picture"),
+        "role": auth_config.get("default_role", "client_user"),
+        "scopes": auth_config.get("default_scopes", ["client_app", "read_tours", "user_data"]),
+        "client_type": "client_app"
+    }
+
+    # Create session and tokens
+    refresh_token = session_manager.create_session(user_data)
+    access_token = jwt_handler.create_access_token(user_data)
+
+    logger.info(f"User {user_info['email']} logged in via native SDK as client_user")
+
+    return AuthTokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )

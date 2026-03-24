@@ -61,8 +61,9 @@
 ### Authentication Endpoints
 
 **Client App (Recommended - Secure):**
-- `GET /auth/client/google/login` - Initiate client app login
+- `GET /auth/client/google/login` - Initiate client app login (OAuth browser flow)
 - `GET /auth/client/google/callback` - Client app OAuth callback
+- `POST /auth/client/google/verify-token` - Verify Google ID token from native SDK (mobile apps)
 
 **Backstage Admin:**
 - `GET /auth/backstage/google/login` - Initiate backstage login

@@ -163,3 +163,48 @@ class GoogleOAuthHandler:
             response = await client.get(self.google_userinfo_url, headers=headers)
             response.raise_for_status()
             return response.json()
+
+    async def verify_id_token(self, id_token: str, client_type: str = "ios") -> Dict:
+        """
+        Verify Google ID token from native SDK
+
+        Args:
+            id_token: ID token from Google Sign-In SDK
+            client_type: Client type to verify against (ios, android, web)
+
+        Returns:
+            User information from verified token (email, name, picture, sub)
+
+        Raises:
+            ValueError: If token is invalid or client_id doesn't match
+            httpx.HTTPStatusError: If verification request fails
+        """
+        # Get expected client config
+        client_config = self.get_client_config(client_type)
+        expected_client_id = client_config["client_id"]
+
+        # Verify token with Google
+        tokeninfo_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(tokeninfo_url)
+            response.raise_for_status()
+            token_data = response.json()
+
+        # Validate client_id matches
+        if token_data.get("aud") != expected_client_id:
+            raise ValueError(
+                f"Invalid client_id. Expected {expected_client_id}, got {token_data.get('aud')}"
+            )
+
+        # Validate token is not expired (Google returns error if expired, but double-check)
+        if "error" in token_data:
+            raise ValueError(f"Token verification failed: {token_data.get('error_description', 'Unknown error')}")
+
+        # Return user info in standardized format
+        return {
+            "email": token_data.get("email"),
+            "name": token_data.get("name"),
+            "picture": token_data.get("picture"),
+            "sub": token_data.get("sub"),  # Google user ID
+            "email_verified": token_data.get("email_verified") == "true"
+        }

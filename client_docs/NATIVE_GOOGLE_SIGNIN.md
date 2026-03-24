@@ -279,11 +279,12 @@ authentication:
 
 ## Security Notes
 
-1. **ID Token Verification**: Backend verifies token with Google's tokeninfo endpoint
-2. **Client ID Validation**: Backend checks token's `aud` field matches iOS client ID
-3. **Email Verification**: Backend requires email to be verified by Google
-4. **Token Expiration**: ID tokens are short-lived (typically 1 hour)
-5. **HTTPS Required**: All API calls must use HTTPS in production
+1. **ID Token Verification**: Backend uses Google's official `google-auth` library for cryptographic signature verification (no API calls, no rate limits)
+2. **Local Verification**: Token signature verified locally using Google's cached public keys
+3. **Client ID Validation**: Backend checks token's `aud` field matches iOS client ID
+4. **Email Verification**: Backend requires email to be verified by Google
+5. **Token Expiration**: ID tokens are short-lived (typically 1 hour)
+6. **HTTPS Required**: All API calls must use HTTPS in production
 
 ---
 

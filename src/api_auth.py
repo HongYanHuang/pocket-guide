@@ -371,9 +371,9 @@ async def verify_google_id_token(request: IDTokenVerifyRequest):
     """
     from api_server import oauth_handler, jwt_handler, session_manager, config
 
-    # Verify ID token with Google (default to iOS client)
+    # Verify ID token with Google using official google-auth library (default to iOS client)
     try:
-        user_info = await oauth_handler.verify_id_token(request.id_token, client_type="ios")
+        user_info = oauth_handler.verify_id_token(request.id_token, client_type="ios")
         logger.info(f"ID token verified for {user_info['email']}")
     except ValueError as e:
         logger.error(f"ID token verification failed: {e}")

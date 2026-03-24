@@ -5,6 +5,8 @@ Supports multiple OAuth clients (web, iOS, Android)
 import httpx
 from urllib.parse import urlencode
 from typing import Dict, Optional
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 
 class GoogleOAuthHandler:
@@ -164,47 +166,54 @@ class GoogleOAuthHandler:
             response.raise_for_status()
             return response.json()
 
-    async def verify_id_token(self, id_token: str, client_type: str = "ios") -> Dict:
+    def verify_id_token(self, token: str, client_type: str = "ios") -> Dict:
         """
-        Verify Google ID token from native SDK
+        Verify Google ID token from native SDK using official google-auth library
+
+        This method uses Google's official library which:
+        - Verifies token signature cryptographically (no API call needed)
+        - Caches Google's public keys for performance
+        - Has no rate limits (local verification)
+        - Is more secure and robust
 
         Args:
-            id_token: ID token from Google Sign-In SDK
+            token: ID token from Google Sign-In SDK
             client_type: Client type to verify against (ios, android, web)
 
         Returns:
             User information from verified token (email, name, picture, sub)
 
         Raises:
-            ValueError: If token is invalid or client_id doesn't match
-            httpx.HTTPStatusError: If verification request fails
+            ValueError: If token is invalid, expired, or client_id doesn't match
         """
         # Get expected client config
         client_config = self.get_client_config(client_type)
         expected_client_id = client_config["client_id"]
 
-        # Verify token with Google
-        tokeninfo_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
-        async with httpx.AsyncClient() as client:
-            response = await client.get(tokeninfo_url)
-            response.raise_for_status()
-            token_data = response.json()
-
-        # Validate client_id matches
-        if token_data.get("aud") != expected_client_id:
-            raise ValueError(
-                f"Invalid client_id. Expected {expected_client_id}, got {token_data.get('aud')}"
+        try:
+            # Verify the ID token with Google's official library
+            # This verifies the signature cryptographically using Google's public keys
+            idinfo = id_token.verify_oauth2_token(
+                token,
+                requests.Request(),
+                expected_client_id
             )
 
-        # Validate token is not expired (Google returns error if expired, but double-check)
-        if "error" in token_data:
-            raise ValueError(f"Token verification failed: {token_data.get('error_description', 'Unknown error')}")
+            # Double-check audience matches (redundant but explicit)
+            if idinfo.get('aud') != expected_client_id:
+                raise ValueError(
+                    f"Invalid client_id. Expected {expected_client_id}, got {idinfo.get('aud')}"
+                )
 
-        # Return user info in standardized format
-        return {
-            "email": token_data.get("email"),
-            "name": token_data.get("name"),
-            "picture": token_data.get("picture"),
-            "sub": token_data.get("sub"),  # Google user ID
-            "email_verified": token_data.get("email_verified") == "true"
-        }
+            # Return user info in standardized format
+            return {
+                "email": idinfo.get("email"),
+                "name": idinfo.get("name"),
+                "picture": idinfo.get("picture"),
+                "sub": idinfo.get("sub"),  # Google user ID
+                "email_verified": idinfo.get("email_verified", False)
+            }
+
+        except ValueError as e:
+            # google-auth raises ValueError for invalid tokens
+            raise ValueError(f"Token verification failed: {str(e)}")

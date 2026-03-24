@@ -65,6 +65,13 @@ async def client_google_login(redirect_uri: str, code_challenge: str):
     # Auto-detect OAuth client type from redirect URI
     oauth_client_type = oauth_handler.detect_client_type(redirect_uri)
 
+    # Get the client config that will be used (for logging)
+    try:
+        client_config = oauth_handler.get_client_config(oauth_client_type)
+        client_id = client_config.get("client_id", "unknown")
+    except Exception:
+        client_id = "unknown"
+
     state = str(uuid.uuid4())
     oauth_states[state] = {
         "redirect_uri": redirect_uri,
@@ -73,7 +80,13 @@ async def client_google_login(redirect_uri: str, code_challenge: str):
     }
 
     auth_url = oauth_handler.get_authorization_url(state, code_challenge, redirect_uri, oauth_client_type)
-    logger.info(f"Client app login initiated for {redirect_uri} (OAuth client: {oauth_client_type})")
+
+    # Detailed logging for debugging
+    logger.info(f"Client app login initiated:")
+    logger.info(f"  - Redirect URI: {redirect_uri}")
+    logger.info(f"  - Detected OAuth client: {oauth_client_type}")
+    logger.info(f"  - Using client_id: {client_id[:30]}...")
+
     return {"auth_url": auth_url, "state": state}
 
 

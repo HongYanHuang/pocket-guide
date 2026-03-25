@@ -365,23 +365,24 @@ async def get_me(current_user: Dict = Depends(get_current_user)):
 
 
 @router.get("/debug/oauth-config")
-async def debug_oauth_config(redirect_uri: str = ""):
+async def debug_oauth_config(redirect_uri: str = "", code_challenge: str = "TEST_CHALLENGE_123"):
     """
-    Debug endpoint to check OAuth configuration
+    Debug endpoint to check OAuth configuration and see exact URL generated
 
-    Test with: /auth/debug/oauth-config?redirect_uri=http://localhost:65263/callback
+    Test with: /auth/debug/oauth-config?redirect_uri=http://localhost:3000/auth/callback
 
     Returns:
         - What client type would be detected
         - What client_id would be used
-        - Whether that redirect_uri needs to be added to Google Console
+        - EXACT Google OAuth URL that would be generated
+        - All parameters being sent to Google
     """
     from api_server import oauth_handler
 
     if not redirect_uri:
         return {
             "error": "Please provide redirect_uri parameter",
-            "example": "/auth/debug/oauth-config?redirect_uri=http://localhost:65263/callback",
+            "example": "/auth/debug/oauth-config?redirect_uri=http://localhost:3000/auth/callback",
             "available_clients": list(oauth_handler.clients.keys()) if oauth_handler else []
         }
 
@@ -400,16 +401,43 @@ async def debug_oauth_config(redirect_uri: str = ""):
             "available_clients": list(oauth_handler.clients.keys())
         }
 
+    # Generate actual OAuth URL
+    test_state = "debug-state-12345"
+    auth_url = oauth_handler.get_authorization_url(test_state, code_challenge, redirect_uri, detected_client)
+
+    # Parse parameters from URL
+    from urllib.parse import urlparse, parse_qs
+    parsed = urlparse(auth_url)
+    params = parse_qs(parsed.query)
+    params_clean = {k: v[0] if len(v) == 1 else v for k, v in params.items()}
+
     return {
         "redirect_uri": redirect_uri,
         "detected_client_type": detected_client,
         "client_id": client_id,
+        "client_id_short": client_id[:30] + "..." if len(client_id) > 30 else client_id,
         "has_client_secret": has_secret,
+        "generated_oauth_url": auth_url,
+        "parameters_sent_to_google": params_clean,
+        "we_do_NOT_send": [
+            "flowName (this is Google's internal classification)",
+            "client_secret (only used in token exchange, not auth URL)"
+        ],
+        "common_issues": {
+            "invalid_client": [
+                "1. client_id doesn't exist in Google Cloud Console",
+                "2. Web client is disabled",
+                "3. client_id is for wrong type (e.g., iOS client_id used for localhost)",
+                "4. redirect_uri not authorized (but you said it's not this)"
+            ]
+        },
         "next_steps": {
-            "1": f"Go to Google Cloud Console",
-            "2": f"Find OAuth client with ID: {client_id}",
-            "3": f"Verify this redirect URI is in 'Authorized redirect URIs': {redirect_uri}",
-            "4": f"If not, add it and wait 10 minutes"
+            "1": f"Copy the client_id above: {client_id}",
+            "2": "Go to Google Cloud Console: https://console.cloud.google.com/apis/credentials",
+            "3": "Search for that client_id",
+            "4": "Verify it exists and is enabled",
+            "5": f"Verify {redirect_uri} is in 'Authorized redirect URIs'",
+            "6": "Check if client type matches (should be 'Web application')"
         }
     }
 

@@ -86,6 +86,8 @@ async def client_google_login(redirect_uri: str, code_challenge: str):
     logger.info(f"  - Redirect URI: {redirect_uri}")
     logger.info(f"  - Detected OAuth client: {oauth_client_type}")
     logger.info(f"  - Using client_id: {client_id[:30]}...")
+    logger.info(f"  - Generated state: {state}")
+    logger.info(f"  - Saved in oauth_states dict")
 
     return {"auth_url": auth_url, "state": state}
 
@@ -151,7 +153,12 @@ async def _handle_oauth_callback(
     from api_server import oauth_handler, jwt_handler, session_manager, config
 
     # Validate state
+    logger.info(f"Callback received:")
+    logger.info(f"  - Received state: {state}")
+    logger.info(f"  - Stored states: {list(oauth_states.keys())}")
+
     if state not in oauth_states:
+        logger.error(f"State mismatch! Received '{state}' but it's not in stored states")
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
     state_data = oauth_states.pop(state)

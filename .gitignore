@@ -58,6 +58,9 @@ test_*.json
 # Generated tours (user trip itineraries)
 tours/
 
+# User data (GPS trails, progress tracking)
+user_data/
+
 # Jupyter Notebook
 .ipynb_checkpoints
 

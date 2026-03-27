@@ -600,3 +600,30 @@ class TourTrailResponse(BaseModel):
     tour_id: str = Field(..., description="Tour identifier")
     points: List[TrailPoint] = Field(..., description="List of GPS trail points")
     total_points: int = Field(..., description="Total number of points")
+
+
+# ==== Background Tracking Models ====
+
+class ExtendedGPSCoordinate(BaseModel):
+    """Extended GPS coordinate with all available metadata for background tracking"""
+    latitude: float = Field(..., ge=-90, le=90, description="Latitude in decimal degrees")
+    longitude: float = Field(..., ge=-180, le=180, description="Longitude in decimal degrees")
+    timestamp: str = Field(..., description="ISO 8601 timestamp when coordinate was recorded (UTC)")
+    accuracy: float = Field(..., ge=0, description="Accuracy in meters")
+    altitude: Optional[float] = Field(None, description="Altitude in meters (if available)")
+    heading: Optional[float] = Field(None, ge=0, le=360, description="Heading in degrees 0-360 (if available)")
+    speed: Optional[float] = Field(None, ge=0, description="Speed in m/s (if available)")
+
+
+class BatchTrailUploadRequest(BaseModel):
+    """Request to upload batched GPS coordinates from background/foreground tracking"""
+    coordinates: List[ExtendedGPSCoordinate] = Field(..., min_items=1, description="Array of GPS coordinates")
+    day: int = Field(..., ge=1, description="Tour day number")
+    upload_type: str = Field(..., pattern="^(background|foreground)$", description="Upload type: 'background' or 'foreground'")
+
+
+class BatchTrailUploadResponse(BaseModel):
+    """Response after batch GPS trail upload"""
+    status: str = Field(..., description="Status: 'success' or 'error'")
+    coordinates_received: int = Field(..., description="Number of coordinates received")
+    trail_updated: bool = Field(..., description="Whether trail was successfully updated")

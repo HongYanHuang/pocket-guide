@@ -698,6 +698,24 @@ Body: {
 
 # 4. Get all GPS trail points
 GET /tours/{tour_id}/trail
+
+# 5. Upload GPS trail batch with extended data (background tracking)
+POST /client/tours/{tour_id}/trail/batch
+Body: {
+  "coordinates": [
+    {
+      "latitude": 41.9028,
+      "longitude": 12.4964,
+      "timestamp": "2026-03-27T10:15:30Z",
+      "accuracy": 10.5,
+      "altitude": 20.0,
+      "heading": 45.0,
+      "speed": 1.2
+    }
+  ],
+  "day": 1,
+  "upload_type": "background"
+}
 ```
 
 **cURL Examples**:

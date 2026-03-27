@@ -208,12 +208,68 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     with open(config_path, 'r') as f:
         config_text = f.read()
 
-    # Replace ${VAR_NAME} with environment variable values
-    def replace_env_var(match):
-        var_name = match.group(1)
-        return os.environ.get(var_name, '')
+    # Replace ${VAR_NAME} and ${VAR_NAME:-default} with environment variable values
+    # This handles nested ${...} by parsing with proper brace balancing
+    def expand_env_vars(text):
+        """Recursively expand environment variables with proper brace balancing"""
+        max_iterations = 10  # Prevent infinite loops
 
-    config_text = re.sub(r'\$\{(\w+)\}', replace_env_var, config_text)
+        for _ in range(max_iterations):
+            original = text
+            result = []
+            i = 0
+
+            while i < len(text):
+                # Look for ${
+                if i < len(text) - 1 and text[i:i+2] == '${':
+                    # Find matching closing brace
+                    start = i
+                    i += 2  # Skip ${
+                    depth = 1
+                    while i < len(text) and depth > 0:
+                        if text[i] == '{':
+                            depth += 1
+                        elif text[i] == '}':
+                            depth -= 1
+                        i += 1
+
+                    # Extract the full ${...} expression
+                    if depth == 0:
+                        expr = text[start+2:i-1]  # Content between ${ and }
+
+                        # Check if it has :-  for default value
+                        if ':-' in expr:
+                            parts = expr.split(':-', 1)
+                            var_name = parts[0]
+                            default_value = parts[1]
+                        else:
+                            var_name = expr
+                            default_value = ''
+
+                        # Get environment variable value
+                        value = os.environ.get(var_name)
+
+                        if value:
+                            result.append(value)
+                        elif default_value:
+                            result.append(default_value)  # Will expand in next iteration
+                        # else append nothing (empty string)
+                    else:
+                        # Unbalanced braces, keep original
+                        result.append(text[start:i])
+                else:
+                    result.append(text[i])
+                    i += 1
+
+            text = ''.join(result)
+
+            # If no changes, we're done
+            if text == original:
+                break
+
+        return text
+
+    config_text = expand_env_vars(config_text)
 
     return yaml.safe_load(config_text)
 

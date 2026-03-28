@@ -7,8 +7,9 @@ including coordinates, operation hours, and distance matrices.
 
 from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import logging
@@ -186,6 +187,12 @@ app.include_router(client_tours_router)
 app.include_router(map_mode_router)
 app.include_router(poi_images_router)
 app.include_router(tour_images_router)
+
+# Mount backstage static files
+backstage_path = Path(__file__).parent / "backstage"
+if backstage_path.exists():
+    app.mount("/backstage", StaticFiles(directory=str(backstage_path), html=True), name="backstage")
+    logger.info(f"Backstage UI mounted at /backstage")
 
 
 # ==== Helper Functions ====

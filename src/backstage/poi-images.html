@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POI Images - Backstage</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            color: #667eea;
+            font-size: 24px;
+        }
+
+        .back-btn {
+            padding: 8px 16px;
+            background: #f8f9fa;
+            border: none;
+            border-radius: 6px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .back-btn:hover {
+            background: #e9ecef;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .form-card {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 12px;
+            background: #f8f9fa;
+            border: 2px dashed #e9ecef;
+            border-radius: 6px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-input-label:hover {
+            border-color: #667eea;
+            background: #f0f3ff;
+        }
+
+        .preview-image {
+            max-width: 200px;
+            max-height: 200px;
+            margin-top: 10px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checkbox-wrapper input[type="checkbox"] {
+            width: auto;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .submit-btn:hover {
+            background: #5568d3;
+        }
+
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .images-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .image-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .image-info {
+            padding: 15px;
+        }
+
+        .image-caption {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .image-meta {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .delete-btn {
+            width: 100%;
+            padding: 8px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .delete-btn:hover {
+            background: #c82333;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .message.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            color: #004085;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📸 POI Image Upload</h1>
+            <a href="index.html" class="back-btn">← Back to Menu</a>
+        </div>
+
+        <div id="message"></div>
+
+        <div class="form-card">
+            <div class="info-box">
+                <strong>Limits:</strong> Max 5 images per POI • Max 5MB per image • Formats: JPEG, PNG, WebP
+            </div>
+
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label for="city">City *</label>
+                    <input type="text" id="city" placeholder="e.g., rome" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="poiId">POI ID *</label>
+                    <input type="text" id="poiId" placeholder="e.g., colosseum (kebab-case)" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="image">Image *</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="image" accept="image/jpeg,image/png,image/webp" required>
+                        <label for="image" class="file-input-label">
+                            📁 Click to select image
+                        </label>
+                    </div>
+                    <img id="preview" class="preview-image">
+                </div>
+
+                <div class="form-group">
+                    <label for="caption">Caption (optional)</label>
+                    <input type="text" id="caption" placeholder="Image description">
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="isCover">
+                        <label for="isCover" style="margin-bottom: 0;">Set as cover image</label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="order">Display Order</label>
+                    <input type="number" id="order" value="0" min="0">
+                </div>
+
+                <button type="submit" class="submit-btn">Upload Image</button>
+            </form>
+        </div>
+
+        <div class="form-card">
+            <h2 style="margin-bottom: 20px;">View POI Images</h2>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <input type="text" id="viewCity" placeholder="City" style="flex: 1;">
+                <input type="text" id="viewPoiId" placeholder="POI ID" style="flex: 1;">
+                <button onclick="loadImages()" class="submit-btn" style="width: auto; padding: 10px 30px;">Load</button>
+            </div>
+            <div id="imagesList" class="images-list"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        const token = localStorage.getItem('access_token');
+
+        if (!token) {
+            alert('Please login first');
+            window.location.href = 'index.html';
+        }
+
+        // Preview image
+        document.getElementById('image').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById('preview');
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+
+                // Update label
+                document.querySelector('.file-input-label').textContent = '✅ ' + file.name;
+            }
+        });
+
+        // Upload form
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const city = document.getElementById('city').value.trim().toLowerCase();
+            const poiId = document.getElementById('poiId').value.trim().toLowerCase();
+            const image = document.getElementById('image').files[0];
+            const caption = document.getElementById('caption').value;
+            const isCover = document.getElementById('isCover').checked;
+            const order = document.getElementById('order').value;
+
+            if (!image) {
+                showMessage('Please select an image', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', image);
+            if (caption) formData.append('caption', caption);
+            formData.append('is_cover', isCover);
+            formData.append('order', order);
+
+            const submitBtn = document.querySelector('.submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Uploading...';
+
+            try {
+                const response = await fetch(`${API_BASE}/pois/${city}/${poiId}/images`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('✅ ' + data.message, 'success');
+                    document.getElementById('uploadForm').reset();
+                    document.getElementById('preview').style.display = 'none';
+                    document.querySelector('.file-input-label').textContent = '📁 Click to select image';
+
+                    // Auto-load images if viewing same POI
+                    if (document.getElementById('viewCity').value === city && 
+                        document.getElementById('viewPoiId').value === poiId) {
+                        loadImages();
+                    }
+                } else {
+                    showMessage('❌ ' + (data.detail || 'Upload failed'), 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Upload failed: ' + error.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Upload Image';
+            }
+        });
+
+        async function loadImages() {
+            const city = document.getElementById('viewCity').value.trim().toLowerCase();
+            const poiId = document.getElementById('viewPoiId').value.trim().toLowerCase();
+
+            if (!city || !poiId) {
+                showMessage('Please enter city and POI ID', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/pois/${city}/${poiId}/images`);
+                const data = await response.json();
+
+                const container = document.getElementById('imagesList');
+                if (data.images && data.images.length > 0) {
+                    container.innerHTML = data.images.map(img => `
+                        <div class="image-card">
+                            <img src="${API_BASE}${img.url}" alt="${img.caption || 'POI image'}">
+                            <div class="image-info">
+                                <div class="image-caption">
+                                    ${img.is_cover ? '⭐ ' : ''}${img.caption || 'No caption'}
+                                </div>
+                                <div class="image-meta">Order: ${img.order}</div>
+                                <div class="image-meta">Uploaded: ${new Date(img.uploaded_at).toLocaleDateString()}</div>
+                                <div class="image-meta">By: ${img.uploaded_by}</div>
+                                <button class="delete-btn" onclick="deleteImage('${city}', '${poiId}', '${img.filename}')">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p style="color: #666; text-align: center; padding: 40px;">No images found</p>';
+                }
+            } catch (error) {
+                showMessage('❌ Failed to load images: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteImage(city, poiId, filename) {
+            if (!confirm(`Delete ${filename}?`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/pois/${city}/${poiId}/images/${filename}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('✅ Image deleted', 'success');
+                    loadImages();
+                } else {
+                    showMessage('❌ ' + (data.detail || 'Delete failed'), 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Delete failed: ' + error.message, 'error');
+            }
+        }
+
+        function showMessage(text, type) {
+            const div = document.getElementById('message');
+            div.className = 'message ' + type;
+            div.textContent = text;
+            setTimeout(() => div.className = '', 5000);
+        }
+    </script>
+</body>
+</html>

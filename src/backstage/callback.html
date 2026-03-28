@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Login...</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-align: center;
+        }
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            background: #dc3545;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">
+        <div class="loader"></div>
+        <p>Completing sign-in...</p>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        async function completeLogin() {
+            try {
+                // Get code and state from URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const code = urlParams.get('code');
+                const state = urlParams.get('state');
+
+                if (!code || !state) {
+                    throw new Error('Missing code or state parameter');
+                }
+
+                // Get code_verifier from sessionStorage
+                const codeVerifier = sessionStorage.getItem('code_verifier');
+                if (!codeVerifier) {
+                    throw new Error('Code verifier not found. Please try logging in again.');
+                }
+
+                // Exchange code for tokens
+                const response = await fetch(
+                    `${API_BASE}/auth/backstage/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&code_verifier=${encodeURIComponent(codeVerifier)}`
+                );
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Authentication failed');
+                }
+
+                const data = await response.json();
+
+                // Store tokens
+                localStorage.setItem('access_token', data.access_token);
+                if (data.refresh_token) {
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                }
+
+                // Clean up
+                sessionStorage.removeItem('code_verifier');
+
+                // Redirect to backstage home
+                window.location.href = '/backstage/index.html';
+
+            } catch (error) {
+                document.getElementById('status').innerHTML = `
+                    <div class="error">
+                        <h2>⚠️ Login Failed</h2>
+                        <p>${error.message}</p>
+                        <button onclick="window.location.href='/backstage/index.html'" style="margin-top: 15px; padding: 10px 20px; background: white; color: #dc3545; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                            Back to Login
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // Start the login completion process
+        completeLogin();
+    </script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket Guide - Backstage</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .login-btn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .user-info {
+            display: none;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .user-info img {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            margin-bottom: 10px;
+        }
+
+        .menu {
+            display: none;
+        }
+
+        .menu-item {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            color: #667eea;
+            text-decoration: none;
+            text-align: center;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .menu-item:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .logout-btn {
+            width: 100%;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            color: #666;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .logout-btn:hover {
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎒 Pocket Guide</h1>
+        <p class="subtitle">Backstage Admin Panel</p>
+
+        <div id="loginSection">
+            <button class="login-btn" onclick="login()">
+                Sign in with Google
+            </button>
+        </div>
+
+        <div id="userInfo" class="user-info"></div>
+
+        <div id="menu" class="menu">
+            <a href="poi-images.html" class="menu-item">📸 POI Images</a>
+            <a href="tour-images.html" class="menu-item">🖼️ Tour Images</a>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+
+        <div id="error"></div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        // Check for tokens in URL hash (from OAuth callback)
+        if (window.location.hash) {
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            const access_token = params.get('access_token');
+            const refresh_token = params.get('refresh_token');
+
+            if (access_token) {
+                localStorage.setItem('access_token', access_token);
+                if (refresh_token) {
+                    localStorage.setItem('refresh_token', refresh_token);
+                }
+                // Clean URL
+                window.location.hash = '';
+                window.location.href = window.location.pathname;
+            }
+        }
+
+        // Check if already logged in
+        window.onload = function() {
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                checkAuth();
+            }
+        };
+
+        // PKCE helper functions
+        function generateRandomString(length) {
+            const array = new Uint8Array(length);
+            crypto.getRandomValues(array);
+            return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function sha256(plain) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(plain);
+            const hash = await crypto.subtle.digest('SHA-256', data);
+            return hash;
+        }
+
+        function base64urlencode(arrayBuffer) {
+            const bytes = new Uint8Array(arrayBuffer);
+            let str = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                str += String.fromCharCode(bytes[i]);
+            }
+            return btoa(str)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const hashed = await sha256(verifier);
+            return base64urlencode(hashed);
+        }
+
+        async function login() {
+            try {
+                // Generate PKCE verifier and challenge
+                const codeVerifier = generateRandomString(64);
+                const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+                // Store verifier for later use
+                sessionStorage.setItem('code_verifier', codeVerifier);
+
+                // Get OAuth URL from backend
+                const redirectUri = `${API_BASE}/auth/backstage/google/callback-web`;
+                const response = await fetch(
+                    `${API_BASE}/auth/backstage/google/login?redirect_uri=${encodeURIComponent(redirectUri)}&code_challenge=${codeChallenge}`
+                );
+
+                if (!response.ok) {
+                    throw new Error('Failed to initiate login');
+                }
+
+                const data = await response.json();
+
+                // Redirect to Google OAuth
+                window.location.href = data.auth_url;
+            } catch (error) {
+                showError('Login failed: ' + error.message);
+            }
+        }
+
+        async function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const user = await response.json();
+                    if (!user.scopes || !user.scopes.includes('backstage')) {
+                        showError('Access denied. Backstage admin access required.');
+                        logout();
+                        return;
+                    }
+                    showMenu(user);
+                } else {
+                    logout();
+                }
+            } catch (error) {
+                logout();
+            }
+        }
+
+        function showMenu(user) {
+            document.getElementById('loginSection').style.display = 'none';
+            const userInfo = document.getElementById('userInfo');
+            userInfo.style.display = 'block';
+            userInfo.innerHTML = `
+                ${user.picture ? `<img src="${user.picture}" alt="${user.name}">` : ''}
+                <div style="font-weight: 600; color: #333;">${user.name}</div>
+                <div style="color: #666; font-size: 14px;">${user.email}</div>
+            `;
+            document.getElementById('menu').style.display = 'block';
+        }
+
+        function logout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            sessionStorage.removeItem('code_verifier');
+            location.reload();
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+        }
+
+        // Check for error in URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const error = urlParams.get('error');
+        if (error) {
+            showError(error);
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    </script>
+</body>
+</html>

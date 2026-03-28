@@ -100,6 +100,7 @@ class POIDetail(BaseModel):
     poi_name: str
     city: str
     metadata: Optional[POIMetadata] = None
+    images: Optional[Dict[str, Any]] = Field(None, description="POI images (cover and gallery)")
 
 
 # ==== City Models ====
@@ -396,6 +397,7 @@ class TourDetail(BaseModel):
     rejected_pois: List[RejectedPOI] = Field(default_factory=list, description="POIs that were rejected")
     optimization_scores: OptimizationScores = Field(..., description="Optimization metrics")
     constraints_violated: List[str] = Field(default_factory=list, description="List of constraint violations")
+    images: Optional[Dict[str, Any]] = Field(None, description="Tour images (cover and gallery)")
 
 
 # ==== POI Replacement Models ====

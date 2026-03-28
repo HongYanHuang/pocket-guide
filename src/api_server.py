@@ -588,11 +588,15 @@ async def get_poi_metadata(city: str, poi_id: str):
         data = load_poi_from_content(city, poi_id)
         poi_data = data.get('poi', {})
 
+        # Load images if available
+        images = load_poi_images_for_response(city, poi_id)
+
         return POIDetail(
             poi_id=poi_data.get('poi_id', poi_id),
             poi_name=poi_data.get('poi_name', poi_data.get('name', poi_id)),
             city=city,
-            metadata=poi_data.get('metadata')
+            metadata=poi_data.get('metadata'),
+            images=images
         )
 
     except HTTPException:
@@ -1555,6 +1559,9 @@ def get_tour(tour_id: str, language: str = "en", current_user: Optional[dict] = 
         if input_params:
             input_params = remove_null_values(input_params)
 
+        # Load images if available
+        images = load_tour_images_for_response(tour_id)
+
         tour_detail = TourDetail(
             metadata=TourMetadata(**metadata),
             itinerary=itinerary,
@@ -1562,7 +1569,8 @@ def get_tour(tour_id: str, language: str = "en", current_user: Optional[dict] = 
             backup_pois=backup_pois,
             rejected_pois=rejected_pois,
             optimization_scores=optimization_scores,
-            constraints_violated=gen_record.get('constraints_violated', [])
+            constraints_violated=gen_record.get('constraints_violated', []),
+            images=images
         )
 
         return tour_detail
@@ -2882,3 +2890,126 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
+
+# ==== Image Helper Functions ====
+
+def load_poi_images_for_response(city: str, poi_id: str) -> Optional[Dict[str, Any]]:
+    """Load POI images and format for API response"""
+    from pathlib import Path
+    import json
+    
+    poi_images_dir = Path("poi_images") / city / poi_id
+    metadata_path = poi_images_dir / "metadata.json"
+    
+    if not metadata_path.exists():
+        return None
+    
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        
+        images_list = metadata.get("images", [])
+        if not images_list:
+            return None
+        
+        # Find cover image
+        cover = None
+        gallery = []
+        
+        for img in images_list:
+            img_data = {
+                "url": f"/pois/{city}/{poi_id}/images/{img['filename']}",
+                "caption": img.get("caption"),
+                "order": img.get("order", 0)
+            }
+            
+            if img.get("is_cover"):
+                cover = img_data
+            else:
+                gallery.append(img_data)
+        
+        # Sort gallery by order
+        gallery.sort(key=lambda x: x["order"])
+        
+        # If no cover but has images, use first image as cover
+        if not cover and images_list:
+            first_img = images_list[0]
+            cover = {
+                "url": f"/pois/{city}/{poi_id}/images/{first_img['filename']}",
+                "caption": first_img.get("caption"),
+                "order": 0
+            }
+        
+        return {
+            "cover": cover,
+            "gallery": gallery
+        }
+    
+    except Exception as e:
+        logger.error(f"Error loading POI images: {e}")
+        return None
+
+
+def load_tour_images_for_response(tour_id: str) -> Optional[Dict[str, Any]]:
+    """Load tour images and format for API response"""
+    from pathlib import Path
+    import json
+    
+    # Find tour path
+    tours_dir = Path("tours")
+    tour_path = None
+    
+    for city_dir in tours_dir.iterdir():
+        if not city_dir.is_dir():
+            continue
+        potential_path = city_dir / tour_id
+        if potential_path.exists():
+            tour_path = potential_path
+            break
+    
+    if not tour_path:
+        return None
+    
+    metadata_path = tour_path / "metadata.json"
+    if not metadata_path.exists():
+        return None
+    
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        
+        images_data = metadata.get("images")
+        if not images_data:
+            return None
+        
+        result = {
+            "cover": None,
+            "gallery": []
+        }
+        
+        # Format cover image
+        if images_data.get("cover"):
+            cover_data = images_data["cover"]
+            result["cover"] = {
+                "url": f"/tours/{tour_id}/images/{cover_data['filename']}",
+                "caption": cover_data.get("caption")
+            }
+        
+        # Format gallery images
+        if images_data.get("gallery"):
+            for img in images_data["gallery"]:
+                result["gallery"].append({
+                    "url": f"/tours/{tour_id}/images/{img['filename']}",
+                    "caption": img.get("caption"),
+                    "order": img.get("order", 0)
+                })
+            
+            # Sort by order
+            result["gallery"].sort(key=lambda x: x["order"])
+        
+        return result if (result["cover"] or result["gallery"]) else None
+    
+    except Exception as e:
+        logger.error(f"Error loading tour images: {e}")
+        return None
+

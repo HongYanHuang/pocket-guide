@@ -51,3 +51,5 @@ PyJWT==2.10.1
 python-dotenv==1.0.0
 fastapi==0.115.12
 uvicorn==0.34.0
+Pillow>=11.0.0
+python-multipart>=0.0.20

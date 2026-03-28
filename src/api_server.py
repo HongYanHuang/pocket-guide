@@ -38,6 +38,8 @@ from api_tour_generator import router as tour_generator_router
 from api_client_tours import router as client_tours_router
 from api_auth import router as auth_router
 from api_map_mode import router as map_mode_router
+from api_poi_images import router as poi_images_router
+from api_tour_images import router as tour_images_router
 from auth.jwt_handler import JWTHandler
 from auth.session_manager import SessionManager
 from auth.oauth_handler import GoogleOAuthHandler
@@ -182,6 +184,8 @@ app.include_router(combo_tickets_router)
 app.include_router(tour_generator_router)
 app.include_router(client_tours_router)
 app.include_router(map_mode_router)
+app.include_router(poi_images_router)
+app.include_router(tour_images_router)
 
 
 # ==== Helper Functions ====

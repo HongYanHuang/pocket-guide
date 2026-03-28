@@ -740,6 +740,111 @@ user_data/
 
 ---
 
+### Image Upload API (POI & Tour Images)
+
+**POI Image Management**:
+
+```bash
+# 1. Upload POI image (backstage admin only)
+POST /pois/{city}/{poi_id}/images
+Content-Type: multipart/form-data
+Fields:
+- image: File (required) - Image file (JPEG, PNG, WebP, max 5MB)
+- caption: String (optional) - Image caption
+- is_cover: Boolean (optional) - Set as cover image
+- order: Integer (optional) - Display order
+
+# 2. Get POI images list (public)
+GET /pois/{city}/{poi_id}/images
+
+# 3. Serve POI image (public)
+GET /pois/{city}/{poi_id}/images/{filename}
+
+# 4. Delete POI image (backstage admin only)
+DELETE /pois/{city}/{poi_id}/images/{filename}
+```
+
+**Tour Image Management**:
+
+```bash
+# 1. Upload tour image (backstage admin only)
+POST /tours/{tour_id}/images
+Content-Type: multipart/form-data
+Fields:
+- image: File (required) - Image file (JPEG, PNG, WebP, max 5MB)
+- image_type: String (required) - "cover" or "gallery"
+- caption: String (optional) - Image caption
+- order: Integer (optional) - Display order (for gallery)
+
+# 2. Get tour images (public)
+GET /tours/{tour_id}/images
+
+# 3. Serve tour image (public)
+GET /tours/{tour_id}/images/{filename}
+
+# 4. Delete tour image (backstage admin only)
+DELETE /tours/{tour_id}/images/{filename}
+```
+
+**cURL Examples**:
+
+```bash
+# Upload POI image
+curl -X POST "http://localhost:8000/pois/rome/colosseum/images" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -F "image=@/path/to/image.jpg" \
+  -F "caption=Front view of Colosseum" \
+  -F "is_cover=true"
+
+# Get POI images
+curl -X GET "http://localhost:8000/pois/rome/colosseum/images"
+
+# Upload tour cover image
+curl -X POST "http://localhost:8000/tours/rome-tour-123/images" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -F "image=@/path/to/cover.jpg" \
+  -F "image_type=cover" \
+  -F "caption=Ancient Rome Tour"
+
+# Upload tour gallery image
+curl -X POST "http://localhost:8000/tours/rome-tour-123/images" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -F "image=@/path/to/gallery1.jpg" \
+  -F "image_type=gallery" \
+  -F "order=1"
+```
+
+**Features**:
+- **File size limit**: 5MB per image
+- **POI images**: Maximum 5 images per POI
+- **Tour images**: 1 cover image + 10 gallery images
+- **Automatic compression**: Images are compressed to reduce file size
+- **Supported formats**: JPEG, PNG, WebP
+- **Access control**: Upload/delete requires backstage admin, viewing is public
+- **Backward compatible**: Images field is optional in API responses
+
+**Storage Structure**:
+
+```
+poi_images/
+└── {city}/
+    └── {poi_id}/
+        ├── metadata.json
+        ├── image_001.jpg
+        └── image_002.jpg
+
+tours/
+└── {city}/
+    └── {tour_id}/
+        ├── images/
+        │   ├── cover.jpg
+        │   ├── gallery_001.jpg
+        │   └── gallery_002.jpg
+        └── metadata.json (updated with images field)
+```
+
+---
+
 ### Utility Scripts
 
 ```bash

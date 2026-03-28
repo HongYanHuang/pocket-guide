@@ -68,7 +68,6 @@
       v-model:visible="showEditDialog"
       :city="poi.city"
       :poi-id="poi.poi_id"
-import ImageUpload from '../components/ImageUpload.vue'
       :initial-data="poi.metadata"
       @saved="loadPOI"
     />
@@ -81,6 +80,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../api/metadata'
 import POIEditor from '../components/POIEditor.vue'
+import ImageUpload from '../components/ImageUpload.vue'
 
 const route = useRoute()
 const poi = ref(null)

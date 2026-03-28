@@ -706,7 +706,6 @@
     </transition>
   </div>
 </template>
-import ImageUpload from '../components/ImageUpload.vue'
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
@@ -717,6 +716,7 @@ import axios from 'axios'
 import apiClient from '../api/client'
 import TourMap from '../components/TourMap.vue'
 import tourApi from '../api/tour.js'
+import ImageUpload from '../components/ImageUpload.vue'
 
 const route = useRoute()
 const loading = ref(true)

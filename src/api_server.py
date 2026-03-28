@@ -7,8 +7,9 @@ including coordinates, operation hours, and distance matrices.
 
 from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import logging
@@ -38,6 +39,8 @@ from api_tour_generator import router as tour_generator_router
 from api_client_tours import router as client_tours_router
 from api_auth import router as auth_router
 from api_map_mode import router as map_mode_router
+from api_poi_images import router as poi_images_router
+from api_tour_images import router as tour_images_router
 from auth.jwt_handler import JWTHandler
 from auth.session_manager import SessionManager
 from auth.oauth_handler import GoogleOAuthHandler
@@ -182,6 +185,14 @@ app.include_router(combo_tickets_router)
 app.include_router(tour_generator_router)
 app.include_router(client_tours_router)
 app.include_router(map_mode_router)
+app.include_router(poi_images_router)
+app.include_router(tour_images_router)
+
+# Mount backstage static files
+backstage_path = Path(__file__).parent / "backstage"
+if backstage_path.exists():
+    app.mount("/backstage", StaticFiles(directory=str(backstage_path), html=True), name="backstage")
+    logger.info(f"Backstage UI mounted at /backstage")
 
 
 # ==== Helper Functions ====

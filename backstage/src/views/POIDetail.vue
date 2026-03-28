@@ -49,6 +49,18 @@
           </el-button>
         </el-button-group>
       </div>
+
+      <!-- POI Images -->
+      <el-divider />
+      <ImageUpload
+        v-if="poi"
+        upload-type="poi"
+        :identifier="poi.poi_id"
+        :city="poi.city"
+        title="POI Images"
+        style="margin-top: 20px"
+        @uploaded="loadPOI"
+      />
     </div>
 
     <POIEditor
@@ -68,6 +80,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../api/metadata'
 import POIEditor from '../components/POIEditor.vue'
+import ImageUpload from '../components/ImageUpload.vue'
 
 const route = useRoute()
 const poi = ref(null)

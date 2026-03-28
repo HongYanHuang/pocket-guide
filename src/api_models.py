@@ -600,3 +600,47 @@ class TourTrailResponse(BaseModel):
     tour_id: str = Field(..., description="Tour identifier")
     points: List[TrailPoint] = Field(..., description="List of GPS trail points")
     total_points: int = Field(..., description="Total number of points")
+
+
+# ==== Image Upload Models ====
+
+class ImageMetadata(BaseModel):
+    """Metadata for a single image"""
+    filename: str = Field(..., description="Image filename")
+    url: str = Field(..., description="URL to access the image")
+    caption: Optional[str] = Field(None, description="Image caption/description")
+    uploaded_at: str = Field(..., description="ISO 8601 timestamp of upload")
+    uploaded_by: str = Field(..., description="Email of uploader")
+    order: int = Field(0, description="Display order (0-indexed)")
+    is_cover: bool = Field(False, description="Whether this is the cover image")
+
+
+class POIImageUploadResponse(BaseModel):
+    """Response after uploading POI image"""
+    success: bool = Field(..., description="Whether upload was successful")
+    filename: str = Field(..., description="Saved filename")
+    url: str = Field(..., description="URL to access the image")
+    message: str = Field(..., description="Success message")
+
+
+class POIImagesResponse(BaseModel):
+    """Response with POI images list"""
+    poi_id: str = Field(..., description="POI identifier")
+    city: str = Field(..., description="City name")
+    images: List[ImageMetadata] = Field(..., description="List of images")
+
+
+class TourImageUploadResponse(BaseModel):
+    """Response after uploading tour image"""
+    success: bool = Field(..., description="Whether upload was successful")
+    filename: str = Field(..., description="Saved filename")
+    url: str = Field(..., description="URL to access the image")
+    image_type: str = Field(..., description="Image type (cover or gallery)")
+    message: str = Field(..., description="Success message")
+
+
+class TourImagesResponse(BaseModel):
+    """Response with tour images"""
+    tour_id: str = Field(..., description="Tour identifier")
+    cover: Optional[ImageMetadata] = Field(None, description="Cover image")
+    gallery: List[ImageMetadata] = Field(default_factory=list, description="Gallery images")

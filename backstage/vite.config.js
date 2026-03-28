@@ -10,6 +10,14 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      '/pois': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/tours': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
       }
     }
   }

@@ -3,6 +3,7 @@ Authentication API Router
 Handles Google OAuth flow, token refresh, and logout
 """
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import RedirectResponse
 from api_models import AuthTokenResponse, UserInfo, RefreshTokenRequest, IDTokenVerifyRequest
 from auth.dependencies import get_current_user
 import uuid
@@ -263,6 +264,27 @@ async def backstage_google_callback(code: str, state: str, code_verifier: str):
         HTTPException: If OAuth fails or user not authorized
     """
     return await _handle_oauth_callback(code, state, code_verifier, expected_client_type="backstage")
+
+
+@router.get("/backstage/google/callback-web")
+async def backstage_google_callback_web(code: str, state: str):
+    """
+    Handle Google OAuth callback for BACKSTAGE WEB UI
+
+    This endpoint redirects to the backstage UI with code and state,
+    allowing the browser to complete the PKCE flow with its stored code_verifier.
+
+    Args:
+        code: Authorization code from Google
+        state: CSRF protection state parameter
+
+    Returns:
+        Redirect to backstage UI with code and state in URL hash
+    """
+    # Redirect to backstage UI with code and state
+    # The browser will retrieve code_verifier from sessionStorage and exchange the code
+    redirect_url = f"/backstage/callback.html?code={code}&state={state}"
+    return RedirectResponse(url=redirect_url)
 
 
 @router.get("/client/google/callback", response_model=AuthTokenResponse)

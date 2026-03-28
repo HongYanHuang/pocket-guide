@@ -87,6 +87,48 @@
 
 ### Client Authentication API
 
+### Backstage Web UI
+
+**Access the admin interface at: `http://localhost:8000/backstage/`**
+
+The backstage web UI provides a user-friendly interface for managing POI and tour images without using curl or API clients.
+
+**Features:**
+- 📸 POI Image Upload & Management
+- 🖼️ Tour Image Upload & Management  
+- 🔒 Google OAuth Authentication (PKCE)
+- 📤 Drag-and-drop file uploads with preview
+- 🗑️ Delete images with one click
+- 📊 View all images in a gallery layout
+
+**Quick Start:**
+```bash
+# 1. Start the server
+uvicorn src.api_server:app --reload
+
+# 2. Open in browser
+open http://localhost:8000/backstage/
+
+# 3. Sign in with Google (must have backstage admin access)
+
+# 4. Upload images
+#    - Click "POI Images" to manage POI images
+#    - Click "Tour Images" to manage tour images
+```
+
+**POI Images:**
+- City: e.g., `rome`
+- POI ID: e.g., `colosseum` (kebab-case)
+- Max 5 images per POI, 5MB each
+- Automatic compression
+
+**Tour Images:**
+- Tour ID: e.g., `rome-tour-20260304-095656-185fb3`
+- 1 cover image + 10 gallery images
+- Max 5MB per image
+- Automatic compression
+
+
 For developers building client apps, see detailed guides:
 - **Client Auth API**: `docs/CLIENT_AUTH_API.md` - OAuth 2.0 flow, token management, code examples
 - **Multi-Role Auth**: `docs/MULTI_ROLE_AUTHENTICATION.md` - Same account, different roles per app
@@ -736,6 +778,111 @@ user_data/
 └── {user_email}/
     ├── tour_{tour_id}_progress.json  # POI completion status
     └── tour_{tour_id}_trail.json     # GPS trail points
+```
+
+---
+
+### Image Upload API (POI & Tour Images)
+
+**POI Image Management**:
+
+```bash
+# 1. Upload POI image (backstage admin only)
+POST /pois/{city}/{poi_id}/images
+Content-Type: multipart/form-data
+Fields:
+- image: File (required) - Image file (JPEG, PNG, WebP, max 5MB)
+- caption: String (optional) - Image caption
+- is_cover: Boolean (optional) - Set as cover image
+- order: Integer (optional) - Display order
+
+# 2. Get POI images list (public)
+GET /pois/{city}/{poi_id}/images
+
+# 3. Serve POI image (public)
+GET /pois/{city}/{poi_id}/images/{filename}
+
+# 4. Delete POI image (backstage admin only)
+DELETE /pois/{city}/{poi_id}/images/{filename}
+```
+
+**Tour Image Management**:
+
+```bash
+# 1. Upload tour image (backstage admin only)
+POST /tours/{tour_id}/images
+Content-Type: multipart/form-data
+Fields:
+- image: File (required) - Image file (JPEG, PNG, WebP, max 5MB)
+- image_type: String (required) - "cover" or "gallery"
+- caption: String (optional) - Image caption
+- order: Integer (optional) - Display order (for gallery)
+
+# 2. Get tour images (public)
+GET /tours/{tour_id}/images
+
+# 3. Serve tour image (public)
+GET /tours/{tour_id}/images/{filename}
+
+# 4. Delete tour image (backstage admin only)
+DELETE /tours/{tour_id}/images/{filename}
+```
+
+**cURL Examples**:
+
+```bash
+# Upload POI image
+curl -X POST "http://localhost:8000/pois/rome/colosseum/images" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -F "image=@/path/to/image.jpg" \
+  -F "caption=Front view of Colosseum" \
+  -F "is_cover=true"
+
+# Get POI images
+curl -X GET "http://localhost:8000/pois/rome/colosseum/images"
+
+# Upload tour cover image
+curl -X POST "http://localhost:8000/tours/rome-tour-123/images" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -F "image=@/path/to/cover.jpg" \
+  -F "image_type=cover" \
+  -F "caption=Ancient Rome Tour"
+
+# Upload tour gallery image
+curl -X POST "http://localhost:8000/tours/rome-tour-123/images" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -F "image=@/path/to/gallery1.jpg" \
+  -F "image_type=gallery" \
+  -F "order=1"
+```
+
+**Features**:
+- **File size limit**: 5MB per image
+- **POI images**: Maximum 5 images per POI
+- **Tour images**: 1 cover image + 10 gallery images
+- **Automatic compression**: Images are compressed to reduce file size
+- **Supported formats**: JPEG, PNG, WebP
+- **Access control**: Upload/delete requires backstage admin, viewing is public
+- **Backward compatible**: Images field is optional in API responses
+
+**Storage Structure**:
+
+```
+poi_images/
+└── {city}/
+    └── {poi_id}/
+        ├── metadata.json
+        ├── image_001.jpg
+        └── image_002.jpg
+
+tours/
+└── {city}/
+    └── {tour_id}/
+        ├── images/
+        │   ├── cover.jpg
+        │   ├── gallery_001.jpg
+        │   └── gallery_002.jpg
+        └── metadata.json (updated with images field)
 ```
 
 ---

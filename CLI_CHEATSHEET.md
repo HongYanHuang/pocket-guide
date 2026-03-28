@@ -87,6 +87,48 @@
 
 ### Client Authentication API
 
+### Backstage Web UI
+
+**Access the admin interface at: `http://localhost:8000/backstage/`**
+
+The backstage web UI provides a user-friendly interface for managing POI and tour images without using curl or API clients.
+
+**Features:**
+- 📸 POI Image Upload & Management
+- 🖼️ Tour Image Upload & Management  
+- 🔒 Google OAuth Authentication (PKCE)
+- 📤 Drag-and-drop file uploads with preview
+- 🗑️ Delete images with one click
+- 📊 View all images in a gallery layout
+
+**Quick Start:**
+```bash
+# 1. Start the server
+uvicorn src.api_server:app --reload
+
+# 2. Open in browser
+open http://localhost:8000/backstage/
+
+# 3. Sign in with Google (must have backstage admin access)
+
+# 4. Upload images
+#    - Click "POI Images" to manage POI images
+#    - Click "Tour Images" to manage tour images
+```
+
+**POI Images:**
+- City: e.g., `rome`
+- POI ID: e.g., `colosseum` (kebab-case)
+- Max 5 images per POI, 5MB each
+- Automatic compression
+
+**Tour Images:**
+- Tour ID: e.g., `rome-tour-20260304-095656-185fb3`
+- 1 cover image + 10 gallery images
+- Max 5MB per image
+- Automatic compression
+
+
 For developers building client apps, see detailed guides:
 - **Client Auth API**: `docs/CLIENT_AUTH_API.md` - OAuth 2.0 flow, token management, code examples
 - **Multi-Role Auth**: `docs/MULTI_ROLE_AUTHENTICATION.md` - Same account, different roles per app

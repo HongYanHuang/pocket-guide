@@ -1,58 +1,60 @@
-# POI and Tour Image Display API - Client Implementation Guide
+# POI and Tour Images - Client Implementation Guide
 
 ## Overview
 
-This guide shows how to display POI and tour images in your Flutter/mobile client app. Images are uploaded via the backstage admin panel and served through public API endpoints.
+POI and tour images are **automatically included** in the standard API responses. No separate API calls needed!
+
+When you request POI or tour data, images (if available) are included in the `images` field.
 
 ---
 
-## Features
+## ✨ Key Benefits
 
-✅ **Optional Images** - Backward compatible, images are optional
-✅ **Multiple Images** - POIs support up to 5 images, tours support 1 cover + 10 gallery
-✅ **Cover Images** - Dedicated cover image for highlighting
-✅ **Captions** - Each image can have a descriptive caption
-✅ **Automatic Compression** - All images are compressed to JPEG (85% quality)
-✅ **Public Access** - No authentication required to view images
+✅ **No Extra API Calls** - Images are already in POI/tour responses
+✅ **Backward Compatible** - `images` field is optional (null if no images)
+✅ **Simple Integration** - Just check if `images` exists
+✅ **Automatic Updates** - When admins upload images, they appear immediately
 
 ---
 
-## API Endpoints
+## API Responses with Images
 
-### Get POI Images
+### Get POI (with images included)
 
 ```http
-GET /pois/{city}/{poi_id}/images
+GET /pois/{city}/{poi_id}
 ```
 
 **Example:**
 ```http
-GET /pois/rome/colosseum/images
+GET /pois/rome/colosseum
 ```
 
 **Response:**
 ```json
 {
   "poi_id": "colosseum",
+  "poi_name": "Colosseum",
   "city": "rome",
-  "images": [
-    {
-      "filename": "image_001.jpg",
+  "metadata": {
+    "coordinates": {...},
+    "operation_hours": {...},
+    "visit_info": {...}
+  },
+  "images": {
+    "cover": {
       "url": "/pois/rome/colosseum/images/image_001.jpg",
       "caption": "Front view of the Colosseum",
-      "is_cover": true,
-      "order": 0,
-      "uploaded_at": "2026-03-28T10:00:00.000000"
+      "order": 0
     },
-    {
-      "filename": "image_002.jpg",
-      "url": "/pois/rome/colosseum/images/image_002.jpg",
-      "caption": "Interior view",
-      "is_cover": false,
-      "order": 1,
-      "uploaded_at": "2026-03-28T11:00:00.000000"
-    }
-  ]
+    "gallery": [
+      {
+        "url": "/pois/rome/colosseum/images/image_002.jpg",
+        "caption": "Interior view",
+        "order": 1
+      }
+    ]
+  }
 }
 ```
 
@@ -60,213 +62,195 @@ GET /pois/rome/colosseum/images
 ```json
 {
   "poi_id": "colosseum",
+  "poi_name": "Colosseum",
   "city": "rome",
-  "images": []
+  "metadata": {...},
+  "images": null
 }
 ```
 
 ---
 
-### Get POI Image File
+### Get Tour (with images included)
 
 ```http
-GET /pois/{city}/{poi_id}/images/{filename}
+GET /tours/{tour_id}?language=en
 ```
 
 **Example:**
 ```http
-GET /pois/rome/colosseum/images/image_001.jpg
-```
-
-**Response:** JPEG image file (binary)
-
----
-
-### Get Tour Images
-
-```http
-GET /tours/{tour_id}/images
-```
-
-**Example:**
-```http
-GET /tours/rome-tour-20260304-095656-185fb3/images
+GET /tours/rome-tour-20260304-095656-185fb3?language=en
 ```
 
 **Response:**
 ```json
 {
-  "tour_id": "rome-tour-20260304-095656-185fb3",
-  "cover": {
-    "filename": "cover.jpg",
-    "url": "/tours/rome-tour-20260304-095656-185fb3/images/cover.jpg",
-    "caption": "Ancient Rome Tour Highlights",
-    "uploaded_at": "2026-03-28T10:00:00.000000",
-    "uploaded_by": "admin@example.com",
-    "order": 0,
-    "is_cover": true
+  "metadata": {
+    "tour_id": "rome-tour-20260304-095656-185fb3",
+    "city": "rome",
+    "created_at": "2026-03-04T09:56:56.000000",
+    "title_display": "Ancient Rome History · 3 Days"
   },
-  "gallery": [
-    {
-      "filename": "gallery_001.jpg",
-      "url": "/tours/rome-tour-20260304-095656-185fb3/images/gallery_001.jpg",
-      "caption": "Day 1 Route Overview",
-      "uploaded_at": "2026-03-28T11:00:00.000000",
-      "uploaded_by": "admin@example.com",
-      "order": 0,
-      "is_cover": false
-    }
-  ]
+  "itinerary": [...],
+  "input_parameters": {...},
+  "optimization_scores": {...},
+  "images": {
+    "cover": {
+      "url": "/tours/rome-tour-20260304-095656-185fb3/images/cover.jpg",
+      "caption": "Ancient Rome Tour Highlights"
+    },
+    "gallery": [
+      {
+        "url": "/tours/rome-tour-20260304-095656-185fb3/images/gallery_001.jpg",
+        "caption": "Day 1 Route Overview",
+        "order": 0
+      }
+    ]
+  }
 }
 ```
 
 **If No Images:**
 ```json
 {
-  "tour_id": "rome-tour-20260304-095656-185fb3",
-  "cover": null,
-  "gallery": []
+  "metadata": {...},
+  "itinerary": [...},
+  "images": null
 }
 ```
-
----
-
-### Get Tour Image File
-
-```http
-GET /tours/{tour_id}/images/{filename}
-```
-
-**Example:**
-```http
-GET /tours/rome-tour-20260304-095656-185fb3/images/cover.jpg
-```
-
-**Response:** JPEG image file (binary)
 
 ---
 
 ## Flutter Implementation
 
-### 1. Data Models
+### 1. Update Data Models
+
+Add `images` field to your existing POI and Tour models:
 
 ```dart
-// POI Image Model
-class POIImage {
-  final String filename;
-  final String url;
-  final String? caption;
-  final bool isCover;
-  final int order;
-  final DateTime uploadedAt;
-
-  POIImage({
-    required this.filename,
-    required this.url,
-    this.caption,
-    required this.isCover,
-    required this.order,
-    required this.uploadedAt,
-  });
-
-  factory POIImage.fromJson(Map<String, dynamic> json) {
-    return POIImage(
-      filename: json['filename'],
-      url: json['url'],
-      caption: json['caption'],
-      isCover: json['is_cover'] ?? false,
-      order: json['order'] ?? 0,
-      uploadedAt: DateTime.parse(json['uploaded_at']),
-    );
-  }
-}
-
-// POI Images Response
-class POIImagesResponse {
+// POI Model
+class POI {
   final String poiId;
+  final String poiName;
   final String city;
-  final List<POIImage> images;
+  final POIMetadata? metadata;
+  final POIImages? images;  // ✅ Add this
 
-  POIImagesResponse({
+  POI({
     required this.poiId,
+    required this.poiName,
     required this.city,
-    required this.images,
+    this.metadata,
+    this.images,
   });
 
-  factory POIImagesResponse.fromJson(Map<String, dynamic> json) {
-    return POIImagesResponse(
+  factory POI.fromJson(Map<String, dynamic> json) {
+    return POI(
       poiId: json['poi_id'],
+      poiName: json['poi_name'],
       city: json['city'],
-      images: (json['images'] as List? ?? [])
-          .map((img) => POIImage.fromJson(img))
-          .toList(),
-    );
-  }
-
-  // Get cover image
-  POIImage? get coverImage =>
-      images.firstWhere((img) => img.isCover, orElse: () => images.isNotEmpty ? images.first : null);
-
-  // Get gallery images (sorted by order)
-  List<POIImage> get galleryImages {
-    final sorted = List<POIImage>.from(images);
-    sorted.sort((a, b) => a.order.compareTo(b.order));
-    return sorted;
-  }
-}
-
-// Tour Image Model
-class TourImage {
-  final String filename;
-  final String url;
-  final String? caption;
-  final DateTime uploadedAt;
-  final String uploadedBy;
-  final int order;
-  final bool isCover;
-
-  TourImage({
-    required this.filename,
-    required this.url,
-    this.caption,
-    required this.uploadedAt,
-    required this.uploadedBy,
-    required this.order,
-    required this.isCover,
-  });
-
-  factory TourImage.fromJson(Map<String, dynamic> json) {
-    return TourImage(
-      filename: json['filename'],
-      url: json['url'],
-      caption: json['caption'],
-      uploadedAt: DateTime.parse(json['uploaded_at']),
-      uploadedBy: json['uploaded_by'],
-      order: json['order'] ?? 0,
-      isCover: json['is_cover'] ?? false,
+      metadata: json['metadata'] != null 
+          ? POIMetadata.fromJson(json['metadata']) 
+          : null,
+      images: json['images'] != null
+          ? POIImages.fromJson(json['images'])
+          : null,  // ✅ Parse images
     );
   }
 }
 
-// Tour Images Response
-class TourImagesResponse {
-  final String tourId;
-  final TourImage? cover;
-  final List<TourImage> gallery;
+// POI Images Model
+class POIImages {
+  final ImageData? cover;
+  final List<ImageData> gallery;
 
-  TourImagesResponse({
-    required this.tourId,
+  POIImages({
     this.cover,
     required this.gallery,
   });
 
-  factory TourImagesResponse.fromJson(Map<String, dynamic> json) {
-    return TourImagesResponse(
-      tourId: json['tour_id'],
-      cover: json['cover'] != null ? TourImage.fromJson(json['cover']) : null,
-      gallery: (json['gallery'] as List? ?? [])
-          .map((img) => TourImage.fromJson(img))
+  factory POIImages.fromJson(Map<String, dynamic> json) {
+    return POIImages(
+      cover: json['cover'] != null 
+          ? ImageData.fromJson(json['cover'])
+          : null,
+      gallery: (json['gallery'] as List?)
+          ?.map((img) => ImageData.fromJson(img))
+          .toList() ?? [],
+    );
+  }
+}
+
+// Image Data Model
+class ImageData {
+  final String url;
+  final String? caption;
+  final int order;
+
+  ImageData({
+    required this.url,
+    this.caption,
+    required this.order,
+  });
+
+  factory ImageData.fromJson(Map<String, dynamic> json) {
+    return ImageData(
+      url: json['url'],
+      caption: json['caption'],
+      order: json['order'] ?? 0,
+    );
+  }
+}
+
+// Tour Model
+class Tour {
+  final TourMetadata metadata;
+  final List<TourDay> itinerary;
+  final Map<String, dynamic> inputParameters;
+  final OptimizationScores optimizationScores;
+  final TourImages? images;  // ✅ Add this
+
+  Tour({
+    required this.metadata,
+    required this.itinerary,
+    required this.inputParameters,
+    required this.optimizationScores,
+    this.images,
+  });
+
+  factory Tour.fromJson(Map<String, dynamic> json) {
+    return Tour(
+      metadata: TourMetadata.fromJson(json['metadata']),
+      itinerary: (json['itinerary'] as List)
+          .map((day) => TourDay.fromJson(day))
           .toList(),
+      inputParameters: json['input_parameters'] ?? {},
+      optimizationScores: OptimizationScores.fromJson(json['optimization_scores']),
+      images: json['images'] != null
+          ? TourImages.fromJson(json['images'])
+          : null,  // ✅ Parse images
+    );
+  }
+}
+
+// Tour Images Model (same structure as POIImages)
+class TourImages {
+  final ImageData? cover;
+  final List<ImageData> gallery;
+
+  TourImages({
+    this.cover,
+    required this.gallery,
+  });
+
+  factory TourImages.fromJson(Map<String, dynamic> json) {
+    return TourImages(
+      cover: json['cover'] != null 
+          ? ImageData.fromJson(json['cover'])
+          : null,
+      gallery: (json['gallery'] as List?)
+          ?.map((img) => ImageData.fromJson(img))
+          .toList() ?? [],
     );
   }
 }
@@ -274,370 +258,68 @@ class TourImagesResponse {
 
 ---
 
-### 2. API Service
+### 2. Display POI Images
 
 ```dart
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-
-class ImageApiService {
+class POIDetailScreen extends StatelessWidget {
+  final POI poi;
   final String baseUrl;
-
-  ImageApiService({required this.baseUrl});
-
-  // Get POI images
-  Future<POIImagesResponse> getPOIImages(String city, String poiId) async {
-    final url = Uri.parse('$baseUrl/pois/$city/$poiId/images');
-    final response = await http.get(url);
-
-    if (response.statusCode == 200) {
-      return POIImagesResponse.fromJson(json.decode(response.body));
-    } else if (response.statusCode == 404) {
-      // No images found, return empty
-      return POIImagesResponse(poiId: poiId, city: city, images: []);
-    } else {
-      throw Exception('Failed to load POI images: ${response.statusCode}');
-    }
-  }
-
-  // Get tour images
-  Future<TourImagesResponse> getTourImages(String tourId) async {
-    final url = Uri.parse('$baseUrl/tours/$tourId/images');
-    final response = await http.get(url);
-
-    if (response.statusCode == 200) {
-      return TourImagesResponse.fromJson(json.decode(response.body));
-    } else if (response.statusCode == 404) {
-      // No images found, return empty
-      return TourImagesResponse(tourId: tourId, cover: null, gallery: []);
-    } else {
-      throw Exception('Failed to load tour images: ${response.statusCode}');
-    }
-  }
-
-  // Build full image URL
-  String getImageUrl(String relativeUrl) {
-    return '$baseUrl$relativeUrl';
-  }
-}
-```
-
----
-
-### 3. UI Widgets
-
-#### POI Image Gallery
-
-```dart
-class POIImageGallery extends StatelessWidget {
-  final POIImagesResponse images;
-  final String baseUrl;
-
-  const POIImageGallery({
-    Key? key,
-    required this.images,
-    required this.baseUrl,
-  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    if (images.images.isEmpty) {
-      return SizedBox.shrink(); // No images, hide widget
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Cover Image (if available)
-        if (images.coverImage != null) ...[
-          Text('Gallery', style: Theme.of(context).textTheme.titleLarge),
-          SizedBox(height: 8),
-          GestureDetector(
-            onTap: () => _showFullscreenImage(context, images.coverImage!),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                '$baseUrl${images.coverImage!.url}',
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 200,
-                    color: Colors.grey[300],
-                    child: Icon(Icons.broken_image, size: 50),
-                  );
-                },
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    height: 200,
-                    color: Colors.grey[200],
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                },
-              ),
-            ),
-          ),
-          if (images.coverImage!.caption != null) ...[
-            SizedBox(height: 4),
-            Text(
-              images.coverImage!.caption!,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-          SizedBox(height: 16),
-        ],
-
-        // Gallery Grid
-        if (images.images.length > 1) ...[
-          Text('More Photos', style: Theme.of(context).textTheme.titleMedium),
-          SizedBox(height: 8),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 1,
-            ),
-            itemCount: images.galleryImages.length,
-            itemBuilder: (context, index) {
-              final image = images.galleryImages[index];
-              return GestureDetector(
-                onTap: () => _showFullscreenImage(context, image),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    '$baseUrl${image.url}',
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        color: Colors.grey[300],
-                        child: Icon(Icons.broken_image, size: 30),
-                      );
-                    },
-                  ),
+    return Scaffold(
+      appBar: AppBar(title: Text(poi.poiName)),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Display cover image if available
+            if (poi.images?.cover != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  '$baseUrl${poi.images!.cover!.url}',
+                  height: 200,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
                 ),
-              );
-            },
-          ),
-        ],
-      ],
-    );
-  }
-
-  void _showFullscreenImage(BuildContext context, POIImage image) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            title: Text(image.caption ?? ''),
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network('$baseUrl${image.url}'),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-```
-
-#### Tour Cover Image
-
-```dart
-class TourCoverImage extends StatelessWidget {
-  final TourImage? coverImage;
-  final String baseUrl;
-
-  const TourCoverImage({
-    Key? key,
-    this.coverImage,
-    required this.baseUrl,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    if (coverImage == null) {
-      return SizedBox.shrink(); // No cover image
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Image.network(
-            '$baseUrl${coverImage!.url}',
-            height: 250,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                height: 250,
-                color: Colors.grey[300],
-                child: Icon(Icons.broken_image, size: 60),
-              );
-            },
-          ),
-        ),
-        if (coverImage!.caption != null) ...[
-          SizedBox(height: 8),
-          Text(
-            coverImage!.caption!,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ],
-    );
-  }
-}
-```
-
----
-
-### 4. Usage Examples
-
-#### POI Detail Screen
-
-```dart
-class POIDetailScreen extends StatefulWidget {
-  final String city;
-  final String poiId;
-
-  @override
-  _POIDetailScreenState createState() => _POIDetailScreenState();
-}
-
-class _POIDetailScreenState extends State<POIDetailScreen> {
-  final imageService = ImageApiService(baseUrl: 'http://your-api-server:8000');
-  POIImagesResponse? images;
-  bool loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadImages();
-  }
-
-  Future<void> _loadImages() async {
-    try {
-      final result = await imageService.getPOIImages(widget.city, widget.poiId);
-      setState(() {
-        images = result;
-        loading = false;
-      });
-    } catch (e) {
-      print('Failed to load images: $e');
-      setState(() => loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('POI Details')),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // POI basic info...
-
-            SizedBox(height: 24),
-
-            // Image Gallery
-            if (!loading && images != null && images!.images.isNotEmpty)
-              POIImageGallery(
-                images: images!,
-                baseUrl: imageService.baseUrl,
               ),
 
-            // Rest of POI details...
-          ],
-        ),
-      ),
-    );
-  }
-}
-```
-
-#### Tour Detail Screen
-
-```dart
-class TourDetailScreen extends StatefulWidget {
-  final String tourId;
-
-  @override
-  _TourDetailScreenState createState() => _TourDetailScreenState();
-}
-
-class _TourDetailScreenState extends State<TourDetailScreen> {
-  final imageService = ImageApiService(baseUrl: 'http://your-api-server:8000');
-  TourImagesResponse? images;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadImages();
-  }
-
-  Future<void> _loadImages() async {
-    try {
-      final result = await imageService.getTourImages(widget.tourId);
-      setState(() => images = result);
-    } catch (e) {
-      print('Failed to load images: $e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Tour Details')),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Tour Cover Image
-            if (images?.cover != null)
-              TourCoverImage(
-                coverImage: images!.cover,
-                baseUrl: imageService.baseUrl,
+            if (poi.images?.cover?.caption != null)
+              Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  poi.images!.cover!.caption!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
 
             SizedBox(height: 24),
 
-            // Tour basic info...
-
-            // Tour gallery images (if needed)
-            if (images?.gallery.isNotEmpty ?? false) ...[
+            // POI metadata and details...
+            Text(poi.poiName, style: Theme.of(context).textTheme.headlineMedium),
+            
+            // Display gallery if available
+            if (poi.images?.gallery.isNotEmpty ?? false) ...[
               SizedBox(height: 24),
               Text('Gallery', style: Theme.of(context).textTheme.titleLarge),
-              SizedBox(height: 8),
+              SizedBox(height: 12),
               GridView.builder(
                 shrinkWrap: true,
                 physics: NeverScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
                 ),
-                itemCount: images!.gallery.length,
+                itemCount: poi.images!.gallery.length,
                 itemBuilder: (context, index) {
-                  final img = images!.gallery[index];
+                  final image = poi.images!.gallery[index];
                   return ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                     child: Image.network(
-                      '${imageService.baseUrl}${img.url}',
+                      '$baseUrl${image.url}',
                       fit: BoxFit.cover,
                     ),
                   );
@@ -654,64 +336,211 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
 
 ---
 
-## Error Handling
-
-### Handle Missing Images Gracefully
+### 3. Display Tour Images
 
 ```dart
-Future<POIImagesResponse> getPOIImagesSafe(String city, String poiId) async {
-  try {
-    return await imageService.getPOIImages(city, poiId);
-  } catch (e) {
-    // Return empty response if API fails
-    return POIImagesResponse(poiId: poiId, city: city, images: []);
+class TourDetailScreen extends StatelessWidget {
+  final Tour tour;
+  final String baseUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(tour.metadata.titleDisplay ?? 'Tour')),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Display cover image if available
+            if (tour.images?.cover != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  '$baseUrl${tour.images!.cover!.url}',
+                  height: 250,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+
+            if (tour.images?.cover?.caption != null)
+              Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  tour.images!.cover!.caption!,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
+
+            SizedBox(height: 24),
+
+            // Tour details (itinerary, etc.)...
+            
+            // Display gallery if available
+            if (tour.images?.gallery.isNotEmpty ?? false) ...[
+              SizedBox(height: 24),
+              Text('Photo Gallery', style: Theme.of(context).textTheme.titleLarge),
+              SizedBox(height: 12),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                itemCount: tour.images!.gallery.length,
+                itemBuilder: (context, index) {
+                  final image = tour.images!.gallery[index];
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          '$baseUrl${image.url}',
+                          fit: BoxFit.cover,
+                        ),
+                        if (image.caption != null)
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              padding: EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Colors.transparent, Colors.black54],
+                                ),
+                              ),
+                              child: Text(
+                                image.caption!,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 ```
 
-### Network Image with Fallback
+---
+
+## Reusable Image Widget
 
 ```dart
-Widget buildImageWithFallback(String imageUrl) {
-  return Image.network(
-    imageUrl,
-    fit: BoxFit.cover,
-    errorBuilder: (context, error, stackTrace) {
-      // Show placeholder when image fails to load
-      return Container(
-        color: Colors.grey[300],
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.image_not_supported, size: 40, color: Colors.grey[600]),
-            SizedBox(height: 8),
-            Text('Image unavailable', style: TextStyle(color: Colors.grey[600])),
-          ],
-        ),
+class NetworkImageWithFallback extends StatelessWidget {
+  final String imageUrl;
+  final double? height;
+  final double? width;
+  final BoxFit fit;
+  final BorderRadius? borderRadius;
+
+  const NetworkImageWithFallback({
+    Key? key,
+    required this.imageUrl,
+    this.height,
+    this.width,
+    this.fit = BoxFit.cover,
+    this.borderRadius,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    Widget image = Image.network(
+      imageUrl,
+      height: height,
+      width: width,
+      fit: fit,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[200],
+          child: Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                    loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          height: height,
+          width: width,
+          color: Colors.grey[300],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.broken_image, size: 40, color: Colors.grey[600]),
+              SizedBox(height: 8),
+              Text(
+                'Image unavailable',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (borderRadius != null) {
+      return ClipRRect(
+        borderRadius: borderRadius!,
+        child: image,
       );
-    },
-    loadingBuilder: (context, child, loadingProgress) {
-      if (loadingProgress == null) return child;
-      return Center(
-        child: CircularProgressIndicator(
-          value: loadingProgress.expectedTotalBytes != null
-              ? loadingProgress.cumulativeBytesLoaded /
-                loadingProgress.expectedTotalBytes!
-              : null,
-        ),
-      );
-    },
-  );
+    }
+
+    return image;
+  }
 }
+
+// Usage:
+NetworkImageWithFallback(
+  imageUrl: '$baseUrl${poi.images!.cover!.url}',
+  height: 200,
+  borderRadius: BorderRadius.circular(12),
+)
 ```
 
 ---
 
 ## Best Practices
 
-### 1. Caching
+### 1. Always Check for Null
 
-Use `cached_network_image` package for better performance:
+```dart
+// ✅ Good
+if (poi.images?.cover != null) {
+  // Display cover image
+}
+
+// ❌ Bad - will crash if images is null
+Image.network('$baseUrl${poi.images!.cover!.url}')
+```
+
+### 2. Use Cached Network Image
+
+For better performance, use `cached_network_image`:
 
 ```yaml
 dependencies:
@@ -723,146 +552,183 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 CachedNetworkImage(
   imageUrl: '$baseUrl${image.url}',
-  placeholder: (context, url) => CircularProgressIndicator(),
-  errorWidget: (context, url, error) => Icon(Icons.error),
+  height: 200,
   fit: BoxFit.cover,
+  placeholder: (context, url) => Container(
+    height: 200,
+    color: Colors.grey[200],
+    child: Center(child: CircularProgressIndicator()),
+  ),
+  errorWidget: (context, url, error) => Icon(Icons.error),
 )
 ```
 
-### 2. Lazy Loading
-
-Load images only when needed:
+### 3. Handle Empty States Gracefully
 
 ```dart
-class POIDetailScreen extends StatefulWidget {
-  @override
-  _POIDetailScreenState createState() => _POIDetailScreenState();
-}
-
-class _POIDetailScreenState extends State<POIDetailScreen> {
-  POIImagesResponse? images;
-
-  @override
-  void initState() {
-    super.initState();
-    // Don't load images immediately
+Widget buildPOIImages(POI poi) {
+  // No images available
+  if (poi.images == null || 
+      (poi.images!.cover == null && poi.images!.gallery.isEmpty)) {
+    return SizedBox.shrink(); // Or show placeholder
   }
 
-  void _loadImagesWhenNeeded() async {
-    if (images == null) {
-      final result = await imageService.getPOIImages(widget.city, widget.poiId);
-      setState(() => images = result);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          // POI basic info...
-
-          // Load images when user scrolls to this section
-          VisibilityDetector(
-            key: Key('images-section'),
-            onVisibilityChanged: (info) {
-              if (info.visibleFraction > 0.5) {
-                _loadImagesWhenNeeded();
-              }
-            },
-            child: images != null
-                ? POIImageGallery(images: images!, baseUrl: baseUrl)
-                : CircularProgressIndicator(),
-          ),
-        ],
-      ),
-    );
-  }
+  // Has images - display them
+  return Column(...);
 }
 ```
 
-### 3. Offline Support
+### 4. Lazy Load Images
 
-Cache image metadata for offline viewing:
+Only load images when the user scrolls to them:
 
 ```dart
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
-Future<void> cacheImageMetadata(String poiId, POIImagesResponse images) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('poi_images_$poiId', json.encode(images.toJson()));
-}
+VisibilityDetector(
+  key: Key('poi-images'),
+  onVisibilityChanged: (info) {
+    if (info.visibleFraction > 0.5 && shouldLoadImages) {
+      setState(() => shouldLoadImages = true);
+    }
+  },
+  child: shouldLoadImages
+      ? Image.network(imageUrl)
+      : Container(height: 200, color: Colors.grey[200]),
+)
+```
 
-Future<POIImagesResponse?> getCachedImageMetadata(String poiId) async {
-  final prefs = await SharedPreferences.getInstance();
-  final cached = prefs.getString('poi_images_$poiId');
-  if (cached != null) {
-    return POIImagesResponse.fromJson(json.decode(cached));
-  }
-  return null;
+---
+
+## Migration from Separate API Calls
+
+If you previously used separate image APIs:
+
+**Before (2 API calls):**
+```dart
+// 1. Get POI
+final poi = await apiService.getPOI('rome', 'colosseum');
+
+// 2. Get images separately
+final images = await apiService.getPOIImages('rome', 'colosseum');
+```
+
+**After (1 API call):**
+```dart
+// Get POI with images included
+final poi = await apiService.getPOI('rome', 'colosseum');
+
+// Images are already in poi.images
+if (poi.images?.cover != null) {
+  print('Cover: ${poi.images!.cover!.url}');
 }
 ```
 
 ---
 
-## Testing
+## Testing Checklist
 
-### Manual Testing Checklist
-
-- [ ] POI with images displays correctly
-- [ ] POI without images (empty response) handles gracefully
-- [ ] Tour with cover image displays
-- [ ] Tour with gallery images displays
-- [ ] Tour without images handles gracefully
-- [ ] Image tap opens fullscreen preview
-- [ ] Network error shows placeholder
-- [ ] Slow network shows loading indicator
+- [ ] POI with cover image displays correctly
+- [ ] POI with gallery images displays correctly
+- [ ] POI without images (null) handles gracefully
+- [ ] Tour with cover image displays correctly
+- [ ] Tour with gallery images displays correctly
+- [ ] Tour without images (null) handles gracefully
+- [ ] Image loading states show spinner
+- [ ] Image error states show placeholder
 - [ ] Images are cached after first load
-
-### Test URLs
-
-```dart
-// Test with Colosseum (should have images)
-final images = await imageService.getPOIImages('rome', 'colosseum');
-
-// Test with POI that has no images
-final empty = await imageService.getPOIImages('rome', 'unknown-poi');
-
-// Test tour images
-final tourImages = await imageService.getTourImages('rome-tour-20260304-095656-185fb3');
-```
+- [ ] Tapping image opens fullscreen preview
 
 ---
 
 ## FAQ
 
+**Q: Do I need separate API calls for images?**
+A: No! Images are automatically included in POI and tour responses.
+
+**Q: What if a POI/tour has no images?**
+A: The `images` field will be `null`. Always check before displaying.
+
 **Q: Are images required?**
-A: No, images are completely optional. Your app should handle POIs/tours without images gracefully.
+A: No, images are completely optional. Old POIs/tours without images will have `images: null`.
 
-**Q: What image formats are supported?**
-A: All images are automatically converted to JPEG format by the backend.
+**Q: What image format is returned?**
+A: All images are automatically converted to JPEG by the backend.
 
-**Q: What's the maximum image size?**
-A: Backend limits uploads to 5MB and compresses to ~85% quality JPEG.
+**Q: Do images change often?**
+A: Admins can upload/delete images anytime. Consider implementing cache invalidation.
 
 **Q: Do I need authentication to view images?**
-A: No, image viewing is public. Only upload/delete require admin authentication.
+A: No, images are public. Only upload/delete require admin auth.
 
-**Q: Can images change after I cache them?**
-A: Yes, admins can upload/delete images anytime. Consider implementing cache invalidation or periodic refresh.
-
-**Q: What if an image URL is broken?**
+**Q: What if the image URL is broken?**
 A: Always use `errorBuilder` in `Image.network()` to show a placeholder.
+
+---
+
+## Example API Responses
+
+### POI with Full Images
+```json
+{
+  "poi_id": "colosseum",
+  "poi_name": "Colosseum",
+  "city": "rome",
+  "metadata": {...},
+  "images": {
+    "cover": {
+      "url": "/pois/rome/colosseum/images/image_001.jpg",
+      "caption": "Front view",
+      "order": 0
+    },
+    "gallery": [
+      {
+        "url": "/pois/rome/colosseum/images/image_002.jpg",
+        "caption": "Interior",
+        "order": 1
+      },
+      {
+        "url": "/pois/rome/colosseum/images/image_003.jpg",
+        "caption": "Arena floor",
+        "order": 2
+      }
+    ]
+  }
+}
+```
+
+### POI without Images
+```json
+{
+  "poi_id": "fountain",
+  "poi_name": "Trevi Fountain",
+  "city": "rome",
+  "metadata": {...},
+  "images": null
+}
+```
+
+### Tour with Cover Only
+```json
+{
+  "metadata": {...},
+  "itinerary": [...],
+  "images": {
+    "cover": {
+      "url": "/tours/rome-tour-123/images/cover.jpg",
+      "caption": "Rome Tour"
+    },
+    "gallery": []
+  }
+}
+```
 
 ---
 
 ## Support
 
-If you encounter issues:
-1. Check API server is running at correct URL
-2. Verify image URLs are accessible (test in browser)
-3. Check network connectivity
-4. Review error logs for API response errors
-5. Ensure base URL doesn't have trailing slash
+For backend/API issues, see:
+- `docs/IMAGE_UPLOAD_DESIGN.md` - Complete technical specification
+- `CLI_CHEATSHEET.md` - API reference
 
-For backend issues, see `docs/IMAGE_UPLOAD_DESIGN.md`
+The separate image APIs (`GET /pois/{city}/{poi_id}/images` and `GET /tours/{tour_id}/images`) still exist for backward compatibility, but you don't need to use them anymore!

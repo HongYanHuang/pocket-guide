@@ -49,6 +49,18 @@
           </el-button>
         </el-button-group>
       </div>
+
+      <!-- POI Images -->
+      <el-divider />
+      <ImageUpload
+        v-if="poi"
+        upload-type="poi"
+        :identifier="poi.poi_id"
+        :city="poi.city"
+        title="POI Images"
+        style="margin-top: 20px"
+        @uploaded="loadPOI"
+      />
     </div>
 
     <POIEditor
@@ -56,6 +68,7 @@
       v-model:visible="showEditDialog"
       :city="poi.city"
       :poi-id="poi.poi_id"
+import ImageUpload from '../components/ImageUpload.vue'
       :initial-data="poi.metadata"
       @saved="loadPOI"
     />

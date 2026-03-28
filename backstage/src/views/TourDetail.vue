@@ -196,6 +196,16 @@
           </div>
         </el-card>
 
+        <!-- Tour Images -->
+        <ImageUpload
+          v-if="tour"
+          upload-type="tour"
+          :identifier="tour.metadata.tour_id"
+          title="Tour Images"
+          style="margin-bottom: 20px"
+          @uploaded="loadTour"
+        />
+
         <!-- Itinerary Timeline -->
         <el-card style="margin-bottom: 20px">
           <template #header>
@@ -696,6 +706,7 @@
     </transition>
   </div>
 </template>
+import ImageUpload from '../components/ImageUpload.vue'
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'

@@ -85,7 +85,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Picture, Plus, Upload } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '../api/client'
 import ImageGallery from './ImageGallery.vue'
 
 const props = defineProps({
@@ -172,18 +172,19 @@ const handleUpload = async () => {
       }
     }
 
-    const response = await axios.post(url, formData, {
+    // Use apiClient but override Content-Type for multipart/form-data
+    const response = await apiClient.post(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
     })
 
-    ElMessage.success(response.data.message || 'Image uploaded successfully')
+    ElMessage.success(response.message || 'Image uploaded successfully')
     cancelUpload()
     emit('uploaded')
   } catch (error) {
     console.error('Upload failed:', error)
-    ElMessage.error(error.response?.data?.detail || 'Failed to upload image')
+    ElMessage.error(error.message || 'Failed to upload image')
   } finally {
     uploading.value = false
   }

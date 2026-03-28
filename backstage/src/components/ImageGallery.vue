@@ -138,7 +138,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Star, Delete, PictureFilled } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '../api/client'
 
 const props = defineProps({
   uploadType: {
@@ -194,15 +194,15 @@ const loadImages = async () => {
       url = `/tours/${props.identifier}/images`
     }
 
-    const response = await axios.get(url)
-    
+    const response = await apiClient.get(url)
+
     if (props.uploadType === 'poi') {
-      images.value = response.data.images || []
+      images.value = response.images || []
     } else if (props.uploadType === 'tour') {
-      images.value = response.data
+      images.value = response
     }
   } catch (error) {
-    if (error.response?.status !== 404) {
+    if (error.message && !error.message.includes('404')) {
       console.error('Failed to load images:', error)
     }
     images.value = props.uploadType === 'tour' ? { cover: null, gallery: [] } : []
@@ -232,7 +232,7 @@ const handleDelete = async (filename) => {
       url = `/tours/${props.identifier}/images/${filename}`
     }
 
-    await axios.delete(url)
+    await apiClient.delete(url)
 
     ElMessage.success('Image deleted successfully')
     await loadImages()
@@ -240,7 +240,7 @@ const handleDelete = async (filename) => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Delete failed:', error)
-      ElMessage.error(error.response?.data?.detail || 'Failed to delete image')
+      ElMessage.error(error.message || 'Failed to delete image')
     }
   } finally {
     deleting.value = null

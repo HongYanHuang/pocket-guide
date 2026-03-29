@@ -604,18 +604,50 @@ class ContentGenerator:
         for guideline in style_guidelines:
             prompt_parts.append(f"- {guideline}")
 
-        # Request both transcript and summary points
+        # Request sectioned transcript and summary points
         prompt_parts.extend([
-            f"\nYour response should include TWO sections:",
-            f"1. TRANSCRIPT: The spoken tour guide narration",
-            f"2. SUMMARY POINTS: 3-5 bullet points of key things the audience will learn",
-            f"\nFormat your response EXACTLY like this:",
-            f"TRANSCRIPT:",
-            f"[Your narration here]",
-            f"\nSUMMARY POINTS:",
-            f"- Point 1",
-            f"- Point 2",
-            f"- Point 3"
+            "",
+            "=" * 60,
+            "OUTPUT FORMAT - SECTIONED NARRATIVE",
+            "=" * 60,
+            "",
+            "Break your narrative into 2-5 SECTIONS. Each section should:",
+            "- Be 60-150 seconds when spoken (100-250 words)",
+            "- Have a clear, evocative title (3-8 words)",
+            "- Teach ONE specific knowledge point",
+            "- Tell a complete mini-story with beginning, middle, end",
+            "",
+            "Format your response EXACTLY like this:",
+            "",
+            "SECTION 1:",
+            "TITLE: The Opening Story",
+            "KNOWLEDGE: Why this place matters or what makes it unique",
+            "TRANSCRIPT:",
+            "Close your eyes and imagine this: You're standing in front of...",
+            "[full narration for section 1]",
+            "",
+            "SECTION 2:",
+            "TITLE: The Main Story",
+            "KNOWLEDGE: The key historical event or architectural feature",
+            "TRANSCRIPT:",
+            "Picture this: In the year 1900, something remarkable happened...",
+            "[full narration for section 2]",
+            "",
+            "...(continue for all sections)...",
+            "",
+            "SUMMARY POINTS:",
+            "- Key learning point 1",
+            "- Key learning point 2",
+            "- Key learning point 3",
+            "",
+            "GUIDELINES:",
+            "- Each section should feel complete on its own",
+            "- Titles should intrigue (not just 'Part 1', 'Part 2')",
+            "- Knowledge points answer: 'What will I learn from this section?'",
+            "- Total narrative should still be 300-750 words (2-5 minutes)",
+            "- Even without detailed research, create logical sections that tell a story",
+            "",
+            "Now create the tour guide script with the information provided above."
         ])
 
         return "\n".join(prompt_parts)

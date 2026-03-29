@@ -392,6 +392,8 @@ class TourDetail(BaseModel):
     """Complete tour details"""
     metadata: TourMetadata = Field(..., description="Tour metadata")
     itinerary: List[TourDay] = Field(..., description="Day-by-day itinerary")
+    total_duration_hours: float = Field(..., description="Total duration across all days in hours")
+    total_walking_km: float = Field(..., description="Total walking distance across all days in km")
     input_parameters: Dict[str, Any] = Field(..., description="Input parameters for tour generation")
     backup_pois: Dict[str, List[BackupPOI]] = Field(default_factory=dict, description="Backup POIs per selected POI")
     rejected_pois: List[RejectedPOI] = Field(default_factory=list, description="POIs that were rejected")

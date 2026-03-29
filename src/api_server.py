@@ -1562,9 +1562,15 @@ def get_tour(tour_id: str, language: str = "en", current_user: Optional[dict] = 
         # Load images if available
         images = load_tour_images_for_response(tour_id)
 
+        # Calculate tour-level totals
+        total_duration_hours = sum(day.total_hours for day in itinerary)
+        total_walking_km = sum(day.total_walking_km for day in itinerary)
+
         tour_detail = TourDetail(
             metadata=TourMetadata(**metadata),
             itinerary=itinerary,
+            total_duration_hours=total_duration_hours,
+            total_walking_km=total_walking_km,
             input_parameters=input_params,
             backup_pois=backup_pois,
             rejected_pois=rejected_pois,

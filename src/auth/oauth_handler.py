@@ -193,10 +193,12 @@ class GoogleOAuthHandler:
         try:
             # Verify the ID token with Google's official library
             # This verifies the signature cryptographically using Google's public keys
+            # Allow 60 seconds clock skew tolerance to handle time differences between servers
             idinfo = id_token.verify_oauth2_token(
                 token,
                 requests.Request(),
-                expected_client_id
+                expected_client_id,
+                clock_skew_in_seconds=60
             )
 
             # Double-check audience matches (redundant but explicit)

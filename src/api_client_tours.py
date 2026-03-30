@@ -14,6 +14,7 @@ import logging
 from trip_planner import POISelectorAgent, ItineraryOptimizerAgent, TourManager
 from utils import load_config, get_language_name
 from auth.dependencies import require_client_app
+from audio_background import AudioGenerationTask
 
 
 logger = logging.getLogger(__name__)
@@ -22,9 +23,12 @@ router = APIRouter(prefix="/client/tours", tags=["client-tours"])
 # Load configuration
 try:
     config = load_config()
+    # Initialize audio generation task manager
+    audio_task_manager = AudioGenerationTask(config) if config else None
 except Exception as e:
     logger.error(f"Failed to load configuration: {e}")
     config = None
+    audio_task_manager = None
 
 
 # ==== Pydantic Models ====
@@ -94,6 +98,12 @@ class ClientTourGenerationRequest(BaseModel):
         description="AI provider for POI selection"
     )
 
+    # Audio generation (optional - defaults to true)
+    generate_audio: bool = Field(
+        default=True,
+        description="Generate audio files in background (default: true). Uses Edge TTS (free)."
+    )
+
 
 class ClientTourGenerationResponse(BaseModel):
     """Response model for client-side tour generation"""
@@ -113,6 +123,12 @@ class ClientTourGenerationResponse(BaseModel):
     # Creator information
     visibility: str = Field(default="private", description="Tour visibility (private for client-created tours)")
     creator_email: str = Field(..., description="Email of the user who created this tour")
+
+    # Audio generation status
+    audio_generation_started: bool = Field(
+        ...,
+        description="Whether background audio generation was started for this tour"
+    )
 
 
 class ClientTourListResponse(BaseModel):
@@ -390,6 +406,23 @@ async def generate_client_tour(
         tour_id = result['tour_id']
         logger.info(f"Tour saved with ID: {tour_id} (visibility: private)")
 
+        # Start background audio generation if requested
+        audio_generation_started = False
+        if request.generate_audio and audio_task_manager:
+            try:
+                audio_task_manager.start_background_generation(
+                    tour_id=tour_id,
+                    city=request.city,
+                    language=request.language,
+                    provider='edge'  # Always use Edge TTS for client apps (free)
+                )
+                audio_generation_started = True
+                logger.info(f"Started background audio generation for tour {tour_id}")
+            except Exception as e:
+                # Don't fail tour creation if audio generation fails to start
+                logger.error(f"Failed to start audio generation for tour {tour_id}: {e}")
+                audio_generation_started = False
+
         return ClientTourGenerationResponse(
             success=True,
             tour_id=tour_id,
@@ -402,7 +435,8 @@ async def generate_client_tour(
             optimization_scores=optimization_scores,
             input_parameters=input_parameters,
             visibility="private",
-            creator_email=current_user['email']
+            creator_email=current_user['email'],
+            audio_generation_started=audio_generation_started
         )
 
     except HTTPException:

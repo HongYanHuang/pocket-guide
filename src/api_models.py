@@ -648,3 +648,24 @@ class TourImagesResponse(BaseModel):
     tour_id: str = Field(..., description="Tour identifier")
     cover: Optional[ImageMetadata] = Field(None, description="Cover image")
     gallery: List[ImageMetadata] = Field(default_factory=list, description="Gallery images")
+
+
+# ==== Audio Generation Models ====
+
+class TourAudioStatus(BaseModel):
+    """Audio generation status for a tour"""
+    tour_id: str = Field(..., description="Tour identifier")
+    status: str = Field(
+        ...,
+        description="Audio generation status: not_started, pending, generating, completed, failed, error"
+    )
+    progress: int = Field(..., ge=0, le=100, description="Progress percentage (0-100)")
+    total_pois: int = Field(..., ge=0, description="Total number of POIs in tour")
+    completed_pois: int = Field(..., ge=0, description="Number of POIs with audio generated")
+    failed_pois: List[str] = Field(default=[], description="List of POI names that failed audio generation")
+    error_message: Optional[str] = Field(None, description="Error message if status is 'failed' or 'error'")
+    started_at: Optional[str] = Field(None, description="ISO 8601 timestamp when generation started")
+    completed_at: Optional[str] = Field(None, description="ISO 8601 timestamp when generation completed")
+    provider: Optional[str] = Field(None, description="TTS provider used (edge, openai, google, qwen)")
+    language: Optional[str] = Field(None, description="Language code for audio (e.g., zh-tw, en)")
+    city: Optional[str] = Field(None, description="City name")

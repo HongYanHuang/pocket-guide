@@ -30,7 +30,8 @@ from api_models import (
     POIReplacementRequest, POIReplacementResponse,
     BatchPOIReplacementRequest, BatchPOIReplacementResponse, POIReplacementItem,
     POIVisitStatus, TourVisitStatus, MarkVisitedRequest, MarkVisitedResponse,
-    BulkMarkVisitedRequest, BulkMarkVisitedResponse
+    BulkMarkVisitedRequest, BulkMarkVisitedResponse,
+    TourAudioStatus
 )
 from poi_metadata_agent import POIMetadataAgent
 from utils import load_config, normalize_language_code, list_available_languages, get_tour_filename
@@ -45,6 +46,7 @@ from auth.jwt_handler import JWTHandler
 from auth.session_manager import SessionManager
 from auth.oauth_handler import GoogleOAuthHandler
 from auth.dependencies import get_current_user, get_optional_user, require_backstage_admin
+from audio_background import AudioGenerationTask
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -114,11 +116,13 @@ async def general_exception_handler(request: Request, exc: Exception):
 try:
     config = load_config()
     metadata_agent = POIMetadataAgent(config)
+    audio_task_manager = AudioGenerationTask(config)
     logger.info("Configuration loaded successfully")
 except Exception as e:
     logger.error(f"Failed to load configuration: {e}")
     config = {}
     metadata_agent = None
+    audio_task_manager = None
 
 # Initialize authentication handlers
 auth_config = config.get('authentication', {})
@@ -2743,6 +2747,61 @@ def reset_visit_status(tour_id: str, language: str = "en"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error resetting visit status: {str(e)}"
+        )
+
+
+# ==== Audio Generation Endpoints ====
+
+@app.get("/tours/{tour_id}/audio-status", response_model=TourAudioStatus)
+async def get_tour_audio_status(
+    tour_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get audio generation status for a tour.
+
+    Returns the current status of background audio generation including:
+    - Status (not_started, pending, generating, completed, failed, error)
+    - Progress percentage
+    - Number of POIs completed
+    - Error messages if any
+
+    **Authentication Required**: Any authenticated user (client or backstage)
+
+    **Use Case**:
+    - Client app polls this endpoint after tour creation to check audio progress
+    - Backstage can check audio status for any tour
+    - Shows "Audio ready" notification when status is "completed"
+
+    **Example Response**:
+    ```json
+    {
+      "tour_id": "taipei-tour-123",
+      "status": "completed",
+      "progress": 100,
+      "total_pois": 5,
+      "completed_pois": 5,
+      "failed_pois": [],
+      "provider": "edge",
+      "language": "zh-tw"
+    }
+    ```
+    """
+    if not audio_task_manager:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audio generation service not available"
+        )
+
+    try:
+        status_data = audio_task_manager.get_status(tour_id)
+        return TourAudioStatus(**status_data)
+
+    except Exception as e:
+        logger.error(f"Error getting audio status for tour {tour_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get audio status: {str(e)}"
         )
 
 

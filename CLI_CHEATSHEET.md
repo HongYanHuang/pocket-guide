@@ -305,7 +305,7 @@ Discover top attractions using AI.
 ```
 
 **Options:**
-- `--skip-research`: Skip research phase (faster, less rich)
+- `--skip-research`: Skip research phase (faster, generic content, 2-3 sections)
 - `--force`: Force regeneration even if content exists
 - `--verify`: Enable transcript verification (60-100% coverage, costs more)
 
@@ -313,8 +313,13 @@ Discover top attractions using AI.
 - ✅ Auto-resumes from failures
 - ✅ Smart verification (optional with `--verify`)
 - ✅ API retry logic (5 attempts)
-- ⏱️ ~5-10 minutes per POI
+- ✅ **Multi-section transcripts** (2-5 sections with all modes)
+- ⏱️ ~5-10 minutes per POI (default), ~2.5 min with `--skip-research`
 - 📊 Coverage check: 60-100% of research (with `--verify`)
+
+**Section Output:**
+- **With research** (default): 5 detailed sections with specific facts (~10 min/POI, $0.10/POI)
+- **With `--skip-research`**: 2-3 generic sections without specific details (~2.5 min/POI, $0.02/POI)
 
 **Output:**
 - `content/<city>/<poi-id>/transcript_{language}.txt`
@@ -931,9 +936,13 @@ python3 generate_missing_research.py
 **Recommendation:** Start with `simple` mode. Only use `ilp` if you need the absolute best route or have complex constraints.
 
 ### POI Generation: Speed vs Quality
-- **With research** (default): Rich content, ~10 min/POI
-- **Without research** (`--skip-research`): Fast, ~2 min/POI, basic content
+- **With research** (default): Rich content, 5 sections, specific facts, ~10 min/POI, $0.10/POI
+- **Without research** (`--skip-research`): Fast, 2-3 sections, generic content, ~2.5 min/POI, $0.02/POI
 - **Re-research** (`--force-research`): Update existing research data
+
+**Note:** All modes now generate multi-section transcripts. The difference is quality:
+- With research: Evidence-based sections with measurements, dates, specific events
+- With `--skip-research`: Generic sections based on basic description only
 - **With verification** (`--verify`): Ensures 60-100% coverage, costs more (extra API calls)
 
 ### AI Provider Comparison

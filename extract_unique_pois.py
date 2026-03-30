@@ -21,8 +21,8 @@ def extract_unique_pois(city: str, output_file: str = None):
     candidates_path = project_root / 'poi_research' / city / 'research_candidates.json'
 
     if not candidates_path.exists():
-        print(f"❌ Error: {candidates_path} not found")
-        print(f"Run 'poi research {city}' or 'poi fulfill {city}' first")
+        print(f"❌ Error: {candidates_path} not found", file=sys.stderr)
+        print(f"Run 'poi research {city}' or 'poi fulfill {city}' first", file=sys.stderr)
         sys.exit(1)
 
     # Load candidates
@@ -49,21 +49,21 @@ def extract_unique_pois(city: str, output_file: str = None):
         for poi in unique_pois:
             f.write(f"{poi}\n")
 
-    # Print summary
-    print(f"✅ Extracted unique POIs for {city}")
-    print(f"   📄 Output: {output_path}")
-    print(f"   ✓ Unique POIs: {len(unique_pois)}")
-    print(f"   ⊗ Skipped (duplicates): {len(skipped_pois)}")
+    # Print summary to stderr (so it doesn't interfere with stdout redirection)
+    print(f"✅ Extracted unique POIs for {city}", file=sys.stderr)
+    print(f"   📄 Output: {output_path}", file=sys.stderr)
+    print(f"   ✓ Unique POIs: {len(unique_pois)}", file=sys.stderr)
+    print(f"   ⊗ Skipped (duplicates): {len(skipped_pois)}", file=sys.stderr)
 
     if skipped_pois:
-        print(f"\n📋 Skipped POIs (duplicates):")
+        print(f"\n📋 Skipped POIs (duplicates):", file=sys.stderr)
         for poi in skipped_pois[:10]:  # Show first 10
-            print(f"   - {poi}")
+            print(f"   - {poi}", file=sys.stderr)
         if len(skipped_pois) > 10:
-            print(f"   ... and {len(skipped_pois) - 10} more")
+            print(f"   ... and {len(skipped_pois) - 10} more", file=sys.stderr)
 
-    print(f"\n🚀 Next step:")
-    print(f"   ./pocket-guide poi batch-generate {output_file} --city {city}")
+    print(f"\n🚀 Next step:", file=sys.stderr)
+    print(f"   ./pocket-guide poi batch-generate {output_file} --city {city}", file=sys.stderr)
 
 
 if __name__ == '__main__':

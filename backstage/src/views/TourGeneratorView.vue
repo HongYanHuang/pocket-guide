@@ -32,11 +32,14 @@
             placeholder="Select a city"
             filterable
             style="width: 300px"
+            :loading="loadingCities"
           >
-            <el-option label="Rome" value="rome" />
-            <el-option label="Paris" value="paris" />
-            <el-option label="Athens" value="athens" />
-            <el-option label="London" value="london" />
+            <el-option
+              v-for="city in availableCities"
+              :key="city.slug"
+              :label="`${city.name} (${city.poi_count} POIs)`"
+              :value="city.slug"
+            />
           </el-select>
         </el-form-item>
 
@@ -337,9 +340,11 @@ const generationStatus = ref('')
 const generationProgress = ref(0)
 const generatedTourId = ref(null)
 const availablePOIs = ref([])
+const availableCities = ref([])
+const loadingCities = ref(false)
 
 const formData = ref({
-  city: 'rome',
+  city: '',  // Will be set from API
   days: 3,
   interests: [],
   provider: 'anthropic',
@@ -365,6 +370,25 @@ const rules = {
 }
 
 // Methods
+const loadCities = async () => {
+  loadingCities.value = true
+  try {
+    const cities = await metadataAPI.getCities()
+    availableCities.value = cities
+
+    // Set default city to first available city if current selection is invalid
+    if (cities.length > 0 && !cities.find(c => c.slug === formData.value.city)) {
+      formData.value.city = cities[0].slug
+    }
+  } catch (error) {
+    console.error('Failed to load cities:', error)
+    ElMessage.error('Failed to load available cities')
+    availableCities.value = []
+  } finally {
+    loadingCities.value = false
+  }
+}
+
 const loadAvailablePOIs = async () => {
   if (!formData.value.city) return
 
@@ -436,8 +460,9 @@ const handleGenerate = async () => {
 
 const handleReset = () => {
   formRef.value?.resetFields()
+  const defaultCity = availableCities.value.length > 0 ? availableCities.value[0].slug : ''
   formData.value = {
-    city: 'rome',
+    city: defaultCity,
     days: 3,
     interests: [],
     provider: 'anthropic',
@@ -473,7 +498,8 @@ watch(() => formData.value.city, () => {
 })
 
 // Lifecycle
-onMounted(() => {
+onMounted(async () => {
+  await loadCities()
   loadAvailablePOIs()
 })
 </script>
